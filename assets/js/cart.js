@@ -4,7 +4,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const cartSidebar = document.getElementById('cart-sidebar');
     const closeCartBtn = document.getElementById('close-cart-btn');
-    const cartIcon = document.getElementById('cart-icon');
+    const cartIcons = document.querySelectorAll('#cart-icon, .cart-icon-1, .cart-icon');
     const cartBody = document.querySelector('.cart-body');
     const subtotalPrice = document.getElementById('subtotal-price');
 
@@ -41,18 +41,22 @@ document.addEventListener('DOMContentLoaded', () => {
   // =========================
 // CART ICON CLICK
 // =========================
-if (cartIcon) {
+if (cartIcons.length > 0) {
 
-    cartIcon.addEventListener('click', (e) => {
+    cartIcons.forEach(icon => {
 
-        e.preventDefault();
+        icon.addEventListener('click', (e) => {
 
-        console.log('Cart icon clicked');
+            e.preventDefault();
 
-        // OPEN CART DIRECTLY
-        if (cartSidebar) {
-            cartSidebar.classList.add('open');
-        }
+            console.log('Cart icon clicked');
+
+            // OPEN CART DIRECTLY
+            if (cartSidebar) {
+                cartSidebar.classList.add('open');
+            }
+
+        });
 
     });
 

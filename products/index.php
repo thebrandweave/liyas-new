@@ -552,38 +552,7 @@ $social_links = $social_links_stmt->fetchAll(PDO::FETCH_ASSOC);
     <script src="../assets/js/product-modal.js"></script>
 
 
-<div id="cart-sidebar">
 
-    <div class="cart-header">
-        <h2>Your Cart</h2>
-
-        <button id="close-cart-btn">
-            ×
-        </button>
-    </div>
-
-    <div class="cart-body">
-
-        <p class="cart-empty-message">
-            Your cart is empty.
-        </p>
-
-    </div>
-
-    <div class="cart-footer">
-
-        <h3>
-            Subtotal:
-            <span id="subtotal-price">₹0.00</span>
-        </h3>
-
-        <a href="cart.php" class="checkout-btn">
-            View Cart
-        </a>
-
-    </div>
-
-</div> 
     
     <script>
         // Splash screen functionality
