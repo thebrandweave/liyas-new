@@ -202,7 +202,48 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     // Use event delegation for quantity and remove buttons
+    if (cartBody) {
+
     cartBody.addEventListener('click', (e) => {
+
+        const target = e.target;
+        let button = target;
+
+        if (target.tagName === 'I' && target.closest('button')) {
+            button = target.closest('button');
+        }
+
+        if (button.classList.contains('quantity-btn')) {
+
+            const id = button.dataset.id;
+
+            const item = cart.find(item => item.product_id == id);
+
+            if (item) {
+
+                if (button.classList.contains('minus-btn')) {
+                    updateQuantity(id, item.quantity - 1);
+                } else if (button.classList.contains('plus-btn')) {
+                    updateQuantity(id, item.quantity + 1);
+                }
+
+            }
+
+        } else if (button.classList.contains('remove-btn')) {
+
+            const id = button.dataset.id;
+
+            const item = cart.find(item => item.product_id == id);
+
+            if (item) {
+                removeFromCart(id);
+            }
+
+        }
+
+    });
+
+}
         const target = e.target;
         let button = target;
 
