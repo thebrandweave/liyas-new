@@ -32,6 +32,12 @@ try {
 
     $cart_items = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
+// Add full image URL like API response
+foreach ($cart_items as &$item) {
+    $item['image'] = BASE_URL . '/admin/uploads/products/' . $item['image'];
+}
+unset($item);
+
 } catch (PDOException $e) {
     die("Database Error: " . $e->getMessage());
 }
@@ -203,7 +209,7 @@ try {
                 $total = $item['price'] * $item['quantity'];
                 $grand_total += $total;
 
-                $imagePath = BASE_URL . '/admin/uploads/products/' . $item['image'];
+               $imagePath = $item['image'];
             ?>
 
             <div class="cart-item">
