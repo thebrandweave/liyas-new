@@ -9,20 +9,27 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let cart = [];
 
-    function fetchCart() {
-        fetch(BASE_URL + '/get_cart.php')
-            .then(response => response.json())
-            .then(data => {
-                if (data.error) {
-                    console.log(data.error); // User not logged in
-                    return;
-                }
-                cart = data;
-                console.log('Cart data fetched:', cart); // DEBUG: Log fetched cart data
-                renderCart();
-            })
-            .catch(error => console.error('Error fetching cart:', error));
-    }
+ function fetchCart() {
+
+    fetch(BASE_URL + '/get_cart.php')
+        .then(response => response.json())
+        .then(data => {
+
+            if (data.error) {
+                console.log(data.error);
+                return;
+            }
+
+            cart = data;
+
+            console.log('Cart data fetched:', cart);
+
+            renderCart();
+
+        })
+        .catch(error => console.error('Error fetching cart:', error));
+
+}
 
     // --- EVENT LISTENERS ---
 
@@ -34,17 +41,27 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    if (cartIcon) {
-        cartIcon.addEventListener('click', () => {
-            // Check for login status before opening cart
-            if (typeof userIsLoggedIn !== 'undefined' && userIsLoggedIn) {
-                cartSidebar.classList.add('open');
-            } else {
-                // If not logged in, redirect to login page
-                window.location.href = BASE_URL + '/login';
-            }
-        });
-    }
+ if (cartIcon) {
+
+    cartIcon.addEventListener('click', (e) => {
+
+        e.preventDefault();
+
+        console.log('Cart icon clicked');
+
+        if (typeof userIsLoggedIn !== 'undefined' && userIsLoggedIn) {
+
+            cartSidebar.classList.add('open');
+
+        } else {
+
+            window.location.href = BASE_URL + '/login';
+
+        }
+
+    });
+
+}
 
     if (closeCartBtn) {
         closeCartBtn.addEventListener('click', () => {
