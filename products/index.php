@@ -724,7 +724,10 @@ function finishSplash() {
     </script>
     <script src="https://cdn.jsdelivr.net/npm/aos@2.3.4/dist/aos.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="../assets/js/cart.js"></script>
+    <script>
+        var userIsLoggedIn = <?php echo json_encode(isset($_SESSION['user_id'])); ?>;
+    </script>
+    <script src="<?php echo BASE_URL; ?>/assets/js/cart.js"></script>
 </body>
 </html>
 
