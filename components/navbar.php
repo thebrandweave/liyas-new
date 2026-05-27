@@ -31,11 +31,11 @@ $contact_link = rtrim($base_path, '/') . '/contact/';
     </ul>
 
     <!-- Cart Icon -->
-    <a href="javascript:void(0)" id="cart-icon" class="cart-icon-1" title="View Cart">
+    <button id="cart-icon" class="cart-icon-1" title="View Cart">
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 3h1.386c.51 0 .955.343 1.087.835l.383 1.437M7.5 14.25a3 3 0 00-3 3h15.75m-12.75-3h11.218c.51 0 .962-.343 1.087-.835l1.823-6.423a.75.75 0 00-.67-1.03H6.088l-.523-1.974M16.5 21a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM8.25 21a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0z" />
         </svg>
-    </a>
+</button>
     
        <div><?php if (isset($_SESSION['user_id'])): ?>
   <a href="logout.php" class="top-login-btn" title="Logout">
