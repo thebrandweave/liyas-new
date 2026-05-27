@@ -119,31 +119,7 @@ function populateModal(modal, data) {
     const modalTitle = modal.querySelector('.modal-title');
     if(modalTitle) modalTitle.textContent = product.name;
 
-    // --- NEW: Event listener for the modal's add button ---
-    const addButton = modal.querySelector('.add-btn');
-    if (addButton) {
-        addButton.addEventListener('click', (e) => {
-            e.stopPropagation(); // Keep modal open
-
-            if (typeof userIsLoggedIn !== 'undefined' && userIsLoggedIn) {
-                const productData = {
-                    id: addButton.dataset.productId,
-                    name: addButton.dataset.name,
-                    price: parseFloat(addButton.dataset.price),
-                    image: addButton.dataset.image,
-                    quantity: 1
-                };
-                
-                // Dispatch a custom event that cart.js can listen for
-                document.dispatchEvent(new CustomEvent('addToCartFromModal', { detail: productData }));
-
-            } else {
-                const base = (typeof BASE_URL !== 'undefined' ? BASE_URL : '').replace(/\/$/, '');
-                const returnTo = encodeURIComponent(window.location.pathname + window.location.search);
-                window.location.href = base + '/login/?redirect=' + returnTo;
-            }
-        });
-    }
+    /* Add to cart handled by cart.js via .add-btn delegation */
 }
 
 async function submitReview(event, productId) {

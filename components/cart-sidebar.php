@@ -1,39 +1,28 @@
 <?php
-// Ensure BASE_URL is defined
 if (!defined('BASE_URL')) {
     require_once __DIR__ . '/../config/config.php';
 }
+$cartBase = rtrim(BASE_URL, '/');
 ?>
-<!-- CART SIDEBAR -->
-<div id="cart-sidebar">
+<div id="cart-overlay" class="cart-overlay" aria-hidden="true"></div>
 
+<aside id="cart-sidebar" class="liyas-cart-drawer" aria-label="Shopping cart">
     <div class="cart-header">
-        <h2>Your Cart</h2>
-
-        <button id="close-cart-btn">
-            ×
-        </button>
+        <h2>My Cart <span id="cart-drawer-count" class="cart-drawer-count"></span></h2>
+        <button type="button" id="close-cart-btn" class="close-cart-btn" aria-label="Close cart">&times;</button>
     </div>
 
     <div class="cart-body">
-
-        <p class="cart-empty-message">
-            Your cart is empty.
-        </p>
-
+        <p class="cart-empty-message">Your cart is empty.</p>
     </div>
 
     <div class="cart-footer">
-
-        <h3>
-            Subtotal:
-            <span id="subtotal-price">₹0.00</span>
-        </h3>
-
-        <a href="<?php echo rtrim(BASE_URL, '/') . '/cart/'; ?>" class="checkout-btn">
-            View Cart
-        </a>
-
+        <div class="cart-subtotal-row">
+            <span>Subtotal</span>
+            <strong id="subtotal-price">₹0.00</strong>
+        </div>
+        <p class="cart-footer-note">Taxes and shipping calculated at checkout.</p>
+        <a href="<?php echo $cartBase; ?>/cart/" class="checkout-btn btn-view-cart">View full cart</a>
+        <a href="<?php echo $cartBase; ?>/checkout.php" class="checkout-btn btn-checkout-primary">Proceed to checkout</a>
     </div>
-
-</div>
+</aside>

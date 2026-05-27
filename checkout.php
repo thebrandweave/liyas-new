@@ -22,7 +22,7 @@ try {
     $cart_items = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     if (empty($cart_items)) {
-        header("Location: " . BASE_URL . "/products.php"); // Redirect to products if cart is empty
+        header("Location: " . rtrim(BASE_URL, '/') . "/products/"); // Redirect to products if cart is empty
         exit;
     }
 

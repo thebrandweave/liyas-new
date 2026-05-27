@@ -1,14 +1,15 @@
 <!-- components/navbar.php -->
 <?php
-// Get the script path and determine base path
-$base_path = '/'; 
-
-// Set navigation links to actual pages
-$home_link = rtrim($base_path, '/') . '/index-temp';
-$about_link = rtrim($base_path, '/') . '/about/';
-$products_link = rtrim($base_path, '/') . '/products/';
-$contact_link = rtrim($base_path, '/') . '/contact/';
-
+if (!defined('BASE_URL')) {
+    require_once __DIR__ . '/../config/config.php';
+}
+$navBase = rtrim(BASE_URL, '/');
+$home_link = $navBase . '/index-temp.php';
+$about_link = $navBase . '/about/';
+$products_link = $navBase . '/products/';
+$contact_link = $navBase . '/contact/';
+$login_link = $navBase . '/login/';
+$logout_link = $navBase . '/logout.php';
 ?>
 <nav class="navbar fixed-top liyas-navbar">
   <div class="container d-flex justify-content-between align-items-center">
@@ -31,19 +32,20 @@ $contact_link = rtrim($base_path, '/') . '/contact/';
     </ul>
 
     <!-- Cart Icon -->
-    <a href="javascript:void(0)" id="cart-icon" class="cart-icon-1" data-cart-trigger title="View Cart">
+    <a href="javascript:void(0)" class="cart-icon-1 cart-icon-wrap" data-cart-trigger title="View Cart">
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 3h1.386c.51 0 .955.343 1.087.835l.383 1.437M7.5 14.25a3 3 0 00-3 3h15.75m-12.75-3h11.218c.51 0 .962-.343 1.087-.835l1.823-6.423a.75.75 0 00-.67-1.03H6.088l-.523-1.974M16.5 21a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM8.25 21a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0z" />
         </svg>
+        <span id="cart-count-badge" class="cart-count-badge">0</span>
     </a>
     
        <div><?php if (isset($_SESSION['user_id'])): ?>
-  <a href="logout.php" class="top-login-btn" title="Logout">
-    <img src="logout.png" alt="Logout" class="login-svg" style="width: 24px; height: 22px;padding:2px;"> <span style="font-size:15px;"> Logout</span>
+  <a href="<?php echo htmlspecialchars($logout_link); ?>" class="top-login-btn" title="Logout">
+    <span style="font-size:15px;">Logout</span>
 </a>
 <?php else: ?>
-    <a href="login.php" class="top-login-btn" title="Login">
-         <img src="user.png" alt="Logout" class="login-svg" style="width: 24px; height: 22px;padding:0px;"> <span style="font-size:15px;"> </span>
+    <a href="<?php echo htmlspecialchars($login_link); ?>" class="top-login-btn" title="Login">
+         <span style="font-size:15px;">Login</span>
     </a>
 <?php endif; ?></div>
 
@@ -64,7 +66,7 @@ $contact_link = rtrim($base_path, '/') . '/contact/';
 
     <!-- Cart Icon -->
     <li>
-      <a href="javascript:void(0)" class="cart-icon nav-link" data-cart-trigger title="View Cart">
+      <a href="javascript:void(0)" class="cart-icon nav-link cart-icon-wrap" data-cart-trigger title="View Cart">
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" style="width: 24px; height: 24px;">
           <path stroke-linecap="round" stroke-linejoin="round" 
             d="M2.25 3h1.386c.51 0 .955.343 1.087.835l.383 1.437M7.5 14.25a3 3 0 00-3 3h15.75m-12.75-3h11.218c.51 0 .962-.343 1.087-.835l1.823-6.423a.75.75 0 00-.67-1.03H6.088l-.523-1.974M16.5 21a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM8.25 21a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0z" />
@@ -76,13 +78,11 @@ $contact_link = rtrim($base_path, '/') . '/contact/';
     <!-- Login / Logout -->
     <li class="login-button">
       <?php if (isset($_SESSION['user_id'])): ?>
-        <a href="logout.php" class="top-login-btn-1 nav-link" title="Logout">
-          <img src="logout.png" alt="Logout" style="width: 24px; height: 22px; padding:2px;">
+        <a href="<?php echo htmlspecialchars($logout_link); ?>" class="top-login-btn-1 nav-link" title="Logout">
           <span style="font-size:15px;">Logout</span>
         </a>
       <?php else: ?>
-        <a href="login.php" class="top-login-btn-1 nav-link" title="Login">
-          <img src="user.png" alt="Login" style="width: 24px; height: 22px;">
+        <a href="<?php echo htmlspecialchars($login_link); ?>" class="top-login-btn-1 nav-link" title="Login">
           <span style="font-size:15px;">Login</span>
         </a>
       <?php endif; ?>
