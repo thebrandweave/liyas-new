@@ -38,29 +38,25 @@ document.addEventListener('DOMContentLoaded', () => {
     // =========================
     // CART ICON CLICK
     // =========================
-    if (cartIcon) {
+  // =========================
+// CART ICON CLICK
+// =========================
+if (cartIcon) {
 
-        cartIcon.addEventListener('click', (e) => {
+    cartIcon.addEventListener('click', (e) => {
 
-            e.preventDefault();
+        e.preventDefault();
 
-            console.log('Cart icon clicked');
+        console.log('Cart icon clicked');
 
-            if (typeof userIsLoggedIn !== 'undefined' && userIsLoggedIn) {
+        // OPEN CART DIRECTLY
+        if (cartSidebar) {
+            cartSidebar.classList.add('open');
+        }
 
-                if (cartSidebar) {
-                    cartSidebar.classList.add('open');
-                }
+    });
 
-            } else {
-
-                window.location.href = BASE_URL + '/login';
-
-            }
-
-        });
-
-    }
+}
 
     // =========================
     // CLOSE CART
