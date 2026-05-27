@@ -178,7 +178,7 @@ $products = $products_stmt->fetchAll(PDO::FETCH_ASSOC);
       <?php else: ?>
         <?php foreach ($products as $product): ?>
         <a class="prod-page" href="/products/">  <div class="product-card" 
-               onclick="openProductModal(<?= $product['product_id'] ?>)"
+               onclick="if(document.getElementById('productDetailModal')) { event.preventDefault(); } openProductModal(<?= $product['product_id'] ?>)"
                style="cursor: pointer;"
                data-product-id="<?= $product['product_id'] ?>"
                data-name="<?= strtolower(htmlspecialchars($product['name'])) ?>"

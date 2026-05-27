@@ -403,6 +403,23 @@ if (cartIcon) {
     }
 
     // =========================
+    // LISTEN FOR MODAL ADD TO CART
+    // =========================
+    document.addEventListener('addToCartFromModal', (e) => {
+
+        console.log('Received addToCartFromModal event:', e.detail);
+
+        const product = e.detail;
+
+        addToCart(product);
+
+        if (cartSidebar) {
+            cartSidebar.classList.add('open');
+        }
+
+    });
+
+    // =========================
     // INITIAL FETCH
     // =========================
     fetchCart();
