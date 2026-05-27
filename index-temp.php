@@ -703,7 +703,39 @@ Because great water isn't just a choice — it's a vibe.
     <?php include 'components/footer.php'; ?>
 
 
-    
+    <!-- CART SIDEBAR -->
+<div id="cart-sidebar">
+
+    <div class="cart-header">
+        <h2>Your Cart</h2>
+
+        <button id="close-cart-btn">
+            ×
+        </button>
+    </div>
+
+    <div class="cart-body">
+
+        <p class="cart-empty-message">
+            Your cart is empty.
+        </p>
+
+    </div>
+
+    <div class="cart-footer">
+
+        <h3>
+            Subtotal:
+            <span id="subtotal-price">₹0.00</span>
+        </h3>
+
+        <a href="cart.php" class="checkout-btn">
+            View Cart
+        </a>
+
+    </div>
+
+</div> 
 
     <script>
 

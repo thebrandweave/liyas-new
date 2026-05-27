@@ -19,7 +19,23 @@
     height: 24px;
 }
 
+#cart-sidebar{
+    position: fixed;
+    top: 0;
+    right: -420px;
+    width: 400px;
+    height: 100vh;
+    background: #fff;
+    z-index: 99999;
+    transition: 0.3s ease;
+    box-shadow: -5px 0 20px rgba(0,0,0,0.1);
+    display: flex;
+    flex-direction: column;
+}
 
+#cart-sidebar.open{
+    right: 0;
+}
 
 /* ================================= 
    SIDE CART STYLES
