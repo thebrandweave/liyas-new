@@ -23,8 +23,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $_SESSION['user_id']   = $user['user_id'];
         $_SESSION['user_name'] = $user['name'];
 
-        // ✅ After login → landing page
-        header("Location: ../index-temp.php");
+        $redirect = $_GET['redirect'] ?? $_POST['redirect'] ?? '';
+        if ($redirect !== '' && str_starts_with($redirect, '/') && !str_starts_with($redirect, '//')) {
+            header('Location: ' . rtrim(BASE_URL, '/') . $redirect);
+        } else {
+            header('Location: ' . rtrim(BASE_URL, '/') . '/products/');
+        }
         exit;
 
     } else {
@@ -113,23 +117,11 @@ body{
 <body>
 
 <?php
-/* LOGIN LOGIC */
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $email    = trim($_POST['email']);
-    $password = $_POST['password'];
-
-    $stmt = $pdo->prepare("SELECT * FROM users WHERE email = ?");
-    $stmt->execute([$email]);
-    $user = $stmt->fetch(PDO::FETCH_ASSOC);
-
-    if ($user && password_verify($password, $user['password_hash'])) {
-        $_SESSION['user_id']   = $user['user_id'];
-        $_SESSION['user_name'] = $user['full_name'];
-
-        header("Location: ../index-temp.php");
-        exit;
-    } else {
-        $error = "Invalid email or password";
+$redirectAfterLogin = '';
+if (isset($_GET['redirect']) && is_string($_GET['redirect'])) {
+    $candidate = $_GET['redirect'];
+    if (str_starts_with($candidate, '/') && !str_starts_with($candidate, '//')) {
+        $redirectAfterLogin = $candidate;
     }
 }
 ?>
@@ -151,6 +143,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     <!-- LOGIN FORM -->
     <form method="POST">
+        <?php if ($redirectAfterLogin !== ''): ?>
+            <input type="hidden" name="redirect" value="<?= htmlspecialchars($redirectAfterLogin) ?>">
+        <?php endif; ?>
         <div class="input-group">
             <input type="email" name="email" placeholder="Email address" required>
         </div>

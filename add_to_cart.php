@@ -2,6 +2,8 @@
 session_start();
 require_once __DIR__ . '/config/config.php';
 
+header('Content-Type: application/json');
+
 if (!isset($_SESSION['user_id'])) {
     echo json_encode(['error' => 'User not logged in']);
     exit;

@@ -8,7 +8,7 @@ require_once __DIR__ . '/../config/config.php';
 
 // Redirect if not logged in
 if (!isset($_SESSION['user_id'])) {
-    header("Location: login");
+    header('Location: ' . rtrim(BASE_URL, '/') . '/login/?redirect=' . urlencode('/cart/'));
     exit;
 }
 

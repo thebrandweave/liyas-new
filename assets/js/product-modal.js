@@ -18,7 +18,8 @@ async function openProductModal(productId) {
     modal.show();
 
     try {
-        const response = await fetch(`../get_product_details.php?id=${productId}`);
+        const base = (typeof BASE_URL !== 'undefined' ? BASE_URL : '').replace(/\/$/, '');
+        const response = await fetch(`${base}/get_product_details.php?id=${productId}`);
         const result = await response.json();
 
         if (result.success) {
@@ -81,7 +82,8 @@ function populateModal(modal, data) {
             </div>
         `;
     } else {
-        reviewFormHtml = `<p class="mt-4">Please <a href="../login/">log in</a> to write a review.</p>`;
+        const loginHref = (typeof BASE_URL !== 'undefined' ? BASE_URL.replace(/\/$/, '') : '') + '/login/';
+        reviewFormHtml = `<p class="mt-4">Please <a href="${loginHref}">log in</a> to write a review.</p>`;
     }
 
     const modalBodyHtml = `
@@ -136,7 +138,9 @@ function populateModal(modal, data) {
                 document.dispatchEvent(new CustomEvent('addToCartFromModal', { detail: productData }));
 
             } else {
-                window.location.href = BASE_URL + '/login';
+                const base = (typeof BASE_URL !== 'undefined' ? BASE_URL : '').replace(/\/$/, '');
+                const returnTo = encodeURIComponent(window.location.pathname + window.location.search);
+                window.location.href = base + '/login/?redirect=' + returnTo;
             }
         });
     }
