@@ -1,4 +1,4 @@
-Execution Log for 2026-01-21 09:34:12
+Execution Log for 2026-05-26 12:12:56
 
 Script start (submit.php).
 Attempting to include config.php...
@@ -6,14 +6,13 @@ config.php included successfully.
 Attempting to call getCampaignDB()...
 getCampaignDB() successful. $db is an object.
 Request method is POST.
-POST data: {"campaign_id":"8","full_name":"xyz","email":"xyz@gmail.com","phone_number":"1234567890"}
+POST data: {"campaign_id":"2","full_name":"Karthik n","email":"karthikkukal015@gmail.com","phone_number":"7483125609"}
 FILES data: []
 Inside try block. Preparing to begin transaction.
 Transaction started.
 Preparing to insert into submissions table.
-Submission INSERT executed.
-New submission ID: 28
-No 'answers' found in POST data.
-No files to upload.
-Preparing to commit transaction.
-Transaction committed successfully!
+!!!!!!!!!! EXCEPTION CAUGHT !!!!!!!!!!
+Error message: SQLSTATE[23000]: Integrity constraint violation: 1062 Duplicate entry '2-karthikkukal015@gmail.com' for key 'one_entry_per_campaign'
+Error trace: #0 /home/u232955123/domains/liyasinternational.com/public_html/join/submit.php(55): PDOStatement->execute()
+#1 {main}
+Transaction rolled back due to exception.

@@ -135,7 +135,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 ?>
 
 <div class="auth-card">
-    <h2>Welcome Back 💧</h2>
+    <h2>Welcome Back </h2>
 
     <!-- ✅ SUCCESS MESSAGE AFTER SIGNUP -->
     <?php if (isset($_GET['registered'])): ?>

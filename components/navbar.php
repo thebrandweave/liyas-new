@@ -1,36 +1,25 @@
 <!-- components/navbar.php -->
 <?php
 // Get the script path and determine base path
-$script_path = $_SERVER['SCRIPT_NAME'];
-$script_dir = dirname($script_path);
-
-// Get all path segments
-$path_segments = array_filter(explode('/', $script_dir));
-
-// If we're in a subdirectory (like contact/ or about/), remove the last segment
-if (count($path_segments) > 1) {
-    array_pop($path_segments);
-}
-
-// Build base path from remaining segments
-$base_path = '/' . implode('/', $path_segments);
-if ($base_path !== '/') {
-    $base_path .= '/';
-}
+$base_path = '/'; 
 
 // Set navigation links to actual pages
-$home_link = $base_path;
-$about_link = $base_path . 'about/';
-$products_link = $base_path . 'products/';
-$contact_link = $base_path . 'contact/';
+$home_link = rtrim($base_path, '/') . '/index-temp';
+$about_link = rtrim($base_path, '/') . '/about/';
+$products_link = rtrim($base_path, '/') . '/products/';
+$contact_link = rtrim($base_path, '/') . '/contact/';
 ?>
 <nav class="navbar fixed-top liyas-navbar">
   <div class="container d-flex justify-content-between align-items-center">
+      
 
-    <!-- Logo (Left Side) -->
-    <!-- <a href="<?php echo $home_link; ?>" class="navbar-brand logo-text d-flex align-items-center">
-      <img src="<?php echo $base_path; ?>assets/images/logo/logo.png" alt="Liyas Logo" class="navbar-logo">
-    </a> -->
+     <!--Logo (Left Side) -->
+ <div>
+     <a href="<?php echo $home_link; ?>" class="navbar-brand d-flex align-items-center">
+  <img src="https://liyasinternational.com/assets/images/logo/logo.png" alt="Liyas Logo" class="navbar-logo">
+</a>
+ </div>
+
 
     <!-- Center Nav Items -->
     <ul class="navbar-nav flex-row gap-4 nav-items-placeholder d-none d-md-flex mx-auto">
@@ -41,11 +30,21 @@ $contact_link = $base_path . 'contact/';
     </ul>
 
     <!-- Cart Icon -->
-    <a href="#" id="cart-icon" class="cart-icon" title="View Cart">
+    <a href="#" id="cart-icon" class="cart-icon-1" title="View Cart">
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 3h1.386c.51 0 .955.343 1.087.835l.383 1.437M7.5 14.25a3 3 0 00-3 3h15.75m-12.75-3h11.218c.51 0 .962-.343 1.087-.835l1.823-6.423a.75.75 0 00-.67-1.03H6.088l-.523-1.974M16.5 21a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM8.25 21a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0z" />
         </svg>
     </a>
+    
+       <div><?php if (isset($_SESSION['user_id'])): ?>
+  <a href="logout.php" class="top-login-btn" title="Logout">
+    <img src="logout.png" alt="Logout" class="login-svg" style="width: 24px; height: 22px;padding:2px;"> <span style="font-size:15px;"> Logout</span>
+</a>
+<?php else: ?>
+    <a href="login.php" class="top-login-btn" title="Login">
+         <img src="user.png" alt="Logout" class="login-svg" style="width: 24px; height: 22px;padding:0px;"> <span style="font-size:15px;"> </span>
+    </a>
+<?php endif; ?></div>
 
     <!-- Hamburger Menu (Mobile) -->
     <button class="navbar-toggler d-md-none" type="button" id="mobileMenuBtn" aria-label="Toggle navigation">
@@ -54,51 +53,104 @@ $contact_link = $base_path . 'contact/';
 
   </div>
 
-  <!-- Mobile Menu Overlay -->
-  <div class="mobile-menu" id="mobileMenu">
-    <ul>
-      <li><a href="<?php echo $home_link; ?>" class="nav-link">Home</a></li>
-      <li><a href="<?php echo $about_link; ?>" class="nav-link">About</a></li>
-      <li><a href="<?php echo $products_link; ?>" class="nav-link">Products</a></li>
-      <li><a href="<?php echo $contact_link; ?>" class="nav-link">Contact</a></li>
-    </ul>
-  </div>
+<!-- Mobile Menu Overlay -->
+<div class="mobile-menu" id="mobileMenu">
+  <ul>
+    <li><a href="<?php echo $home_link; ?>" class="nav-link">Home</a></li>
+    <li><a href="<?php echo $about_link; ?>" class="nav-link">About</a></li>
+    <li><a href="<?php echo $products_link; ?>" class="nav-link">Products</a></li>
+    <li><a href="<?php echo $contact_link; ?>" class="nav-link">Contact</a></li>
+
+    <!-- Cart Icon -->
+    <li>
+      <a href="#" id="cart-icon" class="cart-icon nav-link" title="View Cart">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" style="width: 24px; height: 24px;">
+          <path stroke-linecap="round" stroke-linejoin="round" 
+            d="M2.25 3h1.386c.51 0 .955.343 1.087.835l.383 1.437M7.5 14.25a3 3 0 00-3 3h15.75m-12.75-3h11.218c.51 0 .962-.343 1.087-.835l1.823-6.423a.75.75 0 00-.67-1.03H6.088l-.523-1.974M16.5 21a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM8.25 21a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0z" />
+        </svg>
+        <span style="font-size:15px;">Cart</span>
+      </a>
+    </li>
+
+    <!-- Login / Logout -->
+    <li class="login-button">
+      <?php if (isset($_SESSION['user_id'])): ?>
+        <a href="logout.php" class="top-login-btn-1 nav-link" title="Logout">
+          <img src="logout.png" alt="Logout" style="width: 24px; height: 22px; padding:2px;">
+          <span style="font-size:15px;">Logout</span>
+        </a>
+      <?php else: ?>
+        <a href="login.php" class="top-login-btn-1 nav-link" title="Login">
+          <img src="user.png" alt="Login" style="width: 24px; height: 22px;">
+          <span style="font-size:15px;">Login</span>
+        </a>
+      <?php endif; ?>
+    </li>
+
+  </ul>
+</div>
 
   <!-- Cart Sidebar -->
-    <div id="cart-sidebar" class="cart-sidebar">
-        <div class="cart-header">
-            <button id="close-cart-btn" class="close-cart-btn">&times;</button>
-            <h4>Your Cart</h4>
-        </div>
-        <div class="cart-body">
-            <!-- Cart items will be dynamically inserted here -->
-            <p class="cart-empty-message">Your cart is empty.</p>
-        </div>
-        <div class="cart-footer">
-            <div class="cart-subtotal">
-                <span>Subtotal</span>
-                <span id="subtotal-price">₹0.00</span>
-            </div>
-            <a href="<?php echo BASE_URL; ?>/checkout.php" class="checkout-btn">Proceed to Checkout</a>
-        </div>
-    </div>
+   
 </nav>
 
 <style>
   /* ======================
       NAVBAR BASE STYLING
   ====================== */
+  body {
+  padding-top: 90px; /* adjust based on navbar height */
+}
+
+
+.cart-icon-1 {
+    color: #0f172a;
+    text-decoration: none;
+    transition: color 0.3s ease;
+    position: relative;
+    padding: 0.5rem;
+}
+
+.cart-icon-1:hover {
+    color: #4ad2e2;
+}
+
+.cart-icon-1 svg {
+    width: 24px;
+    height: 24px;
+}
+
+
+.navbar-logo {
+  height: 55px;
+  width: auto;
+  object-fit: contain;
+  position: static; /* ✅ FIX */
+}
+
+/* Ensure proper spacing */
+.liyas-navbar .container {
+  position: relative;
+   display: flex;
+  align-items: center;
+  min-height: 70px;
+}
   .liyas-navbar {
     width: 100%;
-    background: transparent;
-    padding: 2.5rem 2rem;
+    background: white;
+    padding: 0.7rem 2rem;
     z-index: 1100;
     transition: background 0.3s ease, box-shadow 0.3s ease, padding 0.3s ease;
+    top: 0;
+    left: 0;
+    position:fixed;
   }
 
   /* Navbar with background on scroll */
   .liyas-navbar.scrolled {
-    backdrop-filter: blur(10px);
+    backdrop-filter:blur(10px);
+      /*box-shadow: 0 8px 25px rgba(0, 0, 0, 0.06);*/
+    
   }
 
   /* Center Nav Links */
@@ -126,7 +178,8 @@ $contact_link = $base_path . 'contact/';
   /* Tablet adjustments */
   @media (min-width: 768px) and (max-width: 991px) {
     .liyas-navbar {
-      padding: 1.8rem 1.5rem;
+      /*padding: 1.8rem 1.5rem;*/
+      padding-inline: 1em;
     }
     .nav-items-placeholder .nav-link {
       font-size: 0.95rem;
@@ -134,6 +187,21 @@ $contact_link = $base_path . 'contact/';
     .nav-items-placeholder {
       gap: 1.5rem !important;
     }
+    .cart-icon .nav-link{
+        font-size:1.35em;
+    }
+    
+
+  }
+  
+  @media (max-width:768px)
+  {
+       .navbar-logo{
+         height:44px;
+    width: auto;
+    object-fit: contain;
+    position: static;
+ }
   }
 
 
@@ -316,6 +384,10 @@ $contact_link = $base_path . 'contact/';
     .mobile-menu ul .nav-link {
       padding: 0.625rem 1.25rem;
       font-size: 1.35rem;
+      margin: 0;
+    }
+    .mobile-menu ul .cart-icon{
+        font-weight: 600;
     }
   }
 

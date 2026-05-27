@@ -198,10 +198,7 @@ if (!empty($_POST['questions'])) {
         Image (Drag & Drop)
     </option>
 
-    <option value="video_upload"
-        <?= $q['field_type'] === 'video_upload' ? 'selected' : '' ?>>
-        Video (Drag & Drop)
-    </option>
+
 
 </select>
 

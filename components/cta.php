@@ -11,8 +11,8 @@
             Join thousands of satisfied customers who trust LIYAS for their daily hydration needs.
         </p>
         <div class="cta-buttons" data-aos="fade-up">
-            <a href="products.php" class="cta-button primary">Order Now</a>
-            <a href="about.php" class="cta-button secondary">Learn More</a>
+            <a href="../products.php" class="cta-button primary">Order Now</a>
+            <!--<a href="about.php" class="cta-button secondary">Learn More</a>-->
         </div>
     </div>
     
@@ -25,7 +25,7 @@
 
     <style>
         .cta-section {
-            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+            background: linear-gradient(135deg, #10383a 0%, #10383a 100%);
             color: var(--white);
             padding: var(--space-xxxl) 0;
             text-align: center;

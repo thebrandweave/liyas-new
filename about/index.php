@@ -15,16 +15,15 @@ $social_links = $social_links_stmt->fetchAll(PDO::FETCH_ASSOC);
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
-    <title>LIYAS Mineral Water Premium Quality Water</title>
+    <title>About Us | LIYAS Mineral Water Premium Quality Water</title>
     <meta name="description" content="LIYAS Mineral Water - Premium quality mineral water for a healthy lifestyle. Pure, refreshing, and naturally sourced.">
     <meta name="keywords" content="mineral water, premium water, healthy water, LIYAS, pure water">
     
-    <!-- Favicon -->
-    <link rel="icon" type="image/jpeg" href="<?php echo BASE_URL; ?>/assets/images/logo/logo-bg.jpg">
-    <link rel="shortcut icon" type="image/jpeg" href="<?php echo BASE_URL; ?>/assets/images/logo/logo-bg.jpg">
-    <link rel="apple-touch-icon" href="<?php echo BASE_URL; ?>/assets/images/logo/logo-bg.jpg">
-    <link rel="icon" type="image/jpeg" sizes="32x32" href="<?php echo BASE_URL; ?>/assets/images/logo/logo-bg.jpg">
-    <link rel="icon" type="image/jpeg" sizes="16x16" href="<?php echo BASE_URL; ?>/assets/images/logo/logo-bg.jpg">
+  <link rel="icon" type="image/jpeg"  sizes="16x16" href="https://liyasinternational.com/assets/images/logo/logol.png">
+    <link rel="shortcut icon" type="image/jpeg"  sizes="16x16" href="https://liyasinternational.com/assets/images/logo/logol.png">
+    <link rel="apple-touch-icon"  type="image/jpeg"  sizes="16x16" href="https://liyasinternational.com/assets/images/logo/logol.png">
+    <link rel="icon" type="image/jpeg" sizes="38x38" href="https://liyasinternational.com/assets/images/logo/logol.png">
+    <link rel="icon" type="image/jpeg" sizes="16x16" href="https://liyasinternational.com/assets/images/logo/logol.png">
     
     <link rel="stylesheet" href="<?php echo BASE_URL; ?>/assets/css/style.css">
 
@@ -105,23 +104,26 @@ $social_links = $social_links_stmt->fetchAll(PDO::FETCH_ASSOC);
 
 
         /* Logo container in the center (GSAP will manage the move, so no CSS transition) */
-        .logo-text {
-            position: fixed;
-            top: 50%;
-            left: 50%;
-            /* The initial centering (translate) is managed by GSAP.set() in JS */
-            font-size: clamp(2rem, 8vw, 4rem);
-            font-weight: 700;
-            color: rgba(74, 210, 226, 0.71);
-            z-index: 10000; /* Increased z-index to ensure visibility during splash fade */
+        /*.logo-text {*/
+        /*    position: fixed;*/
+        /*    top: 50%;*/
+        /*    left: 50%;*/
+        /*     The initial centering (translate) is managed by GSAP.set() in JS */
+        /*    font-size: clamp(2rem, 8vw, 4rem);*/
+        /*    font-weight: 700;*/
+        /*    color: rgba(74, 210, 226, 0.71);*/
+        
+            /*z-index: 10000; */
+            /*
+            Increased z-index to ensure visibility during splash fade 
             text-shadow: 2px 2px 4px rgba(0,0,0,0.1);
             pointer-events: none;
             font-family: 'Poppins', sans-serif;
-            /* REMOVED: transition: all 1s ease; */
+             REMOVED: transition: all 1s ease; 
         }
 
-        /* Final state after GSAP animation completes. This ensures responsiveness. */
-        /* Final locked position for top-left logo */
+         Final state after GSAP animation completes. This ensures responsiveness. 
+         Final locked position for top-left logo 
         .logo-text.move-top-left {
             top: 20px !important;
             left: 20px !important;
@@ -130,7 +132,7 @@ $social_links = $social_links_stmt->fetchAll(PDO::FETCH_ASSOC);
             font-size: clamp(1rem, 4vw, 1.5rem);
         }
 
-        /* Responsive Logo Image */
+         Responsive Logo Image 
         .logo-text img {
             width: clamp(60px, 15vw, 100px);
             height: clamp(60px, 15vw, 100px);
@@ -463,18 +465,16 @@ $social_links = $social_links_stmt->fetchAll(PDO::FETCH_ASSOC);
             border-color: rgba(74, 210, 226, 0.35);
         }
 
-        @media (max-width: 767px) {
-            .social-sidebar { display: none; }
-        }
+    
 
-/* Top-right Login Button - aligned with Back to Top button */
+ /*Top-right Login Button - aligned with Back to Top button */
 .top-login-btn {
   position: fixed;
-  top: 42px;
+  top: 24px;
   right: 20px;
-  width: 52px;
-  height: 52px;
-  border-radius: 50%;
+  width: 98px;
+  height: 45px;
+  border-radius: 7%;
   background: rgba(255, 255, 255, 0.95);
   color: #000000;
   display: flex;
@@ -488,10 +488,10 @@ $social_links = $social_links_stmt->fetchAll(PDO::FETCH_ASSOC);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
   cursor: pointer;
-  /* Better touch target */
+   Better touch target 
   min-width: 52px;
-  min-height: 52px;
-  /* Ensure it's always visible */
+  min-height: 45px;
+   Ensure it's always visible 
   opacity: 1;
   visibility: visible;
   pointer-events: auto;
@@ -508,7 +508,7 @@ $social_links = $social_links_stmt->fetchAll(PDO::FETCH_ASSOC);
   transform: translateY(-1px) scale(0.98);
 }
 
-/* SVG Icon inside the circle */
+ /*SVG Icon inside the circle */
 .top-login-btn .login-svg {
   width: 24px;
   height: 24px;
@@ -521,16 +521,16 @@ $social_links = $social_links_stmt->fetchAll(PDO::FETCH_ASSOC);
   stroke: rgba(74, 210, 226, 1);
 }
 
+
+    @media (max-width: 767px) {
+            .social-sidebar { display: none; }
+               .top-login-btn{
+        display: none;
+    }
+        }
 /* Tablet adjustments */
 @media (min-width: 768px) and (max-width: 991px) {
-  .top-login-btn {
-    top: 38px;
-    right: 18px;
-    width: 48px;
-    height: 48px;
-    min-width: 48px;
-    min-height: 48px;
-  }
+
   
   .top-login-btn .login-svg {
     width: 22px;
@@ -539,29 +539,36 @@ $social_links = $social_links_stmt->fetchAll(PDO::FETCH_ASSOC);
 }
 
 /* Responsive adjustments (mobile view) */
-@media screen and (max-width: 767px) {
-  .top-login-btn {
-    width: 48px !important;
-    height: 48px !important;
-    min-width: 48px !important;
-    min-height: 48px !important;
-    top: 16px !important;
-    right: 16px !important;
-    left: auto !important;
-    bottom: auto !important;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2) !important;
-    z-index: 1101 !important; /* Above navbar but below mobile menu when open */
-    background: rgba(255, 255, 255, 1) !important;
-    border: 1px solid rgba(0, 0, 0, 0.1) !important;
-    /* Ensure visibility */
-    opacity: 1 !important;
-    visibility: visible !important;
-    pointer-events: auto !important;
-    display: flex !important;
-    position: fixed !important;
-    transform: none !important;
-  }
-  
+
+/*.top-login-btn {*/
+    
+/*  position: fixed;*/
+/*  top: 42px;*/
+/*  right: 20px;*/
+/*  width: 98px;*/
+/*  height: 45px;*/
+/*  border-radius: 7%;*/
+/*  background: rgba(255, 255, 255, 0.95);*/
+/*  color: #000000;*/
+/*  display: flex;*/
+/*  align-items: center;*/
+/*  justify-content: center;*/
+/*  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);*/
+/*  border: 1px solid rgba(0, 0, 0, 0.08);*/
+/*  text-decoration: none;*/
+/*  z-index: 1100;*/
+/*  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);*/
+/*  backdrop-filter: blur(10px);*/
+/*  -webkit-backdrop-filter: blur(10px);*/
+/*  cursor: pointer;*/
+  /* Better touch target */
+/*  min-width: 52px;*/
+/*  min-height: 45px;*/
+  /* Ensure it's always visible */
+/*  opacity: 1;*/
+/*  visibility: visible;*/
+/*  pointer-events: auto;*/
+/*}*/
   .top-login-btn .login-svg {
     width: 22px !important;
     height: 22px !important;
@@ -571,28 +578,19 @@ $social_links = $social_links_stmt->fetchAll(PDO::FETCH_ASSOC);
   }
 
   /* Adjust position when navbar is scrolled */
-  .liyas-navbar.scrolled ~ .top-login-btn {
-    top: 14px !important;
-  }
+/*  .liyas-navbar.scrolled ~ .top-login-btn {*/
+/*    top: 14px !important;*/
+/*  }*/
   
   /* Ensure button is clickable */
-  .top-login-btn:active {
-    transform: scale(0.95) !important;
-  }
-}
+/*  .top-login-btn:active {*/
+/*    transform: scale(0.95) !important;*/
+/*  }*/
+/*}*/
 
 /* Extra small devices */
 @media screen and (max-width: 480px) {
-  .top-login-btn {
-    width: 46px !important;
-    height: 46px !important;
-    min-width: 46px !important;
-    min-height: 46px !important;
-    top: 14px !important;
-    right: 14px !important;
-    left: auto !important;
-    position: fixed !important;
-  }
+
   
   .top-login-btn .login-svg {
     width: 20px !important;
@@ -600,33 +598,33 @@ $social_links = $social_links_stmt->fetchAll(PDO::FETCH_ASSOC);
   }
 }
 
-@media screen and (max-width: 375px) {
-  .top-login-btn {
-    width: 44px !important;
-    height: 44px !important;
-    min-width: 44px !important;
-    min-height: 44px !important;
-    top: 12px !important;
-    right: 12px !important;
-    left: auto !important;
-    position: fixed !important;
-  }
+/*@media screen and (max-width: 375px) {*/
+/*  .top-login-btn {*/
+/*    width: 44px !important;*/
+/*    height: 44px !important;*/
+/*    min-width: 44px !important;*/
+/*    min-height: 44px !important;*/
+/*    top: 12px !important;*/
+/*    right: 12px !important;*/
+/*    left: auto !important;*/
+/*    position: fixed !important;*/
+/*  }*/
   
-  .top-login-btn .login-svg {
-    width: 18px !important;
-    height: 18px !important;
-  }
-}
+/*  .top-login-btn .login-svg {*/
+/*    width: 18px !important;*/
+/*    height: 18px !important;*/
+/*  }*/
+/*}*/
 
 /* Hide login button when mobile menu is open to avoid overlap */
-@media screen and (max-width: 767px) {
-  body.no-scroll .top-login-btn {
-    opacity: 0 !important;
-    pointer-events: none !important;
-    transform: scale(0.8) !important;
-    visibility: hidden !important;
-  }
-}
+/*@media screen and (max-width: 767px) {*/
+/*  body.no-scroll .top-login-btn {*/
+/*    opacity: 0 !important;*/
+/*    pointer-events: none !important;*/
+/*    transform: scale(0.8) !important;*/
+/*    visibility: hidden !important;*/
+/*  }*/
+/*}*/
 
 
 
@@ -636,28 +634,16 @@ $social_links = $social_links_stmt->fetchAll(PDO::FETCH_ASSOC);
 
     <div id="splash-screen" aria-hidden="true">
         <div class="splash-layer" aria-hidden="true"></div>
-        <div class="logo-text"> 
-            <div class="row">
-            <img style="width: 100px; height: 100px;" src="<?php echo BASE_URL; ?>/assets/images/logo/logo.png" alt="Liyas">
-            </div>
-        </div>
-        <div class="math-particles" aria-hidden="true" id="mathParticles"></div>
+        <!--<div class="logo-text"> -->
+        <!--    <div class="row">-->
+        <!--    <img style="width: 180px; height: 180px; margin-top:-60px;" src="<?php echo BASE_URL; ?>/assets/images/logo/logo.png" alt="Liyas">-->
+        <!--    </div>-->
+        <!--</div>-->
+        <!--<div class="math-particles" aria-hidden="true" id="mathParticles"></div>-->
     </div>
 
-<!-- Top-right Login Icon (aligned with Back to Top button) -->
-<?php if (isset($_SESSION['user_id'])): ?>
-    <a href="<?php echo BASE_URL; ?>/logout.php" class="top-login-btn" title="Logout">
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="login-svg">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3H6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 006 21h7.5a2.25 2.25 0 002.25-2.25V15m-3 0l-3 3m0 0l3 3m-3-3h12.75" />
-        </svg>
-    </a>
-<?php else: ?>
-    <a href="<?php echo BASE_URL; ?>/login.php" class="top-login-btn" title="Login">
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="login-svg">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3H6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 006 21h7.5a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9" />
-        </svg>
-    </a>
-<?php endif; ?>
+
+
 
 
 
@@ -694,82 +680,97 @@ $social_links = $social_links_stmt->fetchAll(PDO::FETCH_ASSOC);
     // Splash screen functionality
     document.addEventListener('DOMContentLoaded', function() {
         const splash = document.getElementById('splash-screen');
-        const mathParticles = document.getElementById('mathParticles');
-        const logo = document.querySelector('.logo-text'); 
+        // const mathParticles = document.getElementById('mathParticles');
+        // const logo = document.querySelector('.logo-text'); 
 
-        // 1. GSAP Initialization: Set the initial state for the logo (Centered)
-        // This ensures GSAP knows the starting point, applying the CSS transform.
-        gsap.set(logo, { x: '-50%', y: '-50%' });
+        // // 1. GSAP Initialization: Set the initial state for the logo (Centered)
+        // // This ensures GSAP knows the starting point, applying the CSS transform.
+        // gsap.set(logo, { x: '-50%', y: '-50%' });
 
-        createMathParticles();
+        // createMathParticles();
 
-        function createMathParticles() {
-            const particleCount = 24;
-            for (let i = 0; i < particleCount; i++) {
-                const particle = document.createElement('div');
-                particle.className = 'math-particle';
-                const x = Math.random() * 100;
-                const y = Math.random() * 100;
-                const delay = Math.random() * 2;
-                const xOffset = Math.random() * 200 - 100;
-                const zOffset = Math.random() * 300;
-                particle.style.left = `${x}%`;
-                particle.style.top = `${y}%`;
-                particle.style.animationDelay = `${delay}s`;
-                particle.style.setProperty('--x-offset', `${xOffset}px`);
-                particle.style.setProperty('--z-offset', `${zOffset}px`);
-                mathParticles.appendChild(particle);
-            }
-        }
+        // function createMathParticles() {
+        //     const particleCount = 24;
+        //     for (let i = 0; i < particleCount; i++) {
+        //         const particle = document.createElement('div');
+        //         particle.className = 'math-particle';
+        //         const x = Math.random() * 100;
+        //         const y = Math.random() * 100;
+        //         const delay = Math.random() * 2;
+        //         const xOffset = Math.random() * 200 - 100;
+        //         const zOffset = Math.random() * 300;
+        //         particle.style.left = `${x}%`;
+        //         particle.style.top = `${y}%`;
+        //         particle.style.animationDelay = `${delay}s`;
+        //         particle.style.setProperty('--x-offset', `${xOffset}px`);
+        //         particle.style.setProperty('--z-offset', `${zOffset}px`);
+        //         mathParticles.appendChild(particle);
+        //     }
+        // }
 
         document.body.style.overflow = 'hidden';
         const layer = document.querySelector('.splash-layer');
         const fallbackTimeout = setTimeout(finishSplash, 500); 
         layer.addEventListener('animationend', finishSplash);
-
+        
+        
 function finishSplash() {
     clearTimeout(fallbackTimeout);
     layer.removeEventListener('animationend', finishSplash);
 
-    // Time after the circle animation ends (2.8s total duration for circleDropExpand)
-    const delayBeforeLogoMove = 0.5; // Start moving 0.5s after the main splash circle effect
+    if (!splash) return;
 
-    // Ensure the logo is outside the splash so it won't be hidden when splash disappears
-    if (splash.contains(logo)) {
-        document.body.appendChild(logo);
-    }
+    splash.classList.add('splash-fadeout');
 
-    // Animate logo to top-left corner with responsive positioning
-    const isMobile = window.innerWidth <= 767;
-    const isSmallMobile = window.innerWidth <= 375;
-    
-    const logoTop = isSmallMobile ? 12 : (isMobile ? 14 : 20);
-    const logoLeft = isSmallMobile ? 12 : (isMobile ? 14 : 20);
-    
-    gsap.to(logo, {
-        duration: 1.2,
-        delay: delayBeforeLogoMove,
-        top: logoTop,       // Responsive distance from top
-        left: logoLeft,    // Responsive distance from left
-        x: 0,               // Reset transforms
-        y: 0,
-        scale: isMobile ? 0.75 : 0.85,  // Smaller scale on mobile
-        ease: "power2.inOut",
-        onStart: () => {
-            // Fade out splash concurrently
-            splash.classList.add('splash-fadeout');
-            setTimeout(() => {
-                splash.style.display = 'none';
-                document.body.style.overflow = '';
-            }, 850);
-        },
-        onComplete: () => {
-            // Lock final responsive position
-            logo.classList.add('move-top-left');
-            gsap.set(logo, { clearProps: "left, top, x, y, scale" });
-        }
-    });
+    setTimeout(() => {
+        splash.style.display = 'none';
+        document.body.style.overflow = '';
+    }, 800);
 }
+
+// function finishSplash() {
+//     clearTimeout(fallbackTimeout);
+//     layer.removeEventListener('animationend', finishSplash);
+
+//     // Time after the circle animation ends (2.8s total duration for circleDropExpand)
+//     const delayBeforeLogoMove = 0.5; // Start moving 0.5s after the main splash circle effect
+
+//     // Ensure the logo is outside the splash so it won't be hidden when splash disappears
+//     if (splash.contains(logo)) {
+//         document.body.appendChild(logo);
+//     }
+
+//     // Animate logo to top-left corner with responsive positioning
+//     const isMobile = window.innerWidth <= 767;
+//     const isSmallMobile = window.innerWidth <= 375;
+    
+//     const logoTop = isSmallMobile ? 12 : (isMobile ? 14 : 20);
+//     const logoLeft = isSmallMobile ? 12 : (isMobile ? 14 : 20);
+    
+//     gsap.to(logo, {
+//         duration: 1.2,
+//         delay: delayBeforeLogoMove,
+//         top: logoTop,       // Responsive distance from top
+//         left: logoLeft,    // Responsive distance from left
+//         x: 0,               // Reset transforms
+//         y: 0,
+//         scale: isMobile ? 0.75 : 0.85,  // Smaller scale on mobile
+//         ease: "power2.inOut",
+//         onStart: () => {
+//             // Fade out splash concurrently
+//             splash.classList.add('splash-fadeout');
+//             setTimeout(() => {
+//                 splash.style.display = 'none';
+//                 document.body.style.overflow = '';
+//             }, 850);
+//         },
+//         onComplete: () => {
+//             // Lock final responsive position
+//             logo.classList.add('move-top-left');
+//             gsap.set(logo, { clearProps: "left, top, x, y, scale" });
+//         }
+//     });
+// }
 
 
     });

@@ -465,10 +465,8 @@ img {
 }
 
 #backToTop:hover {
-    transform: scale(1.1);
-    color: var(--primary);
-    background-color: var(--white);
-    box-shadow: 0 4px 20px rgba(74, 210, 226, 0.3);
+    transform: translateY(-5px);
+    background-color: #059669;
 }
 
 @media (min-width: 768px) {
@@ -483,16 +481,35 @@ img {
 
         /* Hero Section */
 
-        .hero {
-            min-height: 100vh;
-            background: linear-gradient(135deg, rgba(74, 210, 226, 0.05) 0%, rgba(240, 249, 255, 0.8) 100%),
-                        url('https://images.unsplash.com/photo-1559827260-dc66d52bef19?w=1600&q=80') center/cover;
-            display: flex;
-            align-items: center;
-            position: relative;
-            overflow: hidden;
-        }
+  .hero {
+    min-height: 100vh;
+    /* Removed the linear-gradient overlay */
+    background: url('../images/bg1.jpeg') center/cover no-repeat;
+    
+    /* Keeps the image fixed for a parallax effect */
+    background-attachment: fixed;
+    
+    display: flex;
+    align-items: center;
+    position: relative;
+    overflow: hidden;
+    
+    /* Ensures white text is readable against the dark image background */
+    color: #ffffff;
+}
 
+/* Optional: Add a glow effect to the background to mimic the second image's lighting */
+.hero::before {
+    content: '';
+    position: absolute;
+    top: -10%;
+    right: -10%;
+    width: 50%;
+    height: 60%;
+    /* background: radial-gradient(circle, rgba(74, 210, 226, 0.15) 0%, transparent 70%); */
+    z-index: 1;
+    pointer-events: none;
+}
         .hero::before {
             content: '';
             position: absolute;
@@ -500,7 +517,7 @@ img {
             left: 0;
             right: 0;
             bottom: 0;
-            background: linear-gradient(135deg, rgba(240, 249, 255, 0.95) 0%, rgba(255, 255, 255, 0.85) 100%);
+            /* background: linear-gradient(135deg, rgba(240, 249, 255, 0.95) 0%, rgba(255, 255, 255, 0.85) 100%); */
         }
 
         .hero .container {
@@ -570,6 +587,7 @@ img {
                 bottom: 0;
                 left: 0;
                 z-index: 1;
+                top: 65vh;
             }
             
 /* ===========================================
@@ -799,7 +817,7 @@ img {
             height: auto;
             max-height: 650px;
             object-fit: contain;
-            margin: 0% 0% -12% 60%;
+                   margin: -34% 0% -12% 26%;
             transform: scale(1.15);
         }
 
@@ -819,7 +837,7 @@ img {
    =========================================== */
 .hero {
     min-height: 100vh;
-    background: linear-gradient(135deg, rgba(74, 210, 226, 0.03) 0%, rgba(240, 249, 255, 0.5) 50%, rgba(255, 255, 255, 0.9) 100%);
+    /* background: linear-gradient(135deg, rgba(74, 210, 226, 0.03) 0%, rgba(240, 249, 255, 0.5) 50%, rgba(255, 255, 255, 0.9) 100%); */
     display: flex;
     align-items: center;
     position: relative;
@@ -834,7 +852,7 @@ img {
     left: 0;
     right: 0;
     bottom: 0;
-    background: linear-gradient(135deg, rgba(255, 255, 255, 0.7) 0%, rgba(240, 249, 255, 0.4) 50%, rgba(255, 255, 255, 0.9) 100%);
+    /* background: linear-gradient(135deg, rgba(183, 57, 15, 0) 0%, rgba(240, 249, 255, 0.4) 50%, rgba(255, 255, 255, 0.9) 100%); */
     z-index: 1;
 }
 
@@ -862,12 +880,14 @@ img {
 }
 
 .hero-image img {
-    max-width: 100%;
+    max-width: 610px;
     height: auto;
     max-height: 1000px !important;
     width: auto;
     object-fit: contain;
     transform: scale(1.1);
+    rotate: -4deg;
+    /*bottom:99px;*/
 }
 
 /* Hero Bottle Container */
@@ -927,9 +947,11 @@ img {
     line-height: 1.1;
     font-weight: 800;
 }
-
 .hero h1 span.text-primary {
-    color: #4ad2e2 !important;
+    color: #266c74; /* fallback */
+    background: linear-gradient(to right, #1c8299, #6fd7e3);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
 }
 
 .hero p {
@@ -993,7 +1015,7 @@ img {
     gap: var(--space-xs);
     padding: var(--space-sm) var(--space-lg);
     background: transparent;
-    color: var(--dark);
+    color: white;
     text-decoration: none;
     border: 2px solid #e2e8f0;
     border-radius: 50px;
@@ -1135,8 +1157,8 @@ img {
     }
     
     .hero-image img {
-        max-height: 650px;
-        margin: 0% 0% -12% 60%;
+        max-height: 600px;
+        margin: -34% 0% -12% 26%;
         transform: scale(1.15);
     }
 }
@@ -2203,7 +2225,7 @@ img {
    =========================================== */
 .cta-section {
     padding: var(--space-xxxl) 0;
-    background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+    background: linear-gradient(135deg, #10383a 0%, #10383a 100%);
     position: relative;
     overflow: hidden;
 }
@@ -3676,7 +3698,7 @@ footer::before {
             }
 
             .hero-image img {
-                max-height: 500px;
+                max-height: 5px;
             }
 
             .about-container {
@@ -3989,6 +4011,9 @@ footer::before {
 
             .quantity-selector {
                 align-self: center;
+            }
+            .h{
+                max-height: 530px;
             }
 
             .btn-primary, .btn-secondary {
@@ -4450,4 +4475,9 @@ footer::before {
                 background: none !important;
                 color: #000 !important;
             }
+        }
+
+
+        .wave-svg{
+            top: 65vh;
         }

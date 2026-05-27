@@ -39,7 +39,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_product'])) {
     $name = trim($_POST['name']);
     $price = trim($_POST['price']);
     $category_id = $_POST['category_id'];
-    $image_name = $product['image'];
+    $image_name = $product['image']; 
+    $litre = (int)($_POST['litre'] ?? 0);
 
     if (!is_dir($upload_dir)) mkdir($upload_dir, 0777, true);
 
@@ -61,8 +62,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_product'])) {
         }
     }
 
-    $stmt = $pdo->prepare("UPDATE products SET name=?, price=?, category_id=?, image=?, description=?, discount=?, stock=?, status=? WHERE product_id=?");
-    $stmt->execute([$name, $price, $category_id, $image_name, $_POST['description'], $_POST['discount'], $_POST['stock'], $_POST['status'], $product_id]);
+    $stmt = $pdo->prepare("UPDATE products SET name=?, price=?, category_id=?, image=?, description=?, discount=?, stock=?, status=?,litre=? WHERE product_id=?");
+    $stmt->execute([$name, $price, $category_id, $image_name, $_POST['description'], $_POST['discount'], $_POST['stock'], $_POST['status'],$litre, $product_id]);
 
     $pdo->prepare("DELETE FROM product_attributes WHERE product_id = ?")->execute([$product_id]);
     if (!empty($_POST['attr_keys'])) {
@@ -187,6 +188,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_product'])) {
                             <div class="form-group"><label>Price (₹)</label><input type="number" step="0.01" name="price" class="form-input" value="<?= $product['price'] ?>"></div>
                             <div class="form-group"><label>Discount (%)</label><input type="number" step="0.01" name="discount" class="form-input" value="<?= $product['discount'] ?>"></div>
                             <div class="form-group"><label>Stock</label><input type="number" name="stock" class="form-input" value="<?= $product['stock'] ?>"></div>
+                            <div class="form-group"><label>Volume (Litres)</label><input type="number" name="litre" class="form-input" value="<?= $product['litre'] ?>"></div>
+
                         </div>
 
                         <div class="form-actions" style="margin-top:2rem">

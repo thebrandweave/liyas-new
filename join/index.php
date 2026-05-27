@@ -1,5 +1,9 @@
 <?php
+session_start();
 require_once __DIR__ . '/../config/config.php';
+
+// Check if user is logged in
+$isLoggedIn = isset($_SESSION['user_id']);
 
 $db = getCampaignDB();
 $today = date('Y-m-d');
@@ -31,8 +35,10 @@ $questions = $q->fetchAll(PDO::FETCH_ASSOC);
 
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800;900&display=swap" rel="stylesheet">
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@200;300;400&display=swap" rel="stylesheet">
+<link href='https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css' rel='stylesheet'>
 
 <style>
+/* Keeping your original CSS exactly as it was */
 :root{
     --aqua-1:#ecfbff;
     --aqua-2:#d7f3ff;
@@ -55,7 +61,7 @@ body{
 /* ================= LEFT ================= */
 .left{
     flex:1;
-    padding:80px;
+    padding:34px;
     background:
         radial-gradient(circle at 20% 10%, rgba(255,255,255,.45), transparent 40%),
         linear-gradient(180deg,var(--aqua-3),var(--aqua-4));
@@ -92,7 +98,6 @@ body{
     filter:brightness(0);z-index:3
 }
 
-/* ===== CAMPAIGN TITLE (THIN REVEAL) ===== */
 .left-header{
     text-align:center;
     margin-top:40px;
@@ -100,23 +105,14 @@ body{
     position:relative;
 }
 
-.campaign-title{
-    /* margin-bottom:22px; */
-}
-
 .campaign-title span{
     font-family:'Outfit',sans-serif;
     font-size:3.1rem;
-    font-weight:600; /* Reverted to original */
+    font-weight:600;
     letter-spacing:1.6px;
     color:var(--navy);
     display:inline-block;
-
-    background:linear-gradient(
-        90deg,
-        var(--navy) 50%,
-        rgba(11,31,59,0) 50%
-    );
+    background:linear-gradient(90deg, var(--navy) 50%, rgba(11,31,59,0) 50%);
     background-size:200% 100%;
     background-position:100% 0;
     -webkit-background-clip:text;
@@ -124,50 +120,39 @@ body{
     animation:strokeReveal 2.3s ease forwards;
 }
 
-@keyframes strokeReveal{
-    to{background-position:0% 0}
-}
+@keyframes strokeReveal{ to{background-position:0% 0} }
 
 .left-header p{
     max-width:420px;
     margin:0 auto;
-    opacity:.85; /* Reverted to original */
+    opacity:.85;
     color:var(--navy);
     font-weight:300;
 }
 
-/* PRODUCT */
 .product{
     margin:46px auto 0;
     width:238vh;
-    /* background:rgba(255,255,255,.6); */
-    padding:10px; /* Adjusted for thinner appearance */
+    padding:10px;
     border-radius:18px;
     text-align:left;
     backdrop-filter:blur(12px);
-    /* box-shadow:0 30px 60px rgba(0,60,120,.25); */
     position:relative;
     z-index:3;
-
-
 }
 .product img{width:100%; border-radius:18px;}
 
-/* Slogan below product image */
 .product-slogan {
     text-align: left;
-    /* margin-top: 20px; */
     font-size: 18px;
     font-weight: 500;
-    color: #253a41; /* Using accent color for prominence */
+    color: #253a41;
     text-shadow: 0 0 8px rgba(31, 182, 233, 0.3);
     z-index: 3;
     position: relative;
-     line-height: 1.6em;
+    line-height: 1.6em;
 }
 
-
-/* WAVES */
 .waves{
     position:absolute;bottom:0;left:0;width:100%;height:200px;z-index:2
 }
@@ -178,7 +163,6 @@ body{
 .parallax>use:nth-child(4){animation-delay:-5s;animation-duration:20s}
 @keyframes move-forever{from{transform:translateX(-90px)}to{transform:translateX(85px)}}
 
-/* ================= RIGHT ================= */
 .right{
     flex:1;padding:80px;
     display:flex;align-items:center;justify-content:center;
@@ -193,13 +177,12 @@ body{
     background:rgba(255,255,255,.65);
     backdrop-filter:blur(18px);
     border-radius:26px;
-    padding:60px 55px;
+    padding:24px 55px;
     box-shadow:0 30px 70px rgba(0,80,120,.18);
 }
 
-.step{font-size:.75rem;letter-spacing:3px;color:var(--accent);font-weight:700;margin-bottom:14px}
-.form h2{font-size:3.1rem;color:var(--navy);margin-bottom:42px}
-.form h2 span{color:var(--accent)}
+.step{font-size:1.1rem;letter-spacing:3px;color:var(--accent);font-weight:700;margin-bottom:14px}
+.form h2{font-size:2.1rem;color:var(--navy);margin-bottom:42px}
 
 .input{margin-bottom:48px}
 .input input{
@@ -223,11 +206,6 @@ body{
 .step-card.active{display:block;animation:fade .6s ease}
 @keyframes fade{from{opacity:0;transform:translateY(12px)}to{opacity:1}}
 
-@media(max-width:1024px){
-    .container{flex-direction:column}
-    .left,.right{padding:40px}
-    .campaign-title span{font-size:2.3rem}
-}
 .upload-box {
     border: 2px dashed var(--aqua-4);
     background: rgba(236, 251, 255, 0.5);
@@ -240,74 +218,123 @@ body{
     overflow: hidden;
 }
 
-.upload-box:hover {
-    border-color: var(--accent);
-    background: var(--aqua-2);
+.join{ width: 100%; display: flex; align-items: center; justify-content: center; }
+
+/* NEW: Login Overlay styles to blend with your theme */
+.login-lockout {
+    position: fixed; inset: 0; background: rgba(11, 31, 59, 0.6);
+    backdrop-filter: blur(15px); z-index: 99999;
+    display: flex; align-items: center; justify-content: center; padding: 20px;
+}
+.login-box {
+    background: white; padding: 40px; border-radius: 26px; text-align: center;
+    max-width: 400px; box-shadow: 0 20px 50px rgba(0,0,0,0.3);
 }
 
-.left-flex{
-    display:flex;
-    gap:13px;
-    align-items:center;
-    justofy-content:center;
-}
-
-.preview-container img, .preview-container video {
-    max-height: 250px;
-    box-shadow: 0 10px 20px rgba(0,0,0,0.1);
-}
-
-.change-file {
-    margin-top: 10px;
-    font-size: 0.8rem;
-    color: var(--accent);
-    font-weight: 600;
-}
-
-.upload-box.dragover {
-    background: var(--aqua-3);
-    border-color: var(--navy);
+@media(max-width:1024px){
+    .container{flex-direction:column}
+    .left,.right{padding:40px}
+    .campaign-title span{font-size:2.3rem}
 }
 </style>
 </head>
+<body>
+
+<?php if (!$isLoggedIn): ?>
+<div class="login-lockout">
+    <div class="login-box">
+        <i class='bx bxs-lock-alt' style="font-size:4rem; color:var(--accent); margin-bottom:20px;"></i>
+        <h2 style="color:var(--navy); margin-bottom:15px;">Sign Up Required</h2>
+        <p style="color:var(--text-muted); margin-bottom:30px;">To participate in this campaign, please sign in to your account first.</p>
+        <a href="../signup1/index.php" class="btn" style="text-decoration:none; display:block;">Sign Up Now</a>
+    </div>
+</div>
+<?php endif; ?>
+
 <?php if (isset($_GET['success'])): ?>
 <div style="position:fixed; top:20px; right:20px; background:#10b981; color:white; padding:20px; border-radius:12px; z-index:9999; box-shadow:0 10px 30px rgba(0,0,0,0.2);">
     <strong>Success!</strong> Your entry has been submitted.
 </div>
-<script>setTimeout(() => { window.location.href='index.php'; }, 4000);</script>
+<script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+    confetti({ particleCount: 200, spread: 120, origin: { y: 0.6 } });
+    setTimeout(() => { window.location.href = "index.php"; }, 4000);
+});
+</script>
 <?php endif; ?>
-<body>
 
 <div class="container">
-
-<!-- LEFT -->
 <div class="left">
     <div class="bubble-layer"><span></span><span></span><span></span><span></span><span></span></div>
-
     <img src="../assets/images/logo/logo.png" class="logo">
 
-    <div class="left-header">
-        <h1 class="campaign-title">
-            <span><?= htmlspecialchars($campaign['title']) ?></span>
-        </h1>
-       
-    </div>
-<div class="left-flex">
-    
-    <?php if($campaign['file_path']): ?>
-    <div class="product">
-        <img src="../<?= htmlspecialchars($campaign['file_path']) ?>">
-    </div>
-    <!-- <p class="product-slogan">Hydration that Wins!</p> -->
-    <p class="product-slogan"><?= htmlspecialchars($campaign['description']) ?></p>
-</div>
-   
-    
-    <?php endif; ?>
+   <div class="join">
+     <div class="form">
+        <form method="POST" action="submit.php" enctype="multipart/form-data">
+        <input type="hidden" name="campaign_id" value="<?= $campaign['id'] ?>">
+
+        <div class="step-card active">
+            <div class="step">STEP-01</div>
+            <h2>May we have your<br><span>full name?</span></h2>
+            <div class="input"><input type="text" name="full_name" required placeholder="Your Full Name"></div>
+        </div>
+
+        <div class="step-card">
+            <div class="step">STEP-02</div>
+            <h2>How can we<br><span>contact you?</span></h2>
+            <div class="input">
+                <input type="email" name="email" required placeholder="Your Email Address">
+                <input type="tel" name="phone_number" required placeholder="Your Phone Number">
+            </div>
+        </div>
+
+        <?php foreach($questions as $i => $q): ?>
+        <div class="step-card">
+            <div class="step">STEP-<?= str_pad($i+3, 2, '0', STR_PAD_LEFT) ?></div>
+            <h2><?= htmlspecialchars($q['question_label']) ?></h2>
+            <div class="input">
+            <?php $type = $q['field_type']; ?>
+
+            <?php if ($type === 'text' || $type === 'number'): ?>
+                <input type="<?= $type ?>" name="answers[<?= $q['id'] ?>]" <?= $q['is_required'] ? 'required' : '' ?> placeholder="Your answer here...">
+
+            <?php elseif ($type === 'dropdown'): ?>
+                <select name="answers[<?= $q['id'] ?>]" <?= $q['is_required'] ? 'required' : '' ?> style="width:100%; border:none; border-bottom:2px solid #ddd; padding:15px 0;">
+                    <option value="">Select an option</option>
+                    <option value="Yes">Yes</option>
+                    <option value="No">No</option>
+                </select>
+
+            <?php elseif ($type === 'image_upload' || $type === 'video_upload'): ?>
+                <div class="upload-box" id="drop-zone-<?= $q['id'] ?>" onclick="document.getElementById('file-<?= $q['id'] ?>').click()">
+                    <div class="upload-content" id="content-<?= $q['id'] ?>">
+                        <i class='bx bx-cloud-upload' style="font-size:3.5rem;color:var(--accent);display:block;margin-bottom:10px;"></i>
+                        <p>Drag & Drop or <strong>Browse</strong></p>
+                    </div>
+                    <div class="preview-container" id="preview-<?= $q['id'] ?>" style="display:none;text-align:center;">
+                        <img id="img-prev-<?= $q['id'] ?>" style="display:none;max-height:250px;border-radius:12px;">
+                        <video id="vid-prev-<?= $q['id'] ?>" controls style="display:none;max-height:250px;border-radius:12px;"></video>
+                        <p class="change-file" style="color:var(--accent); font-size:0.8rem; font-weight:600; margin-top:10px;">Click to change file</p>
+                    </div>
+                    <input type="file" name="media[<?= $q['id'] ?>]" id="file-<?= $q['id'] ?>" accept="<?= $type === 'video_upload' ? 'video/*' : 'image/*' ?>" onchange="handlePreview(this,'<?= $q['id'] ?>')" <?= $q['is_required'] ? 'required' : '' ?> hidden>
+                </div>
+            <?php endif; ?>
+            </div>
+        </div>
+        <?php endforeach; ?>
+
+        <div class="actions">
+            <button type="button" class="btn" id="nextBtn" onclick="move(1)">Continue</button>
+            <button type="submit" class="btn" id="submitBtn" style="display:none">Submit</button>
+            <button type="button" class="back" id="prevBtn" onclick="move(-1)" style="visibility:hidden">Back</button>
+        </div>
+        </form>
+      </div>
+   </div>
 
     <svg class="waves" viewBox="0 24 150 28" preserveAspectRatio="none">
-        <defs><path id="gentle-wave"
-        d="M-160 44c30 0 58-18 88-18s58 18 88 18 58-18 88-18 58 18 88 18v44h-352z"/></defs>
+        <defs><path id="gentle-wave" d="M-160 44c30 0 58-18 88-18s58 18 88 18 58-18 88-18 58 18 88 18v44h-352z"/></defs>
         <g class="parallax">
             <use href="#gentle-wave" x="48" y="0" fill="rgba(255,255,255,.4)" />
             <use href="#gentle-wave" x="48" y="3" fill="rgba(255,255,255,.3)" />
@@ -316,112 +343,6 @@ body{
         </g>
     </svg>
 </div>
-
-<!-- RIGHT -->
-<div class="right">
-<div class="form">
-<form method="POST" action="submit.php" enctype="multipart/form-data">
-<input type="hidden" name="campaign_id" value="<?= $campaign['id'] ?>">
-
-<div class="step-card active">
-    <div class="step">STEP 01</div>
-    <h2>May we have your<br><span>full name?</span></h2>
-    <div class="input"><input type="text" name="full_name" required placeholder="Your Full Name"></div>
-</div>
-
-<div class="step-card">
-    <div class="step">STEP 02</div>
-    <h2>How can we<br><span>contact you?</span></h2>
-    <div class="input">
-        <input type="email" name="email" required placeholder="Your Email Address">
-        <input type="tel" name="phone_number" required placeholder="Your Phone Number">
-    </div>
-</div>
-<link href='https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css' rel='stylesheet'>
-
-<?php foreach($questions as $i => $q): ?>
-<div class="step-card">
-    <div class="step">STEP <?= str_pad($i+3, 2, '0', STR_PAD_LEFT) ?></div>
-    <h2><?= htmlspecialchars($q['question_label']) ?></h2>
-    
-    <div class="input">
-    <?php
-$type = $q['field_type'];
-?>
-
-<?php if ($type === 'text' || $type === 'number'): ?>
-
-    <input
-        type="<?= $type ?>"
-        name="answers[<?= $q['id'] ?>]"
-        <?= $q['is_required'] ? 'required' : '' ?>
-        placeholder="Your answer here..."
-        style="width:100%; border:none; border-bottom:2px solid #ddd; padding:15px 0;"
-    >
-
-<?php elseif ($type === 'dropdown'): ?>
-
-    <select
-        name="answers[<?= $q['id'] ?>]"
-        <?= $q['is_required'] ? 'required' : '' ?>
-        style="width:100%; border:none; border-bottom:2px solid #ddd; padding:15px 0;"
-    >
-        <option value="">Select an option</option>
-        <option value="Yes">Yes</option>
-        <option value="No">No</option>
-    </select>
-
-<?php elseif ($type === 'image_upload' || $type === 'video_upload'): ?>
-
-    <div class="upload-box"
-         id="drop-zone-<?= $q['id'] ?>"
-         onclick="document.getElementById('file-<?= $q['id'] ?>').click()">
-
-        <div class="upload-content" id="content-<?= $q['id'] ?>">
-            <i class='bx bx-cloud-upload'
-               style="font-size:3.5rem;color:var(--accent);display:block;margin-bottom:10px;"></i>
-            <p>Drag & Drop or <strong>Browse</strong></p>
-            <small style="color:var(--text-muted);">
-                Accepted: <?= $type === 'video_upload' ? 'Video' : 'Image' ?>
-            </small>
-        </div>
-
-        <div class="preview-container"
-             id="preview-<?= $q['id'] ?>"
-             style="display:none;text-align:center;">
-            <img id="img-prev-<?= $q['id'] ?>" style="display:none;max-height:250px;border-radius:12px;">
-            <video id="vid-prev-<?= $q['id'] ?>" controls style="display:none;max-height:250px;border-radius:12px;"></video>
-            <p class="change-file">Click to change file</p>
-        </div>
-
-        <input
-            type="file"
-            name="media[<?= $q['id'] ?>]"
-            id="file-<?= $q['id'] ?>"
-            accept="<?= $type === 'video_upload' ? 'video/*' : 'image/*' ?>"
-            onchange="handlePreview(this,'<?= $q['id'] ?>')"
-            <?= $q['is_required'] ? 'required' : '' ?>
-            hidden
-        >
-    </div>
-
-<?php endif; ?>
-
-
-    </div>
-</div>
-
-
-<?php endforeach; ?>
-<div class="actions">
-    <button type="button" class="btn" id="nextBtn" onclick="move(1)">Continue</button>
-    <button type="submit" class="btn" id="submitBtn" style="display:none">Submit</button>
-    <button type="button" class="back" id="prevBtn" onclick="move(-1)" style="visibility:hidden">Back</button>
-</div>
-</form>
-</div>
-</div>
-
 </div>
 
 <script>
@@ -446,7 +367,7 @@ function move(n){
     update();
 }
 update();
-//draganddrop
+
 function handlePreview(input, qId) {
     const content = document.getElementById('content-' + qId);
     const preview = document.getElementById('preview-' + qId);
@@ -456,39 +377,18 @@ function handlePreview(input, qId) {
     if (input.files && input.files[0]) {
         const file = input.files[0];
         const reader = new FileReader();
-
         reader.onload = function(e) {
             content.style.display = 'none';
             preview.style.display = 'block';
-
             if (file.type.startsWith('image/')) {
-                imgPrev.src = e.target.result;
-                imgPrev.style.display = 'block';
-                vidPrev.style.display = 'none';
-            } else if (file.type.startsWith('video/')) {
-                vidPrev.src = e.target.result;
-                vidPrev.style.display = 'block';
-                imgPrev.style.display = 'none';
+                imgPrev.src = e.target.result; imgPrev.style.display = 'block'; vidPrev.style.display = 'none';
+            } else {
+                vidPrev.src = e.target.result; vidPrev.style.display = 'block'; imgPrev.style.display = 'none';
             }
         }
         reader.readAsDataURL(file);
     }
 }
-
-// Drag and Drop support
-document.querySelectorAll('.upload-box').forEach(box => {
-    box.addEventListener('dragover', (e) => { e.preventDefault(); box.classList.add('dragover'); });
-    box.addEventListener('dragleave', () => { box.classList.remove('dragover'); });
-    box.addEventListener('drop', (e) => {
-        e.preventDefault();
-        box.classList.remove('dragover');
-        const qId = box.id.replace('drop-zone-', '');
-        const input = document.getElementById('file-' + qId);
-        input.files = e.dataTransfer.files;
-        handlePreview(input, qId);
-    });
-});
 </script>
-
 </body>
 </html>

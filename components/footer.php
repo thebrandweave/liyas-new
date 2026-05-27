@@ -45,9 +45,16 @@ $social_links = $social_links_stmt->fetchAll(PDO::FETCH_ASSOC);
         </div>
       </div>
 
-      <div class="footer-bottom">
+   
+      
+    <div class="footer-grid">
+          <div class="footer-bottom">
         <p>&copy; 2025 Liyas Mineral Water. All rights reserved.</p>
       </div>
+      <div class="footer-bottom terms">
+      <a href="terms.php" >Terms & Privacy Policy</a>
+      </div>
+    </div>
     </div>
   </footer>
 
@@ -82,6 +89,18 @@ $social_links = $social_links_stmt->fetchAll(PDO::FETCH_ASSOC);
   </div>
 
   <style>
+  .terms a{
+          text-decoration: none;
+          color: #555;
+          font-size: 13px;
+          transition: transform 0.3s ease;;
+  }
+  
+  .terms a:hover{
+      color: #559;
+
+  }
+
   /* ===== FOOTER STRUCTURE ===== */
   footer {
     position: relative;
@@ -114,6 +133,7 @@ $social_links = $social_links_stmt->fetchAll(PDO::FETCH_ASSOC);
   .footer-bottom {
     position: relative;
     z-index: 3;
+   
   }
 
   /* ===== FOOTER CONTENT ===== */
@@ -213,6 +233,7 @@ $social_links = $social_links_stmt->fetchAll(PDO::FETCH_ASSOC);
     margin-top: 30px;
     font-size: 14px;
     color: #555;
+    text-decoration: none;
     text-align: center;
   }
 
@@ -237,7 +258,7 @@ $social_links = $social_links_stmt->fetchAll(PDO::FETCH_ASSOC);
   z-index: 1;
 
   /* ✅ Full-width footer background, not global */
-  background: url('<?php echo $asset_base; ?>assets/images/bg1.jpg')
+  background: url('<?php echo $asset_base; ?>../assets/images/bg1.jpg')
               bottom center no-repeat;
   background-size: cover;       /* fills width responsively */
   background-attachment: scroll; /* stays in footer, not global fixed */

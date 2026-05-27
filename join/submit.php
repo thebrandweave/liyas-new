@@ -145,6 +145,7 @@ try {
         write_log("Transaction rolled back due to exception.");
     }
     // Die to show a generic error to the user
-    die("A server error occurred. Please try again later. Check the debug_submit_log.txt for details.");
+header("Location: https://liyasinternational.com/index-temp");
+    exit();
 }
 

@@ -1,5 +1,6 @@
+
 <?php
-// Define ROOT_PATH at the very beginning to ensure it's always available
+
 define('ROOT_PATH', dirname(__DIR__)); 
 
 // ✅ Manual Firebase JWT include
@@ -18,24 +19,41 @@ use Firebase\JWT\Key;
 // ============================================
 
 // Toggle this variable to switch environments
-$is_live = true; 
+$is_live = false;
 
 if ($is_live) {
+    // -------------------
     // LIVE PRODUCTION
+    // -------------------
     define('DB_HOST', 'localhost');
     define('DB_PORT', 3306);
-    define('DB_USER', 'u232955123_liyas');
-    define('DB_PASS', 'Brandweave@24');
+
+    // Main Database Credentials
+    define('DB_USER_MAIN', 'u232955123_liyas');
+    define('DB_PASS_MAIN', 'Brandweave@24');
     define('DB_NAME_MAIN', 'u232955123_liyas_inter');
-    define('DB_NAME_CAMPAIGN', 'u232955123_liyas_campaign'); // Adjust to your live campaign DB name
+
+    // Campaign Database Credentials
+    define('DB_USER_CAMPAIGN', 'u232955123_campaign');
+    define('DB_PASS_CAMPAIGN', 'Brandweave@24');
+    define('DB_NAME_CAMPAIGN', 'u232955123_liyas_campaign');
+
 } else {
+    // -------------------
     // LOCAL DEVELOPMENT (XAMPP)
+    // -------------------
     define('DB_HOST', 'localhost');
     define('DB_PORT', 3306);
-    define('DB_USER', 'root');
-    define('DB_PASS', '');
-    define('DB_NAME_MAIN', 'liyas_international');
-    define('DB_NAME_CAMPAIGN', 'liyas_campaigns');
+
+    // Main Database (Fixed naming to match connection logic)
+    define('DB_USER_MAIN', 'root');
+    define('DB_PASS_MAIN', '');
+    define('DB_NAME_MAIN', 'liyas_inter');
+
+    // Campaign Database (Added to prevent errors locally)
+    define('DB_USER_CAMPAIGN', 'root');
+    define('DB_PASS_CAMPAIGN', '');
+    define('DB_NAME_CAMPAIGN', 'liyas_campaign');
 }
 
 // ============================================
@@ -49,22 +67,31 @@ $options = [
 ];
 
 try {
-    // Connect to Main Website Database (Admins, Products, Users)
+    // 1. Connect to Main Website Database (Admins, Products, Users)
+    // Using DB_USER_MAIN and DB_PASS_MAIN
     $dsn_main = "mysql:host=" . DB_HOST . ";port=" . DB_PORT . ";dbname=" . DB_NAME_MAIN . ";charset=utf8mb4";
-    $pdo = new PDO($dsn_main, DB_USER, DB_PASS, $options);
-    
-    // Connect to Campaign Database (Contests, Submissions)
+    $pdo = new PDO($dsn_main, DB_USER_MAIN, DB_PASS_MAIN, $options);
+   
+    // 2. Connect to Campaign Database (Contests, Submissions)
+    // Using DB_USER_CAMPAIGN and DB_PASS_CAMPAIGN
     $dsn_campaign = "mysql:host=" . DB_HOST . ";port=" . DB_PORT . ";dbname=" . DB_NAME_CAMPAIGN . ";charset=utf8mb4";
-    $pdo_campaign = new PDO($dsn_campaign, DB_USER, DB_PASS, $options);
-    
+    $pdo_campaign = new PDO($dsn_campaign, DB_USER_CAMPAIGN, DB_PASS_CAMPAIGN, $options);
+   
     // Global Timezone Settings
     date_default_timezone_set('Asia/Kolkata');
     $pdo->exec("SET time_zone = '+05:30'");
     $pdo_campaign->exec("SET time_zone = '+05:30'");
 
 } catch (PDOException $e) {
-    error_log("Connection failed: " . $e->getMessage());
-    die("Database Error: " . $e->getMessage());
+    // Log error internally
+    error_log("Database Connection Failed: " . $e->getMessage());
+   
+    // If live, show generic message. If local, show details.
+    if ($is_live) {
+        die("System Error: Unable to connect to the database. Please try again later.");
+    } else {
+        die("Database Error: " . $e->getMessage());
+    }
 }
 
 // ============================================
@@ -74,12 +101,12 @@ $JWT_SECRET = "super_secure_secret_987654321";
 $JWT_EXPIRE = 3600;
 
 if ($is_live) {
-    define('BASE_URL', 'https://liyasinternational.com');
+    define('BASE_URL', 'https://liyasinternational.com/');
 } else {
     define('BASE_URL', 'http://localhost/liyas-mineral-water');
 }
 
-$ROOT_PATH = dirname(__DIR__); 
+$ROOT_PATH = dirname(__DIR__);
 define('UPLOAD_DIR', '/uploads/');
 define('UPLOAD_DIR_SERVER', $ROOT_PATH . '/uploads/');
 
@@ -125,8 +152,11 @@ function verifyAdminSession() {
  * MYSQLI Fallback (Main DB only)
  */
 function getMysqliConnection() {
-    $mysqli = new mysqli(DB_HOST, DB_USER, DB_PASS, DB_NAME_MAIN, DB_PORT);
-    if ($mysqli->connect_error) { die("Connection failed: " . $mysqli->connect_error); }
+    // Note: This relies on constants defined in the config section above
+    $mysqli = new mysqli(DB_HOST, DB_USER_MAIN, DB_PASS_MAIN, DB_NAME_MAIN, DB_PORT);
+    if ($mysqli->connect_error) {
+        die("Connection failed: " . $mysqli->connect_error);
+    }
     $mysqli->set_charset("utf8mb4");
     return $mysqli;
 }

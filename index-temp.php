@@ -19,12 +19,11 @@ $social_links = $social_links_stmt->fetchAll(PDO::FETCH_ASSOC);
     <meta name="description" content="LIYAS Mineral Water - Premium quality mineral water for a healthy lifestyle. Pure, refreshing, and naturally sourced.">
     <meta name="keywords" content="mineral water, premium water, healthy water, LIYAS, pure water">
     
-    <!-- Favicon -->
-    <link rel="icon" type="image/jpeg" href="assets/images/logo/logo-bg.jpg">
-    <link rel="shortcut icon" type="image/jpeg" href="assets/images/logo/logo-bg.jpg">
-    <link rel="apple-touch-icon" href="assets/images/logo/logo-bg.jpg">
-    <link rel="icon" type="image/jpeg" sizes="32x32" href="assets/images/logo/logo-bg.jpg">
-    <link rel="icon" type="image/jpeg" sizes="16x16" href="assets/images/logo/logo-bg.jpg">
+  <link rel="icon" type="image/jpeg"  sizes="16x16" href="https://liyasinternational.com/assets/images/logo/logol.png">
+    <link rel="shortcut icon" type="image/jpeg"  sizes="16x16" href="https://liyasinternational.com/assets/images/logo/logol.png">
+    <link rel="apple-touch-icon"  type="image/jpeg"  sizes="16x16" href="https://liyasinternational.com/assets/images/logo/logol.png">
+    <link rel="icon" type="image/jpeg" sizes="38x38" href="https://liyasinternational.com/assets/images/logo/logol.png">
+    <link rel="icon" type="image/jpeg" sizes="16x16" href="https://liyasinternational.com/assets/images/logo/logol.png">
     
     <link rel="stylesheet" href="assets/css/style.css">
     <link rel="stylesheet" href="assets/css/about.css">
@@ -108,36 +107,37 @@ $social_links = $social_links_stmt->fetchAll(PDO::FETCH_ASSOC);
 
 
         /* Logo container in the center (GSAP will manage the move, so no CSS transition) */
-        .logo-text {
-            position: fixed;
-            top: 50%;
-            left: 50%;
+        /*.logo-text {*/
+        /*    position: fixed;*/
+        /*    top: 50%;*/
+        /*    left: 50%;*/
             /* The initial centering (translate) is managed by GSAP.set() in JS */
-            font-size: clamp(2rem, 8vw, 4rem);
-            font-weight: 700;
-            color: rgba(74, 210, 226, 0.71);
-            z-index: 10000; /* Increased z-index to ensure visibility during splash fade */
-            text-shadow: 2px 2px 4px rgba(0,0,0,0.1);
-            pointer-events: none;
-            font-family: 'Poppins', sans-serif;
+        /*    font-size: clamp(2rem, 8vw, 4rem);*/
+        /*    font-weight: 700;*/
+        /*    color: rgba(74, 210, 226, 0.71);*/
+            /*z-index: 10000; */
+            /* Increased z-index to ensure visibility during splash fade 
+        /*    text-shadow: 2px 2px 4px rgba(0,0,0,0.1);*/
+        /*    pointer-events: none;*/
+        /*    font-family: 'Poppins', sans-serif;*/
             /* REMOVED: transition: all 1s ease; */
-        }
+        /*}*/
 
         /* Final state after GSAP animation completes. This ensures responsiveness. */
         /* Final locked position for top-left logo */
-        .logo-text.move-top-left {
-            top: 20px !important;
-            left: 20px !important;
-            right: auto !important;
-            transform: none !important;
-            font-size: clamp(1rem, 4vw, 1.5rem);
-        }
+        /*.logo-text.move-top-left {*/
+        /*    top: 20px !important;*/
+        /*    left: 20px !important;*/
+        /*    right: auto !important;*/
+        /*    transform: none !important;*/
+        /*    font-size: clamp(1rem, 4vw, 1.5rem);*/
+        /*}*/
 
         /* Responsive Logo Image */
-        .logo-text img {
-            width: clamp(60px, 15vw, 100px);
-            height: clamp(60px, 15vw, 100px);
-        }
+        /*.logo-text img {*/
+        /*    width: clamp(60px, 15vw, 100px);*/
+        /*    height: clamp(60px, 15vw, 100px);*/
+        /*}*/
 
         /* Mobile adjustments for logo to avoid overlap */
         @media (max-width: 767px) {
@@ -198,11 +198,13 @@ $social_links = $social_links_stmt->fetchAll(PDO::FETCH_ASSOC);
         /* Hero layout padding to avoid overlap with scroll control */
         .hero { 
             position: relative; 
-            padding-bottom: 120px; /* space reserved for scroll control */
+            /* padding-bottom: 120px; space reserved for scroll control */
         }
 
         @media (min-width: 768px) {
-            .hero { padding-bottom: 140px; }
+            .hero {
+                 /* padding-bottom: 140px;  */
+                }
         }
 
         .wave-svg {
@@ -216,7 +218,7 @@ $social_links = $social_links_stmt->fetchAll(PDO::FETCH_ASSOC);
 
         @media (max-width: 767px) {
             .wave-svg {
-                bottom: -1px; /* keep wave touching the next section */
+                top: 790px; /* keep wave touching the next section */
             }
         }
 
@@ -390,11 +392,11 @@ $social_links = $social_links_stmt->fetchAll(PDO::FETCH_ASSOC);
 /* Top-right Login Button - aligned with Back to Top button */
 .top-login-btn {
   position: fixed;
-  top: 42px;
+  top: 24px;
   right: 20px;
-  width: 52px;
-  height: 52px;
-  border-radius: 50%;
+  width: 98px;
+  height: 45px;
+  border-radius: 7%;
   background: rgba(255, 255, 255, 0.95);
   color: #000000;
   display: flex;
@@ -410,11 +412,12 @@ $social_links = $social_links_stmt->fetchAll(PDO::FETCH_ASSOC);
   cursor: pointer;
   /* Better touch target */
   min-width: 52px;
-  min-height: 52px;
+  min-height: 45px;
   /* Ensure it's always visible */
   opacity: 1;
   visibility: visible;
   pointer-events: auto;
+  
 }
 
 .top-login-btn:hover {
@@ -444,42 +447,46 @@ $social_links = $social_links_stmt->fetchAll(PDO::FETCH_ASSOC);
 /* Tablet adjustments */
 @media (min-width: 768px) and (max-width: 991px) {
   .top-login-btn {
-    top: 38px;
+    top: 28px;
     right: 18px;
-    width: 48px;
+    width: 76px;
     height: 48px;
     min-width: 48px;
-    min-height: 48px;
+    min-height: 42px;
   }
   
   .top-login-btn .login-svg {
     width: 22px;
     height: 22px;
   }
+  .login-button{
+      display: block;
+  }
 }
 
 /* Responsive adjustments (mobile view) */
 @media screen and (max-width: 767px) {
   .top-login-btn {
-    width: 48px !important;
-    height: 48px !important;
-    min-width: 48px !important;
-    min-height: 48px !important;
-    top: 16px !important;
-    right: 16px !important;
-    left: auto !important;
-    bottom: auto !important;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2) !important;
+      display: none;
+    /*width: 80px !important;*/
+    /*height: 48px !important;*/
+    /*min-width: 48px !important;*/
+    /*min-height: 48px !important;*/
+    /*top: 16px !important;*/
+    /*right: 16px !important;*/
+    /*left: auto !important;*/
+    /*bottom: auto !important;*/
+    /*box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2) !important;*/
     z-index: 1101 !important; /* Above navbar but below mobile menu when open */
-    background: rgba(255, 255, 255, 1) !important;
-    border: 1px solid rgba(0, 0, 0, 0.1) !important;
+    /*background: rgba(255, 255, 255, 1) !important;*/
+    /*border: 1px solid rgba(0, 0, 0, 0.1) !important;*/
     /* Ensure visibility */
-    opacity: 1 !important;
-    visibility: visible !important;
-    pointer-events: auto !important;
-    display: flex !important;
-    position: fixed !important;
-    transform: none !important;
+    /*opacity: 1 !important;*/
+    /*visibility: visible !important;*/
+    /*pointer-events: auto !important;*/
+    /*display: flex !important;*/
+    /*position: fixed !important;*/
+    /*transform: none !important;*/
   }
   
   .top-login-btn .login-svg {
@@ -504,12 +511,12 @@ $social_links = $social_links_stmt->fetchAll(PDO::FETCH_ASSOC);
 /* Extra small devices */
 @media screen and (max-width: 480px) {
   .top-login-btn {
-    width: 46px !important;
+    width: 61px !important;
     height: 46px !important;
     min-width: 46px !important;
     min-height: 46px !important;
-    top: 14px !important;
-    right: 14px !important;
+    top: 15px !important;
+    right: 124px !important;
     left: auto !important;
     position: fixed !important;
   }
@@ -556,28 +563,24 @@ $social_links = $social_links_stmt->fetchAll(PDO::FETCH_ASSOC);
 
     <div id="splash-screen" aria-hidden="true">
         <div class="splash-layer" aria-hidden="true"></div>
-        <div class="logo-text"> 
-            <div class="row">
-            <img style="width: 100px; height: 100px;" src="assets/images/logo/logo.png" alt="Liyas">
-            </div>
-        </div>
-        <div class="math-particles" aria-hidden="true" id="mathParticles"></div>
+        <!--<div class="logo-text"> -->
+        <!--    <div class="row">-->
+        <!--    <img style="width: 180px; height: 180px; margin-top:-60px;" src="assets/images/logo/logo.png" alt="Liyas">-->
+        <!--    </div>-->
+        <!--</div>-->
+        <!--<div class="math-particles" aria-hidden="true" id="mathParticles"></div>-->
     </div>
 
-<!-- Top-right Login Icon (aligned with Back to Top button) -->
-<?php if (isset($_SESSION['user_id'])): ?>
-    <a href="logout.php" class="top-login-btn" title="Logout">
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="login-svg">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3H6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 006 21h7.5a2.25 2.25 0 002.25-2.25V15m-3 0l-3 3m0 0l3 3m-3-3h12.75" />
-        </svg>
-    </a>
-<?php else: ?>
-    <a href="login.php" class="top-login-btn" title="Login">
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="login-svg">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3H6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 006 21h7.5a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9" />
-        </svg>
-    </a>
-<?php endif; ?>
+
+<!--<?php if (isset($_SESSION['user_id'])): ?>-->
+<!--  <a href="logout.php" class="top-login-btn" title="Logout">-->
+<!--    <img src="logout.png" alt="Logout" class="login-svg" style="width: 24px; height: 22px;padding:2px;"> <span style="font-size:15px;"> Logout</span>-->
+<!--</a>-->
+<!--<?php else: ?>-->
+<!--    <a href="login.php" class="top-login-btn" title="Login">-->
+<!--         <img src="user.png" alt="Logout" class="login-svg" style="width: 24px; height: 22px;padding:0px;"> <span style="font-size:15px;"> </span>-->
+<!--    </a>-->
+<!--<?php endif; ?>-->
 
 
 
@@ -589,7 +592,9 @@ $social_links = $social_links_stmt->fetchAll(PDO::FETCH_ASSOC);
         <?php endforeach; ?>
     </div>
     
-    <button id="backToTop" title="Go to top"><i class="fas fa-arrow-up"></i></button>
+<button id="backToTop" title="Go to top">
+    <img style="width:20px;" src="/up-arrow.png" alt="Top" class="flaticon-img">
+</button>
 
     <section class="hero" id="home" data-aos="fade-up">
         <div class="container">
@@ -597,13 +602,13 @@ $social_links = $social_links_stmt->fetchAll(PDO::FETCH_ASSOC);
                 <div class="col-lg-6">
                     <div class="hero-content" data-aos="fade-right" data-aos-delay="50">
                         <div class="hero-subtitle">PURE WATER</div>
-                        <h1><span class="text-primary">REFRESH</span> YOUR SOUL</h1>
+                        <h1><span class="text-primary">REFRESH</span> <span class="text-primary">YOUR SOUL</span></h1>
                         <div class="hero-image-mobile" aria-hidden="false">
                             <div class="hero-bottle-container">
-                                <img src="assets/images/liyas-bottle.png" alt="Liyas Mineral Water Bottle" class="img-fluid animated-image">
+                                <img src="assets/images/b.png" alt="Liyas Mineral Water Bottle" class="img-fluid h animated-image">
                             </div>
                         </div>
-                        <p>
+                        <p style="color:#cecece;">
                         Meet Liyas — hydration redefined for today's lifestyle.
 Crafted for clarity, freshness, and a touch of fun.
 Because great water isn't just a choice — it's a vibe.
@@ -617,7 +622,7 @@ Because great water isn't just a choice — it's a vibe.
                 <div class="col-lg-6">
                     <div class="hero-image hero-image-desktop" data-aos="fade-left" data-aos-delay="100">
                         <div class="hero-bottle-container">
-                            <img src="assets/images/liyas-bottle.png" alt="Liyas Mineral Water Bottle" class="img-fluid animated-image">
+                            <img src="assets/images/b.png" alt="Liyas Mineral Water Bottle" class="img-fluid animated-image">
                         </div>
                     </div>
                 </div>
@@ -651,7 +656,7 @@ Because great water isn't just a choice — it's a vibe.
             </svg>
         </div>
         
-        <svg class="wave-svg" width="100%" height="100%" id="svg" viewBox="0 0 1440 390" xmlns="http://www.w3.org/2000/svg" class="transition duration-300 ease-in-out delay-150">
+        <svg class="wave-svg" width="100%" height="100%"  id="svg" viewBox="0 0 1440 390" xmlns="http://www.w3.org/2000/svg" class="transition duration-300 ease-in-out delay-150">
             <style>
                 .path-0{
                     animation:pathAnim-0 4s;
@@ -705,33 +710,32 @@ Because great water isn't just a choice — it's a vibe.
     // Splash screen functionality
     document.addEventListener('DOMContentLoaded', function() {
         const splash = document.getElementById('splash-screen');
-        const mathParticles = document.getElementById('mathParticles');
-        const logo = document.querySelector('.logo-text'); 
+        // const mathParticles = document.getElementById('mathParticles');
 
         // 1. GSAP Initialization: Set the initial state for the logo (Centered)
         // This ensures GSAP knows the starting point, applying the CSS transform.
-        gsap.set(logo, { x: '-50%', y: '-50%' });
+        // gsap.set(logo, { x: '-50%', y: '-50%' });
 
-        createMathParticles();
+        // createMathParticles();
 
-        function createMathParticles() {
-            const particleCount = 24;
-            for (let i = 0; i < particleCount; i++) {
-                const particle = document.createElement('div');
-                particle.className = 'math-particle';
-                const x = Math.random() * 100;
-                const y = Math.random() * 100;
-                const delay = Math.random() * 2;
-                const xOffset = Math.random() * 200 - 100;
-                const zOffset = Math.random() * 300;
-                particle.style.left = `${x}%`;
-                particle.style.top = `${y}%`;
-                particle.style.animationDelay = `${delay}s`;
-                particle.style.setProperty('--x-offset', `${xOffset}px`);
-                particle.style.setProperty('--z-offset', `${zOffset}px`);
-                mathParticles.appendChild(particle);
-            }
-        }
+        // function createMathParticles() {
+        //     const particleCount = 24;
+        //     for (let i = 0; i < particleCount; i++) {
+        //         const particle = document.createElement('div');
+        //         particle.className = 'math-particle';
+        //         const x = Math.random() * 100;
+        //         const y = Math.random() * 100;
+        //         const delay = Math.random() * 2;
+        //         const xOffset = Math.random() * 200 - 100;
+        //         const zOffset = Math.random() * 300;
+        //         particle.style.left = `${x}%`;
+        //         particle.style.top = `${y}%`;
+        //         particle.style.animationDelay = `${delay}s`;
+        //         particle.style.setProperty('--x-offset', `${xOffset}px`);
+        //         particle.style.setProperty('--z-offset', `${zOffset}px`);
+        //         mathParticles.appendChild(particle);
+        //     }
+        // }
 
         document.body.style.overflow = 'hidden';
         const layer = document.querySelector('.splash-layer');
@@ -742,48 +746,61 @@ function finishSplash() {
     clearTimeout(fallbackTimeout);
     layer.removeEventListener('animationend', finishSplash);
 
+    if (!splash) return;
+
+    splash.classList.add('splash-fadeout');
+
+    setTimeout(() => {
+        splash.style.display = 'none';
+        document.body.style.overflow = '';
+    }, 800);
+}
+// function finishSplash() {
+//     clearTimeout(fallbackTimeout);
+//     layer.removeEventListener('animationend', finishSplash);
+
     // Time after the circle animation ends (2.8s total duration for circleDropExpand)
-    const delayBeforeLogoMove = 0.5; // Start moving 0.5s after the main splash circle effect
+    // const delayBeforeLogoMove = 0.5; // Start moving 0.5s after the main splash circle effect
 
     // Ensure the logo is outside the splash so it won't be hidden when splash disappears
-    if (splash.contains(logo)) {
-        document.body.appendChild(logo);
-    }
+    // if (splash.contains(logo)) {
+    //     document.body.appendChild(logo);
+    // }
 
     // Animate logo to top-left corner with responsive positioning
-    const isMobile = window.innerWidth <= 767;
-    const isSmallMobile = window.innerWidth <= 375;
+    // const isMobile = window.innerWidth <= 767;
+    // const isSmallMobile = window.innerWidth <= 375;
     
-    const logoTop = isSmallMobile ? 12 : (isMobile ? 14 : 20);
-    const logoLeft = isSmallMobile ? 12 : (isMobile ? 14 : 20);
+    // const logoTop = isSmallMobile ? 12 : (isMobile ? 14 : 20);
+    // const logoLeft = isSmallMobile ? 12 : (isMobile ? 14 : 20);
     
-    gsap.to(logo, {
-        duration: 1.2,
-        delay: delayBeforeLogoMove,
-        top: logoTop,       // Responsive distance from top
-        left: logoLeft,    // Responsive distance from left
-        x: 0,               // Reset transforms
-        y: 0,
-        scale: isMobile ? 0.75 : 0.85,  // Smaller scale on mobile
-        ease: "power2.inOut",
-        onStart: () => {
-            // Fade out splash concurrently
-            splash.classList.add('splash-fadeout');
-            setTimeout(() => {
-                splash.style.display = 'none';
-                document.body.style.overflow = '';
-            }, 850);
-        },
-        onComplete: () => {
-            // Lock final responsive position
-            logo.classList.add('move-top-left');
-            gsap.set(logo, { clearProps: "left, top, x, y, scale" });
-        }
-    });
-}
+    // gsap.to(logo, {
+    //     duration: 1.2,
+    //     delay: delayBeforeLogoMove,
+    //     top: logoTop,       // Responsive distance from top
+    //     left: logoLeft,    // Responsive distance from left
+    //     x: 0,               // Reset transforms
+    //     y: 0,
+    //     scale: isMobile ? 0.75 : 0.85,  // Smaller scale on mobile
+    //     ease: "power2.inOut",
+    //     onStart: () => {
+    //         // Fade out splash concurrently
+    //         splash.classList.add('splash-fadeout');
+    //         setTimeout(() => {
+    //             splash.style.display = 'none';
+    //             document.body.style.overflow = '';
+    //         }, 850);
+    //     },
+    //     onComplete: () => {
+    //         // Lock final responsive position
+    //         logo.classList.add('move-top-left');
+    //         gsap.set(logo, { clearProps: "left, top, x, y, scale" });
+    //     }
+    // });
+// }
+});
 
-
-    });
+    // });
     
     // AOS init with custom premium easing and responsive settings
     document.addEventListener("DOMContentLoaded", function() {

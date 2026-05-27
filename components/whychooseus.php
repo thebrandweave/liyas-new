@@ -31,7 +31,7 @@ $asset_base = $is_subdirectory ? '../' : '';
 
 			<div class="image-column" data-aos="zoom-in" data-aos-delay="50">
 				<div class="image-wrapper">
-					<img src="<?php echo $asset_base; ?>assets/images/liyas-bottle.png" alt="Liyas Mineral Water Bottle">
+					<img src="<?php echo $asset_base; ?>../assets/images/liyas-bottle.png" alt="Liyas Mineral Water Bottle">
 				</div>
 			</div>
 
@@ -60,14 +60,14 @@ $asset_base = $is_subdirectory ? '../' : '';
 		.why-choose-section {
 			position: relative;
 			padding: 80px 0;
-			background: var(--why-white);
+			background: #2ca0a8;
 			border-radius: 20px;
 		}
 
 		.why-title { text-align: center; margin-bottom: 30px; }
 		.why-subtitle { color: var(--why-accent); font-weight: 600; letter-spacing: 1px; }
 		.why-heading { font-weight: 700; color: var(--why-text-primary); }
-		.why-intro { color: var(--why-text-secondary); max-width: 720px; margin: 0 auto; }
+		.why-intro { color: white; max-width: 720px; margin: 0 auto; }
 
 		.features-grid { display: grid; gap: 2rem; align-items: center; grid-template-columns: 1fr; }
 		.features-column { display: flex; flex-direction: column; gap: 2rem; }
@@ -75,13 +75,13 @@ $asset_base = $is_subdirectory ? '../' : '';
 		.image-column { order: 1; }
 		.features-column.right { order: 2; }
 
-		.feature-item { background: white; display: flex; flex-direction: column; align-items: center; text-align: center; gap: .5rem; }
+		.feature-item { background: transparent; display: flex; flex-direction: column; align-items: center; text-align: center; gap: .5rem; }
 		.feature-item h3 { color: var(--why-text-primary); font-weight: 700; font-size: 1.125rem; }
-		.feature-item p { color: var(--why-text-secondary); font-size: .95rem; max-width: 320px; }
+		.feature-item p { color: white; font-size: .95rem; max-width: 320px; }
 		.icon-emoji { font-size: 2.2rem; color: var(--why-accent); line-height: 1; }
 
 		.image-wrapper { position: relative; max-width: 360px; margin: 0 auto; }
-		.image-wrapper img { max-width: 100%; height: auto; display: block; position: relative; z-index: 1; }
+		.image-wrapper img {  height: 46vh; display: block; position: relative; z-index: 1; }
 
 		@media (min-width: 1024px) {
 			.features-grid { grid-template-columns: 1fr auto 1fr; }

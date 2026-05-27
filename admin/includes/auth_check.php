@@ -31,7 +31,7 @@ try {
         $invalidate->execute([$jwt]);
         session_unset();
         session_destroy();
-        header("Location: ./login.php");
+        header("Location: ../login.php");
         exit;
     }
 } catch (Exception $e) {

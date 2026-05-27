@@ -3,6 +3,9 @@
 $categories_stmt = $pdo->query("SELECT * FROM categories ORDER BY name ASC");
 $categories = $categories_stmt->fetchAll(PDO::FETCH_ASSOC);
 
+$litres_stmt = $pdo->query("SELECT DISTINCT litre FROM products WHERE status = 'active' ORDER BY litre ASC");
+$available_litres = $litres_stmt->fetchAll(PDO::FETCH_COLUMN);
+
 // Fetch products with their category name
 $products_stmt = $pdo->query("
     SELECT p.*, c.name as category_name
@@ -43,17 +46,19 @@ $products = $products_stmt->fetchAll(PDO::FETCH_ASSOC);
   padding: 4rem 0;
 }
 
+
 .product-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(260px, 260px));
   gap: 2.5rem;
+  justify-content: center;
 }
 
 /* CARD */
 .product-card {
   background: #fff;
   border-radius: 20px;
-  padding: 1.6rem 1.6rem 2rem;
+  padding: 0.6rem 3.1rem 1rem;
   text-align: center;
   box-shadow: 0 15px 35px rgba(145, 140, 140, 0.06);
   position: relative;
@@ -138,6 +143,9 @@ $products = $products_stmt->fetchAll(PDO::FETCH_ASSOC);
   cursor: pointer;
   font-weight: 600;
 }
+.prod-page{
+    text-decoration: none;
+}
 </style>
 
 <section class="products-list">
@@ -147,12 +155,12 @@ $products = $products_stmt->fetchAll(PDO::FETCH_ASSOC);
     <div class="product-filters">
       <input type="text" id="searchInput" placeholder="Search bottle..." />
 
-      <select id="litreFilter">
-        <option value="">All Sizes</option>
-        <option value="1">1 L</option>
-        <option value="2">2 L</option>
-        <option value="20">20 L</option>
-      </select>
+<select id="litreFilter">
+  <option value="">All Sizes</option>
+  <?php foreach ($available_litres as $l): ?>
+      <option value="<?= $l ?>"><?= $l ?> L</option>
+  <?php endforeach; ?>
+</select>
 
       <select id="categoryFilter">
         <option value="">All Categories</option>
@@ -169,15 +177,15 @@ $products = $products_stmt->fetchAll(PDO::FETCH_ASSOC);
         <p>No products found.</p>
       <?php else: ?>
         <?php foreach ($products as $product): ?>
-          <div class="product-card" 
+        <a class="prod-page" href="/products/">  <div class="product-card" 
                onclick="openProductModal(<?= $product['product_id'] ?>)"
                style="cursor: pointer;"
                data-product-id="<?= $product['product_id'] ?>"
                data-name="<?= strtolower(htmlspecialchars($product['name'])) ?>"
-               data-litre="1" 
-               data-category="<?= strtolower(htmlspecialchars($product['category_name'])) ?>">
+            data-litre="<?= htmlspecialchars($product['litre']) ?>"
+ data-category="<?= strtolower(htmlspecialchars($product['category_name'])) ?>">
 
-            <div class="size-badge">1 L</div>
+<div class="size-badge"><?= htmlspecialchars($product['litre']) ?> L</div>
 
             <div class="product-image-wrap">
               <img src="<?= BASE_URL ?>/admin/uploads/products/<?= htmlspecialchars($product['image']) ?>" alt="<?= htmlspecialchars($product['name']) ?>">
@@ -196,7 +204,7 @@ $products = $products_stmt->fetchAll(PDO::FETCH_ASSOC);
               </div>
               <button class="add-btn" onclick="event.stopPropagation();">Add</button>
             </div>
-          </div>
+          </div></a>
         <?php endforeach; ?>
       <?php endif; ?>
 
@@ -208,6 +216,8 @@ $products = $products_stmt->fetchAll(PDO::FETCH_ASSOC);
 const searchInput = document.getElementById("searchInput");
 const litreFilter = document.getElementById("litreFilter");
 const categoryFilter = document.getElementById("categoryFilter");
+
+// ❗ IMPORTANT: select product-card but we will hide parent <a>
 const products = document.querySelectorAll(".product-card");
 
 function filterProducts() {
@@ -225,10 +235,13 @@ function filterProducts() {
       (!litreValue || litre === litreValue) &&
       (!categoryValue || category === categoryValue);
 
-    product.style.display = match ? "block" : "none";
+    // ✅ FIX: hide the parent <a> instead of card
+    const wrapper = product.closest(".prod-page");
+    wrapper.style.display = match ? "block" : "none";
   });
 }
 
+// Events
 searchInput.addEventListener("input", filterProducts);
 litreFilter.addEventListener("change", filterProducts);
 categoryFilter.addEventListener("change", filterProducts);

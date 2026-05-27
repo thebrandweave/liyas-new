@@ -77,7 +77,28 @@ $current_page = "campaigns";
 
 <body>
 <div class="container">
-<?php include '../includes/sidebar.php'; ?>
+<?php include '../includes/sidebar.php'; 
+/* Fetch single campaign and questions */
+$stmt = $db->query("
+    SELECT c.*, 
+           (SELECT COUNT(*) FROM submissions s WHERE s.campaign_id = c.id) AS entry_count,
+           ca.file_path, ca.file_type
+    FROM campaigns c
+    LEFT JOIN campaign_assets ca ON ca.campaign_id = c.id
+    ORDER BY c.created_at DESC
+    LIMIT 1
+");
+$campaign = $stmt->fetch(PDO::FETCH_ASSOC);
+
+$questions = [];
+if($campaign) {
+    $q_stmt = $db->prepare("SELECT * FROM campaign_questions WHERE campaign_id = ? ORDER BY sort_order");
+    $q_stmt->execute([$campaign['id']]);
+    $questions = $q_stmt->fetchAll(PDO::FETCH_ASSOC);
+}
+
+?>
+
 
 <div class="main-content">
 <div class="header">
@@ -143,6 +164,37 @@ $current_page = "campaigns";
             <div class="label">Description</div>
             <div class="readonly"><?= htmlspecialchars($campaign['description']) ?></div>
         </div>
+
+      
+  <div style="grid-column: 1 / -1;">
+    <div class="label" style="margin-bottom: 8px;">Form Questions</div>
+    <div class="readonly" style="padding: 0; border: none; background: transparent;">
+        <?php if (!empty($questions)): ?>
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+                <?php foreach ($questions as $index => $q): ?>
+                    <div style="background: #f8fafc; padding: 10px 15px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; border: 1px solid #e2e8f0;">
+                        <span>
+                            <strong style="color: #64748b;"><?= str_pad($index + 1, 2, '0', STR_PAD_LEFT) ?>.</strong> 
+                            <?= htmlspecialchars($q['question_label']) ?>
+                        </span>
+                        <div style="display: flex; gap: 10px;">
+                            <span style="font-size: 11px; text-transform: uppercase; background: #e0f2fe; color: #0369a1; padding: 2px 8px; border-radius: 4px; font-weight: 600;">
+                                <?= str_replace('_', ' ', $q['field_type']) ?>
+                            </span>
+                            <?php if ($q['is_required']): ?>
+                                <span style="font-size: 11px; text-transform: uppercase; background: #fee2e2; color: #b91c1c; padding: 2px 8px; border-radius: 4px; font-weight: 600;">Required</span>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                <?php endforeach; ?>
+            </div>
+        <?php else: ?>
+            <div class="readonly">No questions configured.</div>
+        <?php endif; ?>
+    </div>
+</div>
+
+
 
         <div style="grid-column:1/-1;">
             <div class="label">Promotional Asset</div>

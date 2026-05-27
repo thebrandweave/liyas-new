@@ -55,7 +55,7 @@ CREATE TABLE submissions (
     UNIQUE KEY one_entry_per_campaign (campaign_id, email),
     INDEX (email),
     INDEX (phone_number)
-);
+);`
 
 -- 4. SUBMISSION ANSWERS
 CREATE TABLE submission_answers (

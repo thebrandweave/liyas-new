@@ -2,13 +2,22 @@
 <IfModule mod_rewrite.c>
     RewriteEngine On
     RewriteCond %{REQUEST_METHOD} POST
-    RewriteCond %{REQUEST_URI} ^/liyas-mineral-water/join/submit\.php$ [NC]
+    RewriteCond %{REQUEST_URI} ^/join/submit\.php$ [NC]
     RewriteRule .* - [L]
+    
+    
 </IfModule>
 
 # Root .htaccess - Security and Redirects
 <IfModule mod_rewrite.c>
     RewriteEngine On
+    
+     # Redirect direct access to index-temp.php → /
+    RewriteCond %{THE_REQUEST} \s/index-temp\.php [NC]
+    RewriteRule ^index-temp\.php$ / [R=301,L]
+
+    # Load index-temp.php when accessing root
+    RewriteRule ^$ index-temp.php [L]
 
     # Exclude cart API files from all rewrite rules
     RewriteRule ^(add_to_cart|get_cart|update_cart_quantity|remove_from_cart|submit_review|get_product_details)\.php$ - [L]

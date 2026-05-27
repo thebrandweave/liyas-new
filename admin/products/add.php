@@ -1,4 +1,6 @@
 <?php
+error_reporting(E_ALL);
+ini_set('display_errors', 1);
 require_once '../../config/config.php';
 require_once '../includes/auth_check.php';
 require_once '../includes/activity_logger.php';
@@ -37,6 +39,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_product'])) {
     $status      = $_POST['status'] ?? 'active';
     $description = trim($_POST['description']);
     $url_slug    = strtolower(trim(preg_replace('/[^A-Za-z0-9-]+/', '-', $name)));
+        $litre = (int)($_POST['litre'] ?? 0);
 
     if ($name === '' || $price === '' || !$category_id) {
         $error = "Please fill all required fields.";
@@ -70,8 +73,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_product'])) {
             }
         }
 
-        $stmt = $pdo->prepare("INSERT INTO products (name, url_slug, description, price, discount, stock, status, category_id, image) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
-        $stmt->execute([$name, $url_slug, $description, $price, $discount, $stock, $status, $category_id, $image_name]);
+        $stmt = $pdo->prepare("INSERT INTO products (name, url_slug, description, price, discount, stock, status, category_id, image,litre) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?,?)");
+        $stmt->execute([$name, $url_slug, $description, $price, $discount, $stock, $status, $category_id, $image_name,$litre]);
         $product_id = $pdo->lastInsertId();
 
         // Gallery Upload
@@ -198,6 +201,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_product'])) {
                             <div class="form-group"><label>Price (₹) *</label><input type="number" step="0.01" name="price" class="form-input" value="<?= getDraft('price') ?>" required></div>
                             <div class="form-group"><label>Discount (%)</label><input type="number" step="0.01" name="discount" class="form-input" value="<?= getDraft('discount', '0') ?>"></div>
                             <div class="form-group"><label>Stock</label><input type="number" name="stock" class="form-input" value="<?= getDraft('stock', '0') ?>"></div>
+                           <div class="form-group"><label>Volume (Litres)</label><input type="number" name="litre" class="form-input" value="<?= getDraft('litre', '0') ?>"></div>
+
                         </div>
 
                         <div class="form-actions" style="margin-top: 2rem;"><button type="submit" name="save_product" class="btn-action btn-add">Save Product</button></div>

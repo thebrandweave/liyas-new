@@ -124,7 +124,7 @@ body {
 
 /* ================= ABOUT UNIQUE ================= */
 .about-unique {
-  padding: 7rem 8%;
+  padding: 0rem 8%;
   background: linear-gradient(180deg, #ffffff 0%, #f3fdff 100%);
   overflow: hidden;
 }
@@ -136,6 +136,7 @@ body {
   gap: 4rem;
   max-width: 1200px;
   margin: auto;
+  margin-top: 100px;
 }
 
 .about-eyebrow {
@@ -173,18 +174,19 @@ body {
   z-index: 2;
   max-width: none; */
   position:relative;
-  left: 150px;
+  left: 135px;
+  height: 45vh;
 }
 
-.vertical-text {
-  position: absolute;
-  font-size: 130px;
-  font-weight: 800;
-  color: rgba(74, 210, 226, 0.12);
-  letter-spacing: 12px;
-  transform: rotate(-90deg);
-  left: 20px;
-}
+/*.vertical-text {*/
+/*  position: absolute;*/
+/*  font-size: 130px;*/
+/*  font-weight: 800;*/
+/*  color: rgba(74, 210, 226, 0.12);*/
+/*  letter-spacing: 12px;*/
+/*  transform: rotate(-90deg);*/
+/*  left: 20px;*/
+/*}*/
 /* ================= PREMIUM HERO UPGRADE ================= */
 
 .about-hero {
@@ -277,14 +279,22 @@ body {
     margin: auto auto 2rem;
   }
 
-  .vertical-text {
-    display: none;
-  }
+  /*.vertical-text {*/
+  /*  display: none;*/
+  /*}*/
 
   .hero-btns a {
     display: block;
     margin: 10px auto;
   }
+}
+
+@media (max-width: 499px){
+    
+    .about-unique-right img {
+
+  margin-right:350px;
+}
 }
 </style>
 
@@ -310,8 +320,8 @@ body {
     </div>
 
     <div class="about-unique-right">
-      <div class="vertical-text">LIYAS</div>
-      <img src="<?php echo $asset_base; ?>assets/images/liyas-bottle.png" alt="LIYAS Bottle">
+      <!--<div class="vertical-text">LIYAS</div>-->
+      <img src="<?php echo $asset_base; ?>../assets/images/liyas-bottle.png" alt="LIYAS Bottle">
     </div>
 
   </div>

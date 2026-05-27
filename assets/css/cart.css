@@ -2,7 +2,7 @@
    CART ICON STYLES
 ==================================== */
 
-.cart-icon {
+.cart-icon-1 {
     color: #0f172a;
     text-decoration: none;
     transition: color 0.3s ease;
@@ -10,26 +10,16 @@
     padding: 0.5rem;
 }
 
-.cart-icon:hover {
+.cart-icon-1:hover {
     color: #4ad2e2;
 }
 
-.cart-icon svg {
+.cart-icon-1 svg {
     width: 24px;
     height: 24px;
 }
 
-@media (max-width: 767px) {
-    .cart-icon {
-        margin-left: 50px; /* Adjust this value as needed */
-    }
-}
 
-@media (min-width: 980px) {
-    .cart-icon {
-        margin-right: 50px; /* Adjust this value as needed */
-    }
-}
 
 /* ================================= 
    SIDE CART STYLES
