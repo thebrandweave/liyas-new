@@ -12,8 +12,44 @@ $user_id = $_SESSION['user_id'];
 $cart_items = [];
 $shipping_addresses = [];
 $total_amount = 0;
-$error = '';
-$success = '';
+// Sync guest cart if cookie exists
+if (isset($_COOKIE['liyas_guest_cart'])) {
+    $guest_cart = json_decode($_COOKIE['liyas_guest_cart'], true);
+    if (is_array($guest_cart) && !empty($guest_cart)) {
+        try {
+            $pdo->beginTransaction();
+            foreach ($guest_cart as $item) {
+                $product_id = (int) ($item['product_id'] ?? $item['id'] ?? 0);
+                $quantity = max(1, (int) ($item['quantity'] ?? 1));
+                if ($product_id <= 0) continue;
+
+                // Check if product exists in database cart for this user
+                $stmt = $pdo->prepare("SELECT * FROM cart_items WHERE user_id = ? AND product_id = ?");
+                $stmt->execute([$user_id, $product_id]);
+                $existing_item = $stmt->fetch();
+
+                if ($existing_item) {
+                    $newQty = (int) $existing_item['quantity'] + $quantity;
+                    $stmt = $pdo->prepare("UPDATE cart_items SET quantity = ? WHERE cart_item_id = ?");
+                    $stmt->execute([$newQty, $existing_item['cart_item_id']]);
+                } else {
+                    $stmt = $pdo->prepare("INSERT INTO cart_items (user_id, product_id, quantity) VALUES (?, ?, ?)");
+                    $stmt->execute([$user_id, $product_id, $quantity]);
+                }
+            }
+            $pdo->commit();
+            
+            // Clear the cookie
+            setcookie('liyas_guest_cart', '', time() - 3600, '/');
+            unset($_COOKIE['liyas_guest_cart']);
+        } catch (PDOException $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            error_log("Failed to sync guest cart: " . $e->getMessage());
+        }
+    }
+}
 
 // Fetch cart items
 try {

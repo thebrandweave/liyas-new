@@ -22,7 +22,6 @@ $cartBase = rtrim(BASE_URL, '/');
             <strong id="subtotal-price">₹0.00</strong>
         </div>
         <p class="cart-footer-note">Taxes and shipping calculated at checkout.</p>
-        <a href="<?php echo $cartBase; ?>/cart/" class="checkout-btn btn-view-cart">View full cart</a>
         <a href="<?php echo $cartBase; ?>/checkout.php" class="checkout-btn btn-checkout-primary">Proceed to checkout</a>
     </div>
 </aside>
