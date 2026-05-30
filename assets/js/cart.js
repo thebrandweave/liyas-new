@@ -62,26 +62,24 @@
         bindEvents: function () {
             var self = this;
 
-            document.querySelectorAll('[data-cart-trigger]').forEach(function (el) {
-                el.addEventListener('click', function (e) {
-                    e.preventDefault();
-                    self.toggle(true);
-                });
-            });
-
-            if (this.els.close) {
-                this.els.close.addEventListener('click', function () {
-                    self.toggle(false);
-                });
-            }
-
-            if (this.els.overlay) {
-                this.els.overlay.addEventListener('click', function () {
-                    self.toggle(false);
-                });
-            }
-
             document.addEventListener('click', function (e) {
+                var trigger = e.target.closest('[data-cart-trigger]');
+                if (trigger) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    var mobileMenu = document.getElementById('mobileMenu');
+                    var mobileBtn = document.getElementById('mobileMenuBtn');
+                    if (mobileMenu && mobileMenu.classList.contains('active')) {
+                        mobileMenu.classList.remove('active');
+                        if (mobileBtn) {
+                            mobileBtn.classList.remove('active');
+                        }
+                        document.body.classList.remove('no-scroll');
+                    }
+                    self.toggle(true);
+                    return;
+                }
+
                 var btn = e.target.closest('.add-btn');
                 if (!btn) {
                     return;
@@ -119,6 +117,18 @@
                 self.add(product);
                 self.toggle(true);
             });
+
+            if (this.els.close) {
+                this.els.close.addEventListener('click', function () {
+                    self.toggle(false);
+                });
+            }
+
+            if (this.els.overlay) {
+                this.els.overlay.addEventListener('click', function () {
+                    self.toggle(false);
+                });
+            }
 
             if (this.els.body) {
                 this.els.body.addEventListener('click', function (e) {

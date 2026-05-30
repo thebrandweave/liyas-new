@@ -104,6 +104,13 @@ $logout_link = $navBase . '/logout.php';
 }
 
 
+.cart-icon-wrap,
+[data-cart-trigger] {
+    position: relative;
+    z-index: 1102;
+    cursor: pointer;
+}
+
 .cart-icon-1 {
     color: #0f172a;
     text-decoration: none;
@@ -514,3 +521,5 @@ $logout_link = $navBase . '/logout.php';
     }
   });
 </script>
+
+<?php include __DIR__ . '/cart-bundle.php'; ?>

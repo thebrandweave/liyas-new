@@ -562,7 +562,7 @@ $social_links = $social_links_stmt->fetchAll(PDO::FETCH_ASSOC);
 
     </style>
 
-    <?php include 'components/navbar.php' ?>
+    <?php $load_product_modal = true; include 'components/navbar.php' ?>
 
     <div id="splash-screen" aria-hidden="true">
         <div class="splash-layer" aria-hidden="true"></div>

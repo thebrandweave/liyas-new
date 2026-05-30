@@ -316,12 +316,3 @@ $social_links = $social_links_stmt->fetchAll(PDO::FETCH_ASSOC);
     }
   }
   </style>
-
-<?php include __DIR__ . '/cart-sidebar.php'; ?>
-
-<script>
-    // Pass PHP session status to JavaScript to be used by global scripts like cart.js
-    const userIsLoggedIn = <?php echo json_encode(isset($_SESSION['user_id'])); ?>;
-</script>
-<script src="<?php echo BASE_URL; ?>/assets/js/product-modal.js?v=2"></script>
-<script src="<?php echo BASE_URL; ?>/assets/js/cart.js?v=3"></script>

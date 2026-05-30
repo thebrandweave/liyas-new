@@ -91,6 +91,7 @@ $social_links = $social_links_stmt->fetchAll(PDO::FETCH_ASSOC);
             align-items: center;
             justify-content: center;
             background:transparent;
+            pointer-events: none;
         }
 
         .splash-layer {
@@ -104,6 +105,7 @@ $social_links = $social_links_stmt->fetchAll(PDO::FETCH_ASSOC);
             background:rgba(74, 210, 226, 0.22);
             will-change: width, height, transform;
             animation: circleDropExpand 2.8s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+            pointer-events: none;
         }
 
 
@@ -116,7 +118,7 @@ $social_links = $social_links_stmt->fetchAll(PDO::FETCH_ASSOC);
         /*    font-size: clamp(2rem, 8vw, 4rem);*/
         /*    font-weight: 700;*/
         /*    color: rgba(74, 210, 226, 0.71);*/
-            z-index: 10000; /* Increased z-index to ensure visibility during splash fade */
+        /*    z-index: 10000;*/
         /*    text-shadow: 2px 2px 4px rgba(0,0,0,0.1);*/
         /*    pointer-events: none;*/
         /*    font-family: 'Poppins', sans-serif;*/
