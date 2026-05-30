@@ -197,7 +197,7 @@
             }
         },
 
-        toggle: function (open) {
+       toggle: function (open) {
             if (open) {
                 if (loggedIn()) {
                     this.load();
@@ -211,7 +211,13 @@
             if (this.els.overlay) {
                 this.els.overlay.classList.toggle('open', !!open);
             }
-            document.body.classList.toggle('cart-open', !!open);
+            
+            // 🌟 Explicitly add/remove the class on the body to lock scrolling smoothly
+            if (open) {
+                document.body.classList.add('cart-open');
+            } else {
+                document.body.classList.remove('cart-open');
+            }
         },
 
         load: function () {

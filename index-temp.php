@@ -76,6 +76,7 @@ $social_links = $social_links_stmt->fetchAll(PDO::FETCH_ASSOC);
     <script>
         const BASE_URL = '<?php echo BASE_URL; ?>';
     </script>
+    </head>
 <body>
 
     <style>

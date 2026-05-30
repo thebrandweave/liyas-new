@@ -19,7 +19,7 @@ use Firebase\JWT\Key;
 // ============================================
 
 // Toggle this variable to switch environments
-$is_live = true;
+$is_live = false;
 
 if ($is_live) {
     // -------------------
