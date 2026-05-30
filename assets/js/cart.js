@@ -95,22 +95,36 @@
 
             document.addEventListener('click', function (e) {
                 var trigger = e.target.closest('[data-cart-trigger]');
-                if (trigger) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    var mobileMenu = document.getElementById('mobileMenu');
-                    var mobileBtn = document.getElementById('mobileMenuBtn');
-                    if (mobileMenu && mobileMenu.classList.contains('active')) {
-                        mobileMenu.classList.remove('active');
-                        if (mobileBtn) {
-                            mobileBtn.classList.remove('active');
-                        }
-                        document.body.classList.remove('no-scroll');
-                    }
-                    self.toggle(true);
-                    return;
-                }
+              if (trigger) {
+    e.preventDefault();
+    e.stopPropagation();
 
+    // User must login first
+    if (!loggedIn()) {
+
+        if (confirm('Please login to view your cart.')) {
+            goLogin();
+        }
+
+        return;
+    }
+
+    var mobileMenu = document.getElementById('mobileMenu');
+    var mobileBtn = document.getElementById('mobileMenuBtn');
+
+    if (mobileMenu && mobileMenu.classList.contains('active')) {
+        mobileMenu.classList.remove('active');
+
+        if (mobileBtn) {
+            mobileBtn.classList.remove('active');
+        }
+
+        document.body.classList.remove('no-scroll');
+    }
+
+    self.toggle(true);
+    return;
+}
                 var btn = e.target.closest('.add-btn');
                 if (!btn) {
                     return;
@@ -197,14 +211,31 @@
             }
         },
 
-       toggle: function (open) {
-            if (open) {
-                if (loggedIn()) {
-                    this.load();
-                } else {
-                    this.loadGuestCart();
-                }
-            }
+   toggle: function (open) {
+
+    if (open && !loggedIn()) {
+        goLogin();
+        return;
+    }
+
+    if (open) {
+        this.load();
+    }
+
+    if (this.els.sidebar) {
+        this.els.sidebar.classList.toggle('open', !!open);
+    }
+
+    if (this.els.overlay) {
+        this.els.overlay.classList.toggle('open', !!open);
+    }
+
+    if (open) {
+        document.body.classList.add('cart-open');
+    } else {
+        document.body.classList.remove('cart-open');
+    }
+},
             if (this.els.sidebar) {
                 this.els.sidebar.classList.toggle('open', !!open);
             }
@@ -212,7 +243,7 @@
                 this.els.overlay.classList.toggle('open', !!open);
             }
             
-            // 🌟 Explicitly add/remove the class on the body to lock scrolling smoothly
+            // Explicitly sync state toggle with body layout rules
             if (open) {
                 document.body.classList.add('cart-open');
             } else {
