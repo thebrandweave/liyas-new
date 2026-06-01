@@ -95,36 +95,34 @@
 
             document.addEventListener('click', function (e) {
                 var trigger = e.target.closest('[data-cart-trigger]');
-              if (trigger) {
-    e.preventDefault();
-    e.stopPropagation();
+                if (trigger) {
+                    e.preventDefault();
+                    e.stopPropagation();
 
-    // User must login first
-    if (!loggedIn()) {
+                    // User must login first
+                    if (!loggedIn()) {
+                        if (confirm('Please login to view your cart.')) {
+                            goLogin();
+                        }
+                        return;
+                    }
 
-        if (confirm('Please login to view your cart.')) {
-            goLogin();
-        }
+                    var mobileMenu = document.getElementById('mobileMenu');
+                    var mobileBtn = document.getElementById('mobileMenuBtn');
 
-        return;
-    }
+                    if (mobileMenu && mobileMenu.classList.contains('active')) {
+                        mobileMenu.classList.remove('active');
 
-    var mobileMenu = document.getElementById('mobileMenu');
-    var mobileBtn = document.getElementById('mobileMenuBtn');
+                        if (mobileBtn) {
+                            mobileBtn.classList.remove('active');
+                        }
 
-    if (mobileMenu && mobileMenu.classList.contains('active')) {
-        mobileMenu.classList.remove('active');
+                        document.body.classList.remove('no-scroll');
+                    }
 
-        if (mobileBtn) {
-            mobileBtn.classList.remove('active');
-        }
-
-        document.body.classList.remove('no-scroll');
-    }
-
-    self.toggle(true);
-    return;
-}
+                    self.toggle(true);
+                    return;
+                }
                 var btn = e.target.closest('.add-btn');
                 if (!btn) {
                     return;
@@ -211,27 +209,27 @@
             }
         },
 
-   toggle: function (open) {
+        toggle: function (open) {
+            if (open && !loggedIn()) {
+                goLogin();
+                return;
+            }
 
-    if (open && !loggedIn()) {
-        goLogin();
-        return;
-    }
+            if (open) {
+                this.load();
+            }
 
-    if (open) {
-        this.load();
-    }
+            if (this.els.sidebar) {
+                this.els.sidebar.classList.toggle('open', open);
+            }
 
-    if (this.els.sidebar) {
-        this.els.sidebar.classList.toggle('open', open);
-    }
+            if (this.els.overlay) {
+                this.els.overlay.classList.toggle('open', open);
+            }
 
-    if (this.els.overlay) {
-        this.els.overlay.classList.toggle('open', open);
-    }
+            document.body.classList.toggle('cart-open', open);
+        },
 
-    document.body.classList.toggle('cart-open', open);
-},
         load: function () {
             var self = this;
             if (!loggedIn()) {
