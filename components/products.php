@@ -46,7 +46,6 @@ $products = $products_stmt->fetchAll(PDO::FETCH_ASSOC);
   padding: 4rem 0;
 }
 
-
 .product-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(260px, 260px));
@@ -142,7 +141,19 @@ $products = $products_stmt->fetchAll(PDO::FETCH_ASSOC);
   border-radius: 30px;
   cursor: pointer;
   font-weight: 600;
+  transition: background 0.2s ease;
 }
+
+/* Visual distinction for the login alternative */
+.login-req-btn {
+  background: #64748b; 
+  font-size: 0.85rem;
+  padding: 11px 18px;
+}
+.login-req-btn:hover {
+  background: #0b2e4e;
+}
+
 .prod-page{
     text-decoration: none;
 }
@@ -155,12 +166,12 @@ $products = $products_stmt->fetchAll(PDO::FETCH_ASSOC);
     <div class="product-filters">
       <input type="text" id="searchInput" placeholder="Search bottle..." />
 
-<select id="litreFilter">
-  <option value="">All Sizes</option>
-  <?php foreach ($available_litres as $l): ?>
-      <option value="<?= $l ?>"><?= $l ?> L</option>
-  <?php endforeach; ?>
-</select>
+      <select id="litreFilter">
+        <option value="">All Sizes</option>
+        <?php foreach ($available_litres as $l): ?>
+            <option value="<?= $l ?>"><?= $l ?> L</option>
+        <?php endforeach; ?>
+      </select>
 
       <select id="categoryFilter">
         <option value="">All Categories</option>
@@ -176,53 +187,62 @@ $products = $products_stmt->fetchAll(PDO::FETCH_ASSOC);
       <?php if (empty($products)): ?>
         <p>No products found.</p>
       <?php else: ?>
-  <?php foreach ($products as $product): ?>
-  <a class="prod-page" href="/products/<?= $product['product_id'] ?>/">  
-    <div class="product-card" 
-         onclick="if(document.getElementById('productDetailModal')) { event.preventDefault(); } openProductModal(<?= $product['product_id'] ?>)"
-         style="cursor: pointer;"
-         data-product-id="<?= $product['product_id'] ?>"
-         data-name="<?= strtolower(htmlspecialchars($product['name'])) ?>"
-         data-litre="<?= htmlspecialchars($product['litre']) ?>"
-         data-category="<?= strtolower(htmlspecialchars($product['category_name'])) ?>">
+        <?php foreach ($products as $product): ?>
+        <a class="prod-page" href="/products/<?= $product['product_id'] ?>/">  
+          <div class="product-card" 
+               onclick="if(document.getElementById('productDetailModal')) { event.preventDefault(); } openProductModal(<?= $product['product_id'] ?>)"
+               style="cursor: pointer;"
+               data-product-id="<?= $product['product_id'] ?>"
+               data-name="<?= strtolower(htmlspecialchars($product['name'])) ?>"
+               data-litre="<?= htmlspecialchars($product['litre']) ?>"
+               data-category="<?= strtolower(htmlspecialchars($product['category_name'])) ?>">
 
-      <div class="size-badge"><?= htmlspecialchars($product['litre']) ?> L</div>
+            <div class="size-badge"><?= htmlspecialchars($product['litre']) ?> L</div>
 
-      <div class="product-image-wrap">
-        <img src="<?= BASE_URL ?>/admin/uploads/products/<?= htmlspecialchars($product['image']) ?>" alt="<?= htmlspecialchars($product['name']) ?>">
-      </div>
+            <div class="product-image-wrap">
+              <img src="<?= BASE_URL ?>/admin/uploads/products/<?= htmlspecialchars($product['image']) ?>" alt="<?= htmlspecialchars($product['name']) ?>">
+            </div>
 
-      <div class="product-info">
-        <p class="category"><?= htmlspecialchars($product['category_name']) ?></p>
-        <h4><?= htmlspecialchars($product['name']) ?></h4>
-        <div class="rating">⭐⭐⭐⭐☆ <span>(4.0)</span></div>
-        <p class="by">By <span>Liyas</span></p>
-        
-        <div class="price-section">
-          <p class="new-price">₹<?= htmlspecialchars($product['price']) ?></p>
-          <?php if ($product['discount'] > 0): ?>
-              <p class="old-price">₹<?= htmlspecialchars($product['price'] + ($product['price'] * $product['discount'] / 100)) ?></p>
-          <?php endif; ?>
-        </div>
+            <div class="product-info">
+              <p class="category"><?= htmlspecialchars($product['category_name']) ?></p>
+              <h4><?= htmlspecialchars($product['name']) ?></h4>
+              <div class="rating">⭐⭐⭐⭐☆ <span>(4.0)</span></div>
+              <p class="by">By <span>Liyas</span></p>
+              
+              <div class="price-section">
+                <p class="new-price">₹<?= htmlspecialchars($product['price']) ?></p>
+                <?php if ($product['discount'] > 0): ?>
+                    <p class="old-price">₹<?= htmlspecialchars($product['price'] + ($product['price'] * $product['discount'] / 100)) ?></p>
+                <?php endif; ?>
+              </div>
 
-        <button type="button" class="add-btn" onclick="
-          event.preventDefault(); 
-          event.stopPropagation(); 
-          if(window.LiyasCart) { 
-            window.LiyasCart.add({
-              id: '<?= $product['product_id'] ?>',
-              name: '<?= addslashes($product['name']) ?>',
-              price: <?= floatval($product['price']) ?>,
-              image: '<?= BASE_URL ?>/admin/uploads/products/<?= htmlspecialchars($product['image']) ?>'
-            });
-            window.LiyasCart.toggle(true);
-          }
-        ">Add</button>
+              <!-- SESSION VERIFICATION: Only render the add action if the user is authenticated -->
+              <?php if (isset($_SESSION['user_id'])): ?>
+                <button type="button" class="add-btn" onclick="
+                  event.preventDefault(); 
+                  event.stopPropagation(); 
+                  if(window.LiyasCart) { 
+                    window.LiyasCart.add({
+                      id: '<?= $product['product_id'] ?>',
+                      name: '<?= addslashes($product['name']) ?>',
+                      price: <?= floatval($product['price']) ?>,
+                      image: '<?= BASE_URL ?>/admin/uploads/products/<?= htmlspecialchars($product['image']) ?>'
+                    });
+                    window.LiyasCart.toggle(true);
+                  }
+                ">Add</button>
+              <?php else: ?>
+                <button type="button" class="add-btn login-req-btn" onclick="
+                  event.preventDefault();
+                  event.stopPropagation();
+                  window.location.href = '<?= BASE_URL ?>/login/?redirect=' + encodeURIComponent(window.location.pathname + window.location.search);
+                ">Login to Order</button>
+              <?php endif; ?>
 
-      </div>
-    </div>
-  </a>
-<?php endforeach; ?>
+            </div>
+          </div>
+        </a>
+      <?php endforeach; ?>
       <?php endif; ?>
 
     </div>
@@ -234,7 +254,6 @@ const searchInput = document.getElementById("searchInput");
 const litreFilter = document.getElementById("litreFilter");
 const categoryFilter = document.getElementById("categoryFilter");
 
-// ❗ IMPORTANT: select product-card but we will hide parent <a>
 const products = document.querySelectorAll(".product-card");
 
 function filterProducts() {
@@ -252,7 +271,6 @@ function filterProducts() {
       (!litreValue || litre === litreValue) &&
       (!categoryValue || category === categoryValue);
 
-    // ✅ FIX: hide the parent <a> instead of card
     const wrapper = product.closest(".prod-page");
     wrapper.style.display = match ? "block" : "none";
   });
