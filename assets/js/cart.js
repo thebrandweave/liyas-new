@@ -99,34 +99,31 @@
                     e.preventDefault();
                     e.stopPropagation();
 
-                    // User must login first
-                    if (!loggedIn()) {
-                        if (confirm('Please login to view your cart.')) {
-                            goLogin();
-                        }
-                        return;
-                    }
-
                     var mobileMenu = document.getElementById('mobileMenu');
                     var mobileBtn = document.getElementById('mobileMenuBtn');
 
                     if (mobileMenu && mobileMenu.classList.contains('active')) {
                         mobileMenu.classList.remove('active');
-
                         if (mobileBtn) {
                             mobileBtn.classList.remove('active');
                         }
-
                         document.body.classList.remove('no-scroll');
                     }
 
                     self.toggle(true);
                     return;
                 }
+                
                 var btn = e.target.closest('.add-btn');
                 if (!btn) {
                     return;
                 }
+                
+                // If it has an inline onclick handler handling the add, let that execute instead
+                if (btn.getAttribute('onclick') && btn.getAttribute('onclick').includes('LiyasCart.add')) {
+                    return; 
+                }
+
                 var card = btn.closest('.product-card');
                 var modal = btn.closest('#productDetailModal');
                 if (!card && !modal) {
@@ -210,13 +207,12 @@
         },
 
         toggle: function (open) {
-            if (open && !loggedIn()) {
-                goLogin();
-                return;
-            }
-
             if (open) {
-                this.load();
+                if (loggedIn()) {
+                    this.load();
+                } else {
+                    this.loadGuestCart();
+                }
             }
 
             if (this.els.sidebar) {
@@ -240,7 +236,8 @@
                 .then(function (data) {
                     if (data && data.error) {
                         if (data.error === 'User not logged in') {
-                            goLogin();
+                            // Safe fallback to guest cart if session drops out mid-operation
+                            self.loadGuestCart();
                         }
                         return;
                     }
@@ -254,15 +251,17 @@
 
         add: function (product) {
             var self = this;
-            if (!loggedIn()) {
-                var existing = null;
-                var i;
-                for (i = 0; i < this.cart.length; i++) {
-                    if (String(this.cart[i].product_id) === String(product.id)) {
-                        existing = this.cart[i];
-                        break;
-                    }
+            var existing = null;
+            var i;
+
+            for (i = 0; i < this.cart.length; i++) {
+                if (String(this.cart[i].product_id) === String(product.id)) {
+                    existing = this.cart[i];
+                    break;
                 }
+            }
+
+            if (!loggedIn()) {
                 if (existing) {
                     existing.quantity = (parseInt(existing.quantity, 10) || 1) + 1;
                 } else {
@@ -278,18 +277,12 @@
                 this.render();
                 return;
             }
-            var existing = null;
-            var i;
-            for (i = 0; i < this.cart.length; i++) {
-                if (String(this.cart[i].product_id) === String(product.id)) {
-                    existing = this.cart[i];
-                    break;
-                }
-            }
+
             if (existing) {
                 this.changeQty(existing.product_id, 1);
                 return;
             }
+
             var fd = new FormData();
             fd.append('product_id', product.id);
             fd.append('quantity', '1');
@@ -298,9 +291,6 @@
                 .then(function (data) {
                     if (data && data.error) {
                         console.error(data.error);
-                        if (data.error === 'User not logged in') {
-                            goLogin();
-                        }
                         return;
                     }
                     self.load();
@@ -311,6 +301,7 @@
         },
 
         changeQty: function (productId, delta) {
+            var self = this;
             var item = null;
             var i;
             for (i = 0; i < this.cart.length; i++) {
@@ -322,22 +313,25 @@
             if (!item) {
                 return;
             }
-            if (!loggedIn()) {
-                var qty = (parseInt(item.quantity, 10) || 1) + delta;
-                if (qty <= 0) {
-                    this.remove(productId);
-                } else {
-                    item.quantity = qty;
-                    this.saveGuestCart();
-                    this.render();
-                }
+
+            var currentQty = parseInt(item.quantity, 10) || 1;
+            var targetQty = currentQty + delta;
+
+            if (targetQty <= 0) {
+                this.remove(productId);
                 return;
             }
-            var qty = item.quantity + delta;
+
+            if (!loggedIn()) {
+                item.quantity = targetQty;
+                this.saveGuestCart();
+                this.render();
+                return;
+            }
+
             var fd = new FormData();
             fd.append('product_id', productId);
-            fd.append('quantity', String(qty));
-            var self = this;
+            fd.append('quantity', String(targetQty));
             fetch(apiUrl('/update_cart_quantity.php'), { method: 'POST', body: fd, credentials: 'same-origin' })
                 .then(function (r) { return r.json(); })
                 .then(function (data) {
@@ -353,6 +347,7 @@
         },
 
         remove: function (productId) {
+            var self = this;
             if (!loggedIn()) {
                 this.cart = this.cart.filter(function (item) {
                     return String(item.product_id) !== String(productId);
@@ -363,7 +358,6 @@
             }
             var fd = new FormData();
             fd.append('product_id', productId);
-            var self = this;
             fetch(apiUrl('/remove_from_cart.php'), { method: 'POST', body: fd, credentials: 'same-origin' })
                 .then(function (r) { return r.json(); })
                 .then(function (data) {
@@ -400,7 +394,6 @@
             if (!this.els.body) {
                 return;
             }
-            var self = this;
             var html = '';
             var subtotal = 0;
 
@@ -453,7 +446,6 @@
             if (!container) {
                 return;
             }
-            var self = this;
             var html = '';
             var subtotal = 0;
 
@@ -485,7 +477,7 @@
             }
             var checkoutBtn = document.getElementById('cart-page-checkout');
             if (checkoutBtn) {
-                checkoutBtn.style.display = self.cart.length > 0 ? 'block' : 'none';
+                checkoutBtn.style.display = this.cart.length > 0 ? 'block' : 'none';
             }
         },
     };
