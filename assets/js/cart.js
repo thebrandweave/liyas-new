@@ -397,31 +397,41 @@
             var html = '';
             var subtotal = 0;
 
-            if (this.cart.length === 0) {
-                html = '<div class="cart-empty">' +
-                    '<div class="cart-empty-icon">🛒</div>' +
-                    '<p>Your cart is empty</p>' +
-                    '<a href="' + escapeHtml(apiUrl('/products/')) + '" class="cart-shop-link">Browse products</a>' +
-                    '</div>';
-            } else {
-                this.cart.forEach(function (item) {
-                    var price = parseFloat(item.price) || 0;
-                    var qty = parseInt(item.quantity, 10) || 1;
-                    var line = price * qty;
-                    subtotal += line;
-                    html += '<div class="cart-item" data-id="' + escapeHtml(item.product_id) + '">' +
-                        '<img class="cart-item-img" src="' + escapeHtml(item.image) + '" alt="">' +
-                        '<div class="cart-item-details">' +
-                        '<h5 class="cart-item-title">' + escapeHtml(item.name) + '</h5>' +
-                        '<p class="cart-item-price">' + formatMoney(line) + '</p>' +
-                        '<div class="cart-item-quantity">' +
-                        '<button type="button" class="quantity-btn minus-btn" data-id="' + escapeHtml(item.product_id) + '">−</button>' +
-                        '<span class="item-quantity">' + qty + '</span>' +
-                        '<button type="button" class="quantity-btn plus-btn" data-id="' + escapeHtml(item.product_id) + '">+</button>' +
-                        '<button type="button" class="remove-btn" data-id="' + escapeHtml(item.product_id) + '" title="Remove">Remove</button>' +
-                        '</div></div></div>';
-                });
-            }
+           if (this.cart.length === 0) {
+    html = '<div class="cart-empty" style="text-align: center; padding: 3rem 1.5rem; color: #64748b;">' +
+        '<div class="cart-empty-icon" style="font-size: 3.5rem; margin-bottom: 1rem; filter: grayscale(0.2);">🛒</div>' +
+        '<p style="font-size: 1.1rem; margin-bottom: 1.5rem; font-weight: 500; color: #0b2e4e;">Your cart is empty</p>' +
+        '<a href="' + escapeHtml(apiUrl('/products/')) + '" class="cart-shop-link" style="display: inline-block; background-color: #4ad2e2; color: #ffffff; padding: 10px 24px; border-radius: 30px; text-decoration: none; font-weight: 600; font-size: 0.95rem; transition: transform 0.2s ease, background-color 0.2s ease;">Browse products</a>' +
+        '</div>';
+} else {
+    this.cart.forEach(function (item) {
+        var price = parseFloat(item.price) || 0;
+        var qty = parseInt(item.quantity, 10) || 1;
+        var line = price * qty;
+        subtotal += line;
+        
+        html += '<div class="cart-item" data-id="' + escapeHtml(item.product_id) + '" style="display: flex; align-items: center; gap: 1rem; padding: 1.25rem 0; border-bottom: 1px solid #f1f5f9; min-height: 90px;">' +
+            '<img class="cart-item-img" src="' + escapeHtml(item.image) + '" alt="" style="width: 70px; height: 70px; object-fit: contain; background-color: #f8fafc; border-radius: 12px; padding: 6px; flex-shrink: 0; border: 1px solid #f1f5f9;">' +
+            '<div class="cart-item-details" style="flex: 1; display: flex; flex-direction: column; gap: 0.25rem; min-width: 0;">' +
+            '<h5 class="cart-item-title" style="font-size: 0.95rem; font-weight: 600; color: #0b2e4e; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">' + escapeHtml(item.name) + '</h5>' +
+            '<p class="cart-item-price" style="font-size: 0.95rem; font-weight: 700; color: #4ad2e2; margin: 0;">' + formatMoney(line) + '</p>' +
+            '<div class="cart-item-quantity" style="display: flex; align-items: center; gap: 0.75rem; margin-top: 0.35rem;">' +
+            
+            // Minus Button
+            '<button type="button" class="quantity-btn minus-btn" data-id="' + escapeHtml(item.product_id) + '" style="width: 26px; height: 26px; border-radius: 50%; border: 1px solid #e2e8f0; background: #fff; color: #0b2e4e; font-size: 1rem; display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; font-weight: 600; line-height: 1;">−</button>' +
+            
+            // Quantity Counter
+            '<span class="item-quantity" style="font-size: 0.95rem; font-weight: 600; color: #0b2e4e; min-width: 20px; text-align: center;">' + qty + '</span>' +
+            
+            // Plus Button
+            '<button type="button" class="quantity-btn plus-btn" data-id="' + escapeHtml(item.product_id) + '" style="width: 26px; height: 26px; border-radius: 50%; border: 1px solid #e2e8f0; background: #fff; color: #0b2e4e; font-size: 1rem; display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; font-weight: 600; line-height: 1;">+</button>' +
+            
+            // Remove Button
+            '<button type="button" class="remove-btn" data-id="' + escapeHtml(item.product_id) + '" title="Remove" style="background: none; border: none; color: #94a3b8; font-size: 0.8rem; font-weight: 500; cursor: pointer; margin-left: auto; padding: 4px 8px; border-radius: 6px; transition: color 0.2s ease;">Remove</button>' +
+            
+            '</div></div></div>';
+    });
+}
 
             this.els.body.innerHTML = html;
             if (this.els.subtotal) {
