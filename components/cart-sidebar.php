@@ -34,7 +34,7 @@
         </a>
 
         <a href="<?php echo BASE_URL; ?>/checkout.php"
-           class="checkout-btn btn-checkout-primary">
+           class="checkout-btn">
             Checkout
         </a>
 
