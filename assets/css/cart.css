@@ -300,14 +300,14 @@ body.cart-open {
 }
 
 .btn-checkout-primary {
-    background: #f97316;
+    background: #4ad2e2 ;
     color: #fff !important;
-    border: 2px solid #f97316;
+    border: 2px solid #4ad2e2 ;
 }
 
 .btn-checkout-primary:hover {
-    background: #ea580c;
-    border-color: #ea580c;
+    background: #2d7d86 ;
+    border-color: #2d7d86 ;
 }
 
 @media (max-width: 480px) {
