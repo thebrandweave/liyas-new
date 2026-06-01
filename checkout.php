@@ -181,7 +181,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['place_order'])) {
     <title>Checkout | Liyas Mineral Water</title>
     
     <!-- Favicon -->
-    <link rel="icon" type="image/jpeg" href="assets/images/logo/logo-bg.jpg">
+  <link rel="icon" type="image/jpeg"  sizes="16x16" href="https://liyasinternational.com/assets/images/logo/logol.png">
+    <link rel="shortcut icon" type="image/jpeg"  sizes="16x16" href="https://liyasinternational.com/assets/images/logo/logol.png">
+    <link rel="apple-touch-icon"  type="image/jpeg"  sizes="16x16" href="https://liyasinternational.com/assets/images/logo/logol.png">
+    <link rel="icon" type="image/jpeg" sizes="38x38" href="https://liyasinternational.com/assets/images/logo/logol.png">
+    <link rel="icon" type="image/jpeg" sizes="16x16" href="https://liyasinternational.com/assets/images/logo/logol.png">
     
     <!-- Google Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
