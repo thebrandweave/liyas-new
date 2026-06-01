@@ -400,7 +400,7 @@
                 html = '<div class="cart-empty">' +
                     '<div class="cart-empty-icon">🛒</div>' +
                     '<p>Your cart is empty</p>' +
-                    '<a href="' + escapeHtml(apiUrl('/products/')) + '" class="cart-shop-link" style="list-style:none;">Browse products</a>' +
+                    '<a href="' + escapeHtml(apiUrl('/products/')) + '" class="cart-shop-link" style="">Browse products</a>' +
                     '</div>';
             } else {
                 this.cart.forEach(function (item) {
