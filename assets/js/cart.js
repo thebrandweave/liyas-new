@@ -236,7 +236,6 @@
                 .then(function (data) {
                     if (data && data.error) {
                         if (data.error === 'User not logged in') {
-                            // Safe fallback to guest cart if session drops out mid-operation
                             self.loadGuestCart();
                         }
                         return;
