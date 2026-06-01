@@ -20,4 +20,6 @@ include __DIR__ . '/cart-sidebar.php';
 <?php if (!empty($load_product_modal)): ?>
 <script src="<?php echo BASE_URL; ?>/assets/js/product-modal.js?v=2"></script>
 <?php endif; ?>
-<script src="<?php echo BASE_URL; ?>/assets/js/cart.js?v=4"></script>
+<script src="<?= BASE_URL ?>/assets/js/cart.js?v=1.0.1"></script>
+
+<script src="<?= BASE_URL ?>/assets/js/cart.js?t=<?= time(); ?>"></script>
