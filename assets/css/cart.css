@@ -446,3 +446,25 @@ body.cart-open {
         flex-wrap: wrap;
     }
 }
+#cart-sidebar {
+    position: fixed !important;
+    top: 0 !important;
+    right: -420px !important;
+    width: 420px !important;
+    max-width: 100vw !important;
+    height: 100vh !important;
+    background: #fff !important;
+    z-index: 99999 !important;
+    display: flex !important;
+    flex-direction: column !important;
+}
+
+#cart-sidebar.open {
+    right: 0 !important;
+}
+
+.cart-overlay {
+    position: fixed !important;
+    inset: 0 !important;
+    z-index: 99998 !important;
+}

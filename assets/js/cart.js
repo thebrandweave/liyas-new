@@ -223,34 +223,15 @@
     }
 
     if (this.els.sidebar) {
-        this.els.sidebar.classList.toggle('open', !!open);
+        this.els.sidebar.classList.toggle('open', open);
     }
 
     if (this.els.overlay) {
-        this.els.overlay.classList.toggle('open', !!open);
+        this.els.overlay.classList.toggle('open', open);
     }
 
-    if (open) {
-        document.body.classList.add('cart-open');
-    } else {
-        document.body.classList.remove('cart-open');
-    }
+    document.body.classList.toggle('cart-open', open);
 },
-            if (this.els.sidebar) {
-                this.els.sidebar.classList.toggle('open', !!open);
-            }
-            if (this.els.overlay) {
-                this.els.overlay.classList.toggle('open', !!open);
-            }
-            
-            // Explicitly sync state toggle with body layout rules
-            if (open) {
-                document.body.classList.add('cart-open');
-            } else {
-                document.body.classList.remove('cart-open');
-            }
-        },
-
         load: function () {
             var self = this;
             if (!loggedIn()) {
