@@ -236,7 +236,7 @@ $products = $products_stmt->fetchAll(PDO::FETCH_ASSOC);
                   event.preventDefault();
                   event.stopPropagation();
                   window.location.href = '<?= BASE_URL ?>/login/?redirect=' + encodeURIComponent(window.location.pathname + window.location.search);
-                ">Login to Order</button>
+                ">Add</button>
               <?php endif; ?>
 
             </div>
