@@ -15,7 +15,8 @@ if (!empty($hide_cart)) {
 include __DIR__ . '/cart-sidebar.php';
 ?>
 <script>
-    const userIsLoggedIn = <?php echo json_encode(isset($_SESSION['user_id'])); ?>;
+    // Safely assign to the global window object without re-declaring variables
+    window.userIsLoggedIn = <?php echo json_encode(isset($_SESSION['user_id'])); ?>;
 </script>
 <?php if (!empty($load_product_modal)): ?>
 <script src="<?php echo BASE_URL; ?>/assets/js/product-modal.js?v=2"></script>
