@@ -176,36 +176,53 @@ $products = $products_stmt->fetchAll(PDO::FETCH_ASSOC);
       <?php if (empty($products)): ?>
         <p>No products found.</p>
       <?php else: ?>
-        <?php foreach ($products as $product): ?>
-        <a class="prod-page" href="/products/">  <div class="product-card" 
-               onclick="if(document.getElementById('productDetailModal')) { event.preventDefault(); } openProductModal(<?= $product['product_id'] ?>)"
-               style="cursor: pointer;"
-               data-product-id="<?= $product['product_id'] ?>"
-               data-name="<?= strtolower(htmlspecialchars($product['name'])) ?>"
-            data-litre="<?= htmlspecialchars($product['litre']) ?>"
- data-category="<?= strtolower(htmlspecialchars($product['category_name'])) ?>">
+  <?php foreach ($products as $product): ?>
+  <a class="prod-page" href="/products/<?= $product['product_id'] ?>/">  
+    <div class="product-card" 
+         onclick="if(document.getElementById('productDetailModal')) { event.preventDefault(); } openProductModal(<?= $product['product_id'] ?>)"
+         style="cursor: pointer;"
+         data-product-id="<?= $product['product_id'] ?>"
+         data-name="<?= strtolower(htmlspecialchars($product['name'])) ?>"
+         data-litre="<?= htmlspecialchars($product['litre']) ?>"
+         data-category="<?= strtolower(htmlspecialchars($product['category_name'])) ?>">
 
-<div class="size-badge"><?= htmlspecialchars($product['litre']) ?> L</div>
+      <div class="size-badge"><?= htmlspecialchars($product['litre']) ?> L</div>
 
-            <div class="product-image-wrap">
-              <img src="<?= BASE_URL ?>/admin/uploads/products/<?= htmlspecialchars($product['image']) ?>" alt="<?= htmlspecialchars($product['name']) ?>">
-            </div>
+      <div class="product-image-wrap">
+        <img src="<?= BASE_URL ?>/admin/uploads/products/<?= htmlspecialchars($product['image']) ?>" alt="<?= htmlspecialchars($product['name']) ?>">
+      </div>
 
-            <div class="product-info">
-              <p class="category"><?= htmlspecialchars($product['category_name']) ?></p>
-              <h4><?= htmlspecialchars($product['name']) ?></h4>
-              <div class="rating">⭐⭐⭐⭐☆ <span>(4.0)</span></div>
-              <p class="by">By <span>Liyas</span></p>
-              <div class="price-section">
-                <p class="new-price">₹<?= htmlspecialchars($product['price']) ?></p>
-                <?php if ($product['discount'] > 0): ?>
-                    <p class="old-price">₹<?= htmlspecialchars($product['price'] + ($product['price'] * $product['discount'] / 100)) ?></p>
-                <?php endif; ?>
-              </div>
-              <button class="add-btn" onclick="event.stopPropagation();">Add</button>
-            </div>
-          </div></a>
-        <?php endforeach; ?>
+      <div class="product-info">
+        <p class="category"><?= htmlspecialchars($product['category_name']) ?></p>
+        <h4><?= htmlspecialchars($product['name']) ?></h4>
+        <div class="rating">⭐⭐⭐⭐☆ <span>(4.0)</span></div>
+        <p class="by">By <span>Liyas</span></p>
+        
+        <div class="price-section">
+          <p class="new-price">₹<?= htmlspecialchars($product['price']) ?></p>
+          <?php if ($product['discount'] > 0): ?>
+              <p class="old-price">₹<?= htmlspecialchars($product['price'] + ($product['price'] * $product['discount'] / 100)) ?></p>
+          <?php endif; ?>
+        </div>
+
+        <button type="button" class="add-btn" onclick="
+          event.preventDefault(); 
+          event.stopPropagation(); 
+          if(window.LiyasCart) { 
+            window.LiyasCart.add({
+              id: '<?= $product['product_id'] ?>',
+              name: '<?= addslashes($product['name']) ?>',
+              price: <?= floatval($product['price']) ?>,
+              image: '<?= BASE_URL ?>/admin/uploads/products/<?= htmlspecialchars($product['image']) ?>'
+            });
+            window.LiyasCart.toggle(true);
+          }
+        ">Add</button>
+
+      </div>
+    </div>
+  </a>
+<?php endforeach; ?>
       <?php endif; ?>
 
     </div>
