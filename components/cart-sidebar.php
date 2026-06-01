@@ -1,4 +1,4 @@
-<div id="cart-overlay" class="cart-overlay"></div>
+<!-- <div id="cart-overlay" class="cart-overlay"></div>
 
 <div id="cart-sidebar" class="liyas-cart-drawer">
 
@@ -40,4 +40,4 @@
 
     </div>
 
-</div>
+</div> -->
