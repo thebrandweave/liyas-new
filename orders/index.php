@@ -356,7 +356,7 @@ body{
 
                     <div class="col-md-2 text-md-end mt-3 mt-md-0">
 
-                        <a href="order-details.php?id=<?= $order['order_id']; ?>"
+                        <a href="view-details.php?id=<?= $order['order_id']; ?>"
                            class="btn btn-primary view-btn">
                             View Details
                         </a>
