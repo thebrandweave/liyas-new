@@ -27,5 +27,5 @@ $stmt->execute([
     $userId
 ]);
 
-header("Location: index.php?id=".$orderId);
+header("Location:index.php?id=".$orderId);
 exit;
