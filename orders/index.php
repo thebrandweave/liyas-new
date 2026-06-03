@@ -104,7 +104,7 @@ body{
 </head>
 <body>
 
-    <?php include '../components/navbar.php' ?>
+    <?php include '../components/navbar.php'; ?>
 
 <div class="container py-5">
 
