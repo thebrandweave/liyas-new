@@ -281,10 +281,17 @@ $discountValue = $totalListingPrice - $order['total_amount'];
                             <h4 class="fw-bold">₹<?= number_format($item['price_at_purchase'], 2) ?></h4>
                         </div>
                         <div class="col-auto">
-                            <?php 
-                                $imagePath = !empty($item['product_image']) ? '../uploads/' . $item['product_image'] : '../assets/images/sample-product.png';
-                            ?>
-                            <img src="<?= $imagePath ?>" alt="Product Image" class="img-fluid rounded" style="width: 80px; height: 80px; object-fit: cover;">
+                           <?php
+$imagePath = !empty($item['product_image'])
+    ? BASE_URL . '/admin/uploads/products/' . $item['product_image']
+    : BASE_URL . '/assets/images/sample-product.png';
+?>
+                     <img
+    src="<?= htmlspecialchars($imagePath) ?>"
+    alt="<?= htmlspecialchars($item['product_name']) ?>"
+    class="img-fluid rounded"
+    style="max-height:120px;"
+>
                         </div>
                     </div>
 
