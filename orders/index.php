@@ -1,6 +1,13 @@
 <?php
+error_reporting(E_ALL);
+ini_set('display_errors', 1);
 session_start();
 require_once '../config/config.php';
+
+// Prevent browser caching
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+header('Cache-Control: post-check=0, pre-check=0', false);
+header('Pragma: no-cache');
 
 if (!isset($_SESSION['user_id'])) {
     header("Location: /login/");
