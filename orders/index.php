@@ -44,70 +44,57 @@ $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 <style>
 body{
-    background:#f8fafc;
-}
-.page-title{
-    font-size: 3rem;
-    font-weight: 800;
-    color:#0f172a;
-    margin-bottom:40px;
+    background:#f1f5f9;
 }
 
-.order-card{
+.page-title{
+    font-size:2.5rem;
+    font-weight:800;
+    color:#0f172a;
+}
+
+.order-box{
     background:#fff;
-    border-radius:24px;
-    padding:24px;
-    margin-bottom:24px;
-    border:1px solid rgba(74,210,226,.12);
-    box-shadow:0 10px 30px rgba(0,0,0,.05);
+    border-radius:16px;
+    padding:25px;
+    border:1px solid #e5e7eb;
     transition:.3s;
 }
 
-.order-card:hover{
-    transform:translateY(-4px);
-    box-shadow:0 20px 40px rgba(74,210,226,.12);
+.order-box:hover{
+    box-shadow:0 10px 30px rgba(0,0,0,.08);
 }
 
-.order-id{
-    color:#4ad2e2;
-    font-weight:700;
-    font-size:18px;
-}
-
-.order-total{
+.order-price{
     font-size:24px;
     font-weight:700;
-    color:#0f172a;
+    color:#111827;
+}
+
+.status-line{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    margin-bottom:5px;
+}
+
+.status-dot{
+    width:10px;
+    height:10px;
+    border-radius:50%;
 }
 
 .view-btn{
     background:#4ad2e2;
-    color:#fff;
     border:none;
-    border-radius:50px;
-    padding:12px 25px;
-    text-decoration:none;
+    padding:10px 20px;
+    border-radius:10px;
     font-weight:600;
 }
 
 .view-btn:hover{
-    background:#35c3d4;
-    color:#fff;
+    background:#2dc4d5;
 }
-
-.status-badge{
-    padding:8px 16px;
-    border-radius:999px;
-    font-size:13px;
-    font-weight:700;
-}
-
-.pending{background:#fff3cd;color:#856404;}
-.processing{background:#dbeafe;color:#1e40af;}
-.shipped{background:#e0f2fe;color:#0369a1;}
-.delivered{background:#dcfce7;color:#166534;}
-.cancelled{background:#fee2e2;color:#991b1b;}
-.returned{background:#f3e8ff;color:#6b21a8;}
 
 .empty-orders{
     text-align:center;
@@ -121,57 +108,109 @@ body{
 
 <div class="container py-5">
 
-    <h2 class="page-title">My Orders</h2>
+    <h2 class="page-title mb-4">My Orders</h2>
 
-  <?php if(count($orders) > 0): ?>
+    <div class="mb-4">
+        <input type="text"
+               id="searchOrders"
+               class="form-control form-control-lg"
+               placeholder="Search your orders...">
+    </div>
 
-     <?php foreach($orders as $order): ?>
+    <?php if(count($orders) > 0): ?>
 
-            <div class="order-card">
+        <div id="ordersContainer">
+
+        <?php foreach($orders as $order): ?>
+
+            <?php
+                $status = strtolower($order['status']);
+
+                $dotColor = '#22c55e';
+
+                if($status == 'pending')
+                    $dotColor = '#f59e0b';
+
+                if($status == 'cancelled')
+                    $dotColor = '#ef4444';
+
+                if($status == 'returned')
+                    $dotColor = '#8b5cf6';
+            ?>
+
+            <div class="order-box mb-4">
 
                 <div class="row align-items-center">
 
-                    <div class="col-md-3">
-                        <div class="order-id">
+                    <div class="col-md-5">
+
+                        <h5 class="mb-2">
                             Order #<?= $order['order_id']; ?>
+                        </h5>
+
+                        <div class="text-muted">
+                            <?= date('d M Y, h:i A', strtotime($order['order_date'])); ?>
+                        </div>
+
+                        <div class="mt-2">
+                            <strong><?= $order['total_items']; ?></strong>
+                            Item(s)
+                        </div>
+
+                    </div>
+
+                    <div class="col-md-2">
+
+                        <div class="order-price">
+                            ₹<?= number_format($order['total_amount'],2); ?>
+                        </div>
+
+                    </div>
+
+                    <div class="col-md-3">
+
+                        <div class="status-line">
+
+                            <span class="status-dot"
+                                  style="background:<?= $dotColor ?>"></span>
+
+                            <strong>
+                                <?= ucfirst($order['status']); ?>
+                            </strong>
+
                         </div>
 
                         <small class="text-muted">
-                            <?= date('d M Y h:i A', strtotime($order['order_date'])); ?>
+                            Payment:
+                            <?= ucfirst($order['payment_status']); ?>
                         </small>
+
                     </div>
 
-                    <div class="col-md-2">
-                        <strong><?= $order['total_items']; ?></strong><br>
-                        <small>Items</small>
+                    <div class="col-md-2 text-md-end mt-3 mt-md-0">
+
+                        <a href="order-details.php?id=<?= $order['order_id']; ?>"
+                           class="btn btn-primary view-btn">
+                            View Details
+                        </a>
+
                     </div>
-
-                  <div class="col-md-2">
-    <div class="order-total">
-        ₹<?= number_format($order['total_amount'],2); ?>
-    </div>
-</div>
-
-                    <div class="col-md-2">
-                        <span class="status-badge <?= strtolower($order['status']); ?>">
-                            <?= ucfirst($order['status']); ?>
-                        </span>
-                    </div>
-
-                  <a href="order-details.php?id=<?= $order['order_id']; ?>"
-   class="view-btn">
-   View Details
-</a>
 
                 </div>
 
             </div>
 
-    <?php endforeach; ?>
+        <?php endforeach; ?>
+
+        </div>
 
     <?php else: ?>
 
         <div class="empty-orders">
+
+            <img src="../assets/images/empty-order.svg"
+                 width="180"
+                 class="mb-4">
 
             <h3>No Orders Yet</h3>
 
