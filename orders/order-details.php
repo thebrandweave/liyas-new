@@ -108,8 +108,7 @@ body{
 
 <body>
 
-
-<?php include __DIR__ . '/includes/navbar.php'; ?>
+    <?php include '../components/navbar.php' ?>
 
 <div class="container py-5">
 
