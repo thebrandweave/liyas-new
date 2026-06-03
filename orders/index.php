@@ -101,11 +101,10 @@ body{
     padding:80px 20px;
 }
 </style>
-    <?php include '../components/navbar.php'; ?>
 </head>
 <body>
 
-
+    <?php include '../components/navbar.php'; ?>
 
 <div class="container py-5">
 
