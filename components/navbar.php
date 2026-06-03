@@ -35,7 +35,7 @@ $logout_link = $navBase . '/logout.php';
         </svg>
         <span id="cart-count-badge" class="cart-count-badge">0</span>
     </a>
-    <a href="<?php echo $navBase; ?>/orders/my-orders.php"
+    <a href="<?php echo $navBase; ?>/orders/index.php"
    class="my-orders-btn"
    title="My Orders">
     
