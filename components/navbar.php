@@ -35,6 +35,16 @@ $logout_link = $navBase . '/logout.php';
         </svg>
         <span id="cart-count-badge" class="cart-count-badge">0</span>
     </a>
+    <a href="<?php echo $navBase; ?>/orders/my-orders.php"
+   class="my-orders-btn"
+   title="My Orders">
+    
+    <img src="assets/images/liyas-bottle.png"
+         alt="Bottle"
+         class="order-bottle-icon">
+
+    <span class="my-orders">My Orders</span>
+</a>
     
     <div>
         <?php if (isset($_SESSION['user_id'])): ?>
@@ -70,6 +80,15 @@ $logout_link = $navBase . '/logout.php';
         <span style="font-size:15px; margin-left: 5px;">Cart</span>
       </a>
     </li>
+
+    <li>
+    <a href="<?php echo $navBase; ?>/my-orders.php" class="nav-link">
+        <img src="assets/images/liyas-bottle.png"
+             alt="Bottle"
+             style="width:10px;height:24px;margin-right:8px;">
+        My Orders
+    </a>
+</li>
 
     <li class="login-button">
       <?php if (isset($_SESSION['user_id'])): ?>
@@ -109,6 +128,36 @@ $logout_link = $navBase . '/logout.php';
       padding: 0.5rem;
   }
 
+
+
+
+  .my-orders-btn {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    text-decoration: none;
+    color: #0f172a;
+    font-size: 14px;
+    font-weight: 500;
+    transition: all 0.3s ease;
+    margin-left: 10px;
+}
+
+.my-orders-btn:hover {
+    color: #4ad2e2;
+}
+
+.order-bottle-icon {
+    width: 28px;
+    height: 28px;
+    object-fit: contain;
+}
+
+@media (max-width: 767px) {
+    .my-orders-btn {
+        display: none; /* hide in top navbar on mobile */
+    }
+}
   .cart-icon-1:hover {
       color: #4ad2e2;
   }
