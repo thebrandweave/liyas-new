@@ -86,12 +86,14 @@ try {
     // Log error internally
     error_log("Database Connection Failed: " . $e->getMessage());
    
-    // If live, show generic message. If local, show details.
-    if ($is_live) {
-        die("System Error: Unable to connect to the database. Please try again later.");
-    } else {
-        die("Database Error: " . $e->getMessage());
-    }
+if ($is_live) {
+    error_log("Database Connection Failed: " . $e->getMessage());
+
+    http_response_code(500);
+
+    include ROOT_PATH . '/error-pages/db-error.php';
+    exit();
+}
 }
 
 // ============================================
