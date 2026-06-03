@@ -59,8 +59,8 @@ if (!empty($order['shipping_address_id'])) {
 
     $addressStmt = $pdo->prepare("
         SELECT *
-        FROM addresses
-        WHERE address_id = ?
+        FROM orders
+        WHERE shipping_address_id = ?
     ");
 
     $addressStmt->execute([$order['shipping_address_id']]);
