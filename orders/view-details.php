@@ -366,12 +366,9 @@ $imagePath = !empty($item['product_image'])
             <div class="card border-0 shadow-sm rounded-3 p-4">
                 <h6 class="fw-bold mb-3">Price details</h6>
                 
+       
                 <div class="d-flex justify-content-between mb-2 small">
-                    <span class="text-muted">Listing price</span>
-                    <span class="text-decoration-line-through text-muted">₹<?= number_format($totalListingPrice, 2) ?></span>
-                </div>
-                <div class="d-flex justify-content-between mb-2 small">
-                    <span class="text-muted">Special price</span>
+                    <span class="text-muted">Item price</span>
                     <span class="fw-semibold">₹<?= number_format($order['total_amount'], 2) ?></span>
                 </div>
                 <div class="d-flex justify-content-between mb-2 small">
