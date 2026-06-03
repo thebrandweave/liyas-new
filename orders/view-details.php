@@ -330,9 +330,7 @@ $imagePath = !empty($item['product_image'])
 
           
 
-            <p class="text-muted small mt-3 px-2 d-flex align-items-center gap-2">
-                Order #<?= htmlspecialchars($order['order_id']) ?> <i class="bi bi-copy text-primary" style="cursor: pointer;"></i>
-            </p>
+      
         </div>
 
         <div class="col-lg-4">
