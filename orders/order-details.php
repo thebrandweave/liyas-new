@@ -46,117 +46,251 @@ $items = $itemStmt->fetchAll(PDO::FETCH_ASSOC);
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
 
 <style>
-
 body{
-    background:#f8fafc;
+    background:#f5f7fa;
 }
 
-.order-wrapper{
-    max-width:1000px;
-    margin:auto;
+.timeline{
+    margin-top:25px;
 }
 
-.order-box{
-    background:#fff;
-    border-radius:24px;
-    padding:30px;
-    box-shadow:0 10px 30px rgba(0,0,0,.06);
+.timeline-item{
+    position:relative;
+    padding-left:35px;
+    margin-bottom:18px;
+    font-weight:500;
 }
 
-.order-header{
-    display:flex;
-    justify-content:space-between;
-    align-items:center;
-    margin-bottom:30px;
+.timeline-item .circle{
+    width:18px;
+    height:18px;
+    border-radius:50%;
+    background:#d1d5db;
+    position:absolute;
+    left:0;
+    top:2px;
 }
 
-.order-number{
+.timeline-item.completed .circle{
+    background:#16a34a;
+}
+
+.timeline-item::before{
+    content:'';
+    position:absolute;
+    left:8px;
+    top:20px;
+    width:2px;
+    height:28px;
+    background:#d1d5db;
+}
+
+.timeline-item:last-child::before{
+    display:none;
+}
+
+.card{
+    overflow:hidden;
+}
+
+.btn-outline-primary{
+    border-color:#4ad2e2;
     color:#4ad2e2;
-    font-size:28px;
-    font-weight:700;
 }
 
-.item-card{
-    border:1px solid #eef2f7;
-    border-radius:16px;
-    padding:15px;
-    margin-bottom:15px;
-}
-
-.total-box{
-    background:#f1fdff;
-    border-radius:16px;
-    padding:20px;
-    text-align:right;
-    font-size:24px;
-    font-weight:700;
-    color:#0f172a;
+.btn-outline-primary:hover{
+    background:#4ad2e2;
+    border-color:#4ad2e2;
 }
 
 </style>
 </head>
 
 <body>
-
 <?php include '../components/navbar.php'; ?>
 
 <div class="container py-5">
 
-<div class="order-wrapper">
+<div class="row g-4">
 
-<div class="order-box">
+    <!-- LEFT SIDE -->
+    <div class="col-lg-8">
 
-<div class="order-header">
+        <div class="card border-0 shadow-sm rounded-4 mb-4">
 
-<div>
-<div class="order-number">
-Order #<?= $order['order_id']; ?>
-</div>
+            <?php foreach($items as $item): ?>
 
-<div>
-<?= date('d M Y h:i A', strtotime($order['order_date'])); ?>
-</div>
-</div>
+            <div class="card-body p-4">
 
-<div>
-<span class="status-badge <?= strtolower($order['status']) ?>">
-<?= ucfirst($order['status']) ?>
-</span>
-</div>
+                <div class="row">
 
-</div>
+                    <div class="col-md-9">
 
-<h4 class="mb-4">Order Items</h4>
+                        <h4 class="fw-bold mb-2">
+                            <?= htmlspecialchars($item['product_name']) ?>
+                        </h4>
 
-<?php foreach($items as $item): ?>
+                        <div class="text-muted mb-3">
+                            Qty : <?= $item['quantity'] ?>
+                        </div>
 
-<div class="item-card">
+                        <h3 class="fw-bold text-dark">
+                            ₹<?= number_format($item['price'],2) ?>
+                        </h3>
 
-<div class="row">
+                    </div>
 
-<div class="col-md-6">
-<strong><?= htmlspecialchars($item['product_name']) ?></strong>
-</div>
+                    <div class="col-md-3 text-center">
 
-<div class="col-md-3">
-Qty: <?= $item['quantity'] ?>
-</div>
+                        <img
+                            src="<?= htmlspecialchars($item['product_image'] ?? '/assets/images/no-image.png') ?>"
+                            class="img-fluid rounded"
+                            style="max-height:120px;"
+                        >
 
-<div class="col-md-3 text-end">
-₹<?= number_format($item['price'],2) ?>
-</div>
+                    </div>
 
-</div>
+                </div>
 
-</div>
+                <hr>
 
-<?php endforeach; ?>
+                <!-- STATUS TIMELINE -->
 
-<div class="total-box mt-4">
-Total : ₹<?= number_format($order['total_amount'],2) ?>
-</div>
+                <div class="timeline">
 
-</div>
+                    <div class="timeline-item completed">
+                        <span class="circle"></span>
+                        Order Placed
+                    </div>
+
+                    <div class="timeline-item completed">
+                        <span class="circle"></span>
+                        Confirmed
+                    </div>
+
+                    <?php if(
+                        in_array(strtolower($order['status']),
+                        ['processing','shipped','delivered'])
+                    ): ?>
+
+                    <div class="timeline-item completed">
+                        <span class="circle"></span>
+                        Processing
+                    </div>
+
+                    <?php endif; ?>
+
+                    <?php if(
+                        in_array(strtolower($order['status']),
+                        ['shipped','delivered'])
+                    ): ?>
+
+                    <div class="timeline-item completed">
+                        <span class="circle"></span>
+                        Shipped
+                    </div>
+
+                    <?php endif; ?>
+
+                    <?php if(
+                        strtolower($order['status']) == 'delivered'
+                    ): ?>
+
+                    <div class="timeline-item completed">
+                        <span class="circle"></span>
+                        Delivered
+                    </div>
+
+                    <?php endif; ?>
+
+                </div>
+
+            </div>
+
+            <?php endforeach; ?>
+
+        </div>
+
+    </div>
+
+    <!-- RIGHT SIDE -->
+
+    <div class="col-lg-4">
+
+        <!-- DELIVERY -->
+
+        <div class="card border-0 shadow-sm rounded-4 mb-4">
+
+            <div class="card-body">
+
+                <h5 class="fw-bold mb-3">
+                    Delivery Details
+                </h5>
+
+                <p class="mb-2">
+                    <strong>
+                        <?= htmlspecialchars($order['customer_name'] ?? 'Customer') ?>
+                    </strong>
+                </p>
+
+                <p class="text-muted">
+                    <?= htmlspecialchars($order['shipping_address'] ?? '-') ?>
+                </p>
+
+                <p>
+                    <?= htmlspecialchars($order['phone'] ?? '-') ?>
+                </p>
+
+            </div>
+
+        </div>
+
+        <!-- PRICE DETAILS -->
+
+        <div class="card border-0 shadow-sm rounded-4">
+
+            <div class="card-body">
+
+                <h5 class="fw-bold mb-3">
+                    Price Details
+                </h5>
+
+                <div class="d-flex justify-content-between mb-2">
+                    <span>Items Total</span>
+                    <span>
+                        ₹<?= number_format($order['total_amount'],2) ?>
+                    </span>
+                </div>
+
+                <div class="d-flex justify-content-between mb-2">
+                    <span>Shipping</span>
+                    <span class="text-success">
+                        FREE
+                    </span>
+                </div>
+
+                <hr>
+
+                <div class="d-flex justify-content-between fw-bold fs-5">
+                    <span>Total</span>
+                    <span>
+                        ₹<?= number_format($order['total_amount'],2) ?>
+                    </span>
+                </div>
+
+                <div class="mt-4">
+
+                    <button class="btn btn-outline-primary w-100">
+                        Download Invoice
+                    </button>
+
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
 
 </div>
 
