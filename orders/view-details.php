@@ -96,7 +96,19 @@ $discountValue = $totalListingPrice - $order['total_amount'];
         }
         .stars-container i { font-size: 1.5rem; color: #ccc; cursor: pointer; margin-right: 5px; }
 
-        
+        .step-item,
+.step-item:hover,
+.step-item:focus,
+.step-item:active {
+    background: transparent !important;
+    box-shadow: none !important;
+    transform: none !important;
+    cursor: default !important;
+}
+
+.step-item *:hover {
+    color: inherit !important;
+}
 /* Top-right Login Button - aligned with Back to Top button */
 .top-login-btn {
   position: fixed;
