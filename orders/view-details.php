@@ -77,6 +77,9 @@ $discountValue = $totalListingPrice - $order['total_amount'];
     <title>Order Details - #<?= $order['order_id'] ?></title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+        
+    <link rel="stylesheet" href="../assets/css/style.css">
+    <link rel="stylesheet" href="../assets/css/product.css">
     <style>
         body { background-color: #f1f5f9; font-family: system-ui, -apple-system, sans-serif; }
         .order-stepper { position: relative; padding-left: 30px; }
@@ -94,7 +97,7 @@ $discountValue = $totalListingPrice - $order['total_amount'];
     </style>
 </head>
 <body>
-
+    <?php include '../components/navbar.php' ?>
 <div class="container py-4">
     <div class="row g-4">
         
