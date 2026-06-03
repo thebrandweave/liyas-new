@@ -306,6 +306,32 @@ $imagePath = !empty($item['product_image'])
 >
                         </div>
                     </div>
+                    <?php if(in_array($order['status'], ['pending','processing'])): ?>
+<div class="mt-3">
+    <button
+        class="btn btn-danger"
+        data-bs-toggle="modal"
+        data-bs-target="#cancelModal">
+        Cancel Order
+    </button>
+</div>
+<?php endif; ?>
+<?php if($order['status'] == 'cancelled'): ?>
+<div class="alert alert-danger mt-3">
+    <strong>Order Cancelled</strong><br>
+
+    <strong>Reason:</strong>
+    <?= htmlspecialchars($order['cancellation_reason'] ?? 'No reason provided') ?>
+
+    <?php if(!empty($order['cancelled_at'])): ?>
+        <br>
+        <small>
+            Cancelled on
+            <?= date('d M Y h:i A', strtotime($order['cancelled_at'])) ?>
+        </small>
+    <?php endif; ?>
+</div>
+<?php endif; ?>
 
                     <hr class="text-muted opacity-25">
 
@@ -405,5 +431,52 @@ $imagePath = !empty($item['product_image'])
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<div class="modal fade" id="cancelModal" tabindex="-1">
+    <div class="modal-dialog">
+        <form action="cancel-order.php" method="POST">
+            <div class="modal-content">
+
+                <div class="modal-header">
+                    <h5 class="modal-title">Cancel Order</h5>
+                    <button type="button"
+                            class="btn-close"
+                            data-bs-dismiss="modal"></button>
+                </div>
+
+                <div class="modal-body">
+
+                    <input type="hidden"
+                           name="order_id"
+                           value="<?= $order['order_id'] ?>">
+
+                    <label class="form-label">
+                        Reason for cancellation
+                    </label>
+
+                    <textarea
+                        name="reason"
+                        class="form-control"
+                        rows="4"
+                        required></textarea>
+
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button"
+                            class="btn btn-secondary"
+                            data-bs-dismiss="modal">
+                        Close
+                    </button>
+
+                    <button type="submit"
+                            class="btn btn-danger">
+                        Confirm Cancel
+                    </button>
+                </div>
+
+            </div>
+        </form>
+    </div>
+</div>
 </body>
 </html>
