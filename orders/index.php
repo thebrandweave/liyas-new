@@ -55,6 +55,171 @@ body{
     color:#0f172a;
 }
 
+/* Top-right Login Button - aligned with Back to Top button */
+.top-login-btn {
+  position: fixed;
+  top: 24px;
+  right: 20px;
+  width: 98px;
+  height: 45px;
+  border-radius: 7%;
+  background: rgba(255, 255, 255, 0.95);
+  color: #000000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  text-decoration: none;
+  z-index: 1100;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  cursor: pointer;
+  /* Better touch target */
+  min-width: 52px;
+  min-height: 45px;
+  /* Ensure it's always visible */
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  
+}
+
+.top-login-btn:hover {
+  transform: translateY(-3px) scale(1.05);
+  box-shadow: 0 6px 20px rgba(74, 210, 226, 0.25);
+  background: rgba(255, 255, 255, 1);
+  border-color: rgba(74, 210, 226, 0.2);
+}
+
+.top-login-btn:active {
+  transform: translateY(-1px) scale(0.98);
+}
+
+/* SVG Icon inside the circle */
+.top-login-btn .login-svg {
+  width: 24px;
+  height: 24px;
+  stroke-width: 2;
+  transition: stroke 0.3s ease;
+  display: block;
+}
+
+.top-login-btn:hover .login-svg {
+  stroke: rgba(74, 210, 226, 1);
+}
+
+/* Tablet adjustments */
+@media (min-width: 768px) and (max-width: 991px) {
+  .top-login-btn {
+    top: 28px;
+    right: 18px;
+    width: 76px;
+    height: 48px;
+    min-width: 48px;
+    min-height: 42px;
+  }
+  
+  .top-login-btn .login-svg {
+    width: 22px;
+    height: 22px;
+  }
+  .login-button{
+      display: block;
+  }
+}
+
+/* Responsive adjustments (mobile view) */
+@media screen and (max-width: 767px) {
+  .top-login-btn {
+      display: none;
+    /*width: 80px !important;*/
+    /*height: 48px !important;*/
+    /*min-width: 48px !important;*/
+    /*min-height: 48px !important;*/
+    /*top: 16px !important;*/
+    /*right: 16px !important;*/
+    /*left: auto !important;*/
+    /*bottom: auto !important;*/
+    /*box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2) !important;*/
+    z-index: 1101 !important; /* Above navbar but below mobile menu when open */
+    /*background: rgba(255, 255, 255, 1) !important;*/
+    /*border: 1px solid rgba(0, 0, 0, 0.1) !important;*/
+    /* Ensure visibility */
+    /*opacity: 1 !important;*/
+    /*visibility: visible !important;*/
+    /*pointer-events: auto !important;*/
+    /*display: flex !important;*/
+    /*position: fixed !important;*/
+    /*transform: none !important;*/
+  }
+  
+  .top-login-btn .login-svg {
+    width: 22px !important;
+    height: 22px !important;
+    stroke-width: 2.2 !important;
+    display: block !important;
+    flex-shrink: 0 !important;
+  }
+
+  /* Adjust position when navbar is scrolled */
+  .liyas-navbar.scrolled ~ .top-login-btn {
+    top: 14px !important;
+  }
+  
+  /* Ensure button is clickable */
+  .top-login-btn:active {
+    transform: scale(0.95) !important;
+  }
+}
+
+/* Extra small devices */
+@media screen and (max-width: 480px) {
+  .top-login-btn {
+    width: 61px !important;
+    height: 46px !important;
+    min-width: 46px !important;
+    min-height: 46px !important;
+    top: 15px !important;
+    right: 124px !important;
+    left: auto !important;
+    position: fixed !important;
+  }
+  
+  .top-login-btn .login-svg {
+    width: 20px !important;
+    height: 20px !important;
+  }
+}
+
+@media screen and (max-width: 375px) {
+  .top-login-btn {
+    width: 44px !important;
+    height: 44px !important;
+    min-width: 44px !important;
+    min-height: 44px !important;
+    top: 12px !important;
+    right: 12px !important;
+    left: auto !important;
+    position: fixed !important;
+  }
+  
+  .top-login-btn .login-svg {
+    width: 18px !important;
+    height: 18px !important;
+  }
+}
+
+/* Hide login button when mobile menu is open to avoid overlap */
+@media screen and (max-width: 767px) {
+  body.no-scroll .top-login-btn {
+    opacity: 0 !important;
+    pointer-events: none !important;
+    transform: scale(0.8) !important;
+    visibility: hidden !important;
+  }
+}
 .order-box{
     background:#fff;
     border-radius:16px;
