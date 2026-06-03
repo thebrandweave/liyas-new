@@ -27,10 +27,9 @@ echo "<pre>";
 var_dump(isset($conn));
 echo "</pre>";
 exit;
-$stmt = $mysqli->prepare($sql);
-$stmt->bind_param("i", $userId);
-$stmt->execute();
-$orders = $stmt->get_result();
+$stmt = $pdo->prepare($sql);
+$stmt->execute([$userId]);
+$orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
 ?>
 
 <!DOCTYPE html>
@@ -92,9 +91,9 @@ body{
 
     <h2 class="page-title">My Orders</h2>
 
-    <?php if($orders->num_rows > 0): ?>
+  <?php if(count($orders) > 0): ?>
 
-        <?php while($order = $orders->fetch_assoc()): ?>
+     <?php foreach($orders as $order): ?>
 
             <div class="order-card">
 
@@ -136,7 +135,7 @@ body{
 
             </div>
 
-        <?php endwhile; ?>
+    <?php endforeach; ?>
 
     <?php else: ?>
 
