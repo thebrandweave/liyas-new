@@ -309,24 +309,9 @@ $discountValue = $totalListingPrice - $order['total_amount'];
                 </div>
             <?php endforeach; ?>
 
-            <div class="card border-0 shadow-sm rounded-3 p-3 mb-4 text-center">
-                <a href="#" class="text-decoration-none text-dark fw-semibold d-inline-flex align-items-center justify-content-center gap-2">
-                    <i class="bi bi-chat-text fs-5"></i> Chat with us
-                </a>
-            </div>
+        
 
-            <div class="card border-0 shadow-sm rounded-3 p-4">
-                <h6 class="fw-bold mb-3">Rate your experience</h6>
-                <div class="bg-light p-3 rounded-3">
-                    <div class="d-flex align-items-center gap-2 mb-3">
-                        <i class="bi bi-box-seam text-muted"></i>
-                        <span class="small text-muted">Rate the product</span>
-                    </div>
-                    <div class="stars-container text-center py-2">
-                        <i class="bi bi-star"></i><i class="bi bi-star"></i><i class="bi bi-star"></i><i class="bi bi-star"></i><i class="bi bi-star"></i>
-                    </div>
-                </div>
-            </div>
+          
 
             <p class="text-muted small mt-3 px-2 d-flex align-items-center gap-2">
                 Order #<?= htmlspecialchars($order['order_id']) ?> <i class="bi bi-copy text-primary" style="cursor: pointer;"></i>
