@@ -85,7 +85,7 @@ $discountValue = $totalListingPrice - $order['total_amount'];
         body { background-color: #f1f5f9; font-family: system-ui, -apple-system, sans-serif; }
         .order-stepper { position: relative; padding-left: 30px; }
         .order-stepper::before {
-            content: ""; position: absolute; left: 9px; top: 10px; bottom: 10px; width: 3px;
+            content: ""; position: absolute; left: 6px; top: 10px; bottom: 10px; width: 3px;
             background-color: #198754;
         }
         .step-item { position: relative; padding-bottom: 25px; }
