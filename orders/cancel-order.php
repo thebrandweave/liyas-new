@@ -9,15 +9,19 @@ $userId = (int)$_SESSION['user_id'];
 $orderId = (int)($_POST['order_id'] ?? 0);
 $reason  = trim($_POST['reason'] ?? '');
 
+// Fixed: Added cancellation_reason and cancelled_at fields to the query
 $stmt = $pdo->prepare("
     UPDATE orders
-    SET status = 'cancelled'
+    SET status = 'cancelled',
+        cancellation_reason = ?,
+        cancelled_at = NOW()
     WHERE order_id = ?
     AND user_id = ?
     AND status IN ('pending','processing')
 ");
 
 $stmt->execute([
+    $reason,
     $orderId,
     $userId
 ]);
