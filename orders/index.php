@@ -23,10 +23,7 @@ WHERE o.user_id = ?
 GROUP BY o.order_id
 ORDER BY o.order_date DESC
 ";
-echo "<pre>";
-var_dump(isset($conn));
-echo "</pre>";
-exit;
+
 $stmt = $pdo->prepare($sql);
 $stmt->execute([$userId]);
 $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
