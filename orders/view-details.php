@@ -303,9 +303,7 @@ $discountValue = $totalListingPrice - $order['total_amount'];
                         <?php endif; ?>
                     </div>
 
-                    <a href="#" class="text-decoration-none fw-bold small d-inline-flex align-items-center">
-                        See All Updates <i class="bi bi-chevron-right ms-1 small"></i>
-                    </a>
+               
                 </div>
             <?php endforeach; ?>
 
