@@ -18,13 +18,9 @@ $stmt = $pdo->prepare("
 ");
 
 $stmt->execute([
-    $reason,
     $orderId,
     $userId
 ]);
-
-echo "Rows Updated: " . $stmt->rowCount();
-exit;
 
 echo "
 <script>
