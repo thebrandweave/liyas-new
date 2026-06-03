@@ -433,7 +433,7 @@ $imagePath = !empty($item['product_image'])
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <div class="modal fade" id="cancelModal" tabindex="-1">
     <div class="modal-dialog">
-        <form action="cancel-order.php" method="POST">
+        <form action="./cancel-order.php" method="POST">
             <div class="modal-content">
 
                 <div class="modal-header">
