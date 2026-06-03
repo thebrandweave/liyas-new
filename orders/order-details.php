@@ -447,13 +447,6 @@ body{
                     </span>
                 </div>
 
-                <div class="mt-4">
-
-                    <button class="btn btn-outline-primary w-100">
-                        Download Invoice
-                    </button>
-
-                </div>
 
             </div>
 
