@@ -80,6 +80,7 @@ $discountValue = $totalListingPrice - $order['total_amount'];
         
     <link rel="stylesheet" href="../assets/css/style.css">
     <link rel="stylesheet" href="../assets/css/product.css">
+    \     <link rel="stylesheet" href="../assets/css/cart.css">
     <style>
         body { background-color: #f1f5f9; font-family: system-ui, -apple-system, sans-serif; }
         .order-stepper { position: relative; padding-left: 30px; }
