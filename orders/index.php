@@ -46,30 +46,60 @@ $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
 body{
     background:#f8fafc;
 }
-
 .page-title{
-    font-weight:700;
-    margin-bottom:30px;
+    font-size: 3rem;
+    font-weight: 800;
+    color:#0f172a;
+    margin-bottom:40px;
 }
 
 .order-card{
     background:#fff;
-    border-radius:16px;
-    padding:20px;
-    margin-bottom:20px;
-    box-shadow:0 5px 20px rgba(0,0,0,.06);
+    border-radius:24px;
+    padding:24px;
+    margin-bottom:24px;
+    border:1px solid rgba(74,210,226,.12);
+    box-shadow:0 10px 30px rgba(0,0,0,.05);
+    transition:.3s;
+}
+
+.order-card:hover{
+    transform:translateY(-4px);
+    box-shadow:0 20px 40px rgba(74,210,226,.12);
 }
 
 .order-id{
-    color:#0ea5e9;
+    color:#4ad2e2;
+    font-weight:700;
+    font-size:18px;
+}
+
+.order-total{
+    font-size:24px;
+    font-weight:700;
+    color:#0f172a;
+}
+
+.view-btn{
+    background:#4ad2e2;
+    color:#fff;
+    border:none;
+    border-radius:50px;
+    padding:12px 25px;
+    text-decoration:none;
     font-weight:600;
 }
 
+.view-btn:hover{
+    background:#35c3d4;
+    color:#fff;
+}
+
 .status-badge{
-    padding:6px 12px;
-    border-radius:20px;
+    padding:8px 16px;
+    border-radius:999px;
     font-size:13px;
-    font-weight:600;
+    font-weight:700;
 }
 
 .pending{background:#fff3cd;color:#856404;}
@@ -116,9 +146,11 @@ body{
                         <small>Items</small>
                     </div>
 
-                    <div class="col-md-2">
-                        ₹<?= number_format($order['total_amount'],2); ?>
-                    </div>
+                  <div class="col-md-2">
+    <div class="order-total">
+        ₹<?= number_format($order['total_amount'],2); ?>
+    </div>
+</div>
 
                     <div class="col-md-2">
                         <span class="status-badge <?= strtolower($order['status']); ?>">
@@ -126,12 +158,10 @@ body{
                         </span>
                     </div>
 
-                    <div class="col-md-3 text-md-end mt-3 mt-md-0">
-                        <a href="order-details.php?id=<?= $order['order_id']; ?>"
-                           class="btn btn-outline-primary">
-                            View Details
-                        </a>
-                    </div>
+                  <a href="order-details.php?id=<?= $order['order_id']; ?>"
+   class="view-btn">
+   View Details
+</a>
 
                 </div>
 
