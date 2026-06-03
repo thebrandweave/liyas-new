@@ -1,20 +1,14 @@
 <?php
-ini_set('display_errors', 1);
-error_reporting(E_ALL);
-
 require_once '../config/config.php';
 
 if (!isset($_SESSION['user_id'])) {
-    die('Unauthorized');
+    exit('Unauthorized');
 }
 
 $userId = $_SESSION['user_id'];
 
 $orderId = (int)($_POST['order_id'] ?? 0);
 $reason = trim($_POST['reason'] ?? '');
-
-echo "Order ID: ".$orderId."<br>";
-echo "Reason: ".$reason."<br>";
 
 $stmt = $pdo->prepare("
     UPDATE orders
@@ -27,7 +21,11 @@ $stmt = $pdo->prepare("
     AND status IN ('pending','processing')
 ");
 
-$stmt->execute([$reason, $orderId, $userId]);
+$stmt->execute([
+    $reason,
+    $orderId,
+    $userId
+]);
 
-echo "Affected Rows: ".$stmt->rowCount();
+header("Location:view-details.php?id=".$orderId);
 exit;
