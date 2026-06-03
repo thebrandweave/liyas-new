@@ -462,7 +462,7 @@ $imagePath = !empty($item['product_image'])
                 </div>
 
                 <div class="modal-footer">
-                    <button type="button"
+                    <button style="color:black;" type="button"
                             class="btn btn-secondary"
                             data-bs-dismiss="modal">
                         Close
