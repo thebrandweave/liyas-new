@@ -7,7 +7,14 @@ if (!isset($_SESSION['user_id'])) {
 }
 
 $userId = (int)$_SESSION['user_id'];
-$orderId = (int)($_GET['id'] ?? 0);
+
+// Safe check: handle both clean rewriting (/view-details?id=11) and classic formats
+$orderId = 0;
+if (isset($_GET['id'])) {
+    $orderId = (int)$_GET['id'];
+} elseif (isset($_REQUEST['id'])) {
+    $orderId = (int)$_REQUEST['id'];
+}
 
 /*
 |--------------------------------------------------------------------------
@@ -24,7 +31,7 @@ $stmt->execute([$orderId, $userId]);
 $order = $stmt->fetch(PDO::FETCH_ASSOC);
 
 if (!$order) {
-    die("Order not found");
+    die("Order not found for ID: " . htmlspecialchars($orderId));
 }
 
 /*
@@ -238,28 +245,28 @@ $discountValue = $totalListingPrice - $order['total_amount'];
         </div>
     </div>
 
-    <div class="modal fade" id="cancelModal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog">
-            <form action="/orders/cancel-order.php" method="POST">
-                <input type="hidden" name="order_id" value="<?= (int)$order['order_id']; ?>">
-                
-                <div class="modal-content">
-                    <div class="modal-header">
-                        <h5 class="modal-title">Cancel Order</h5>
-                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                    </div>
-                    <div class="modal-body">
-                        <label class="form-label">Reason for cancellation</label>
-                        <textarea name="reason" class="form-control" rows="4" required></textarea>
-                    </div>
-                    <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                        <button type="submit" class="btn btn-danger">Confirm Cancel</button>
-                    </div>
+   <div class="modal fade" id="cancelModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <form action="cancel-order.php" method="POST">
+            <input type="hidden" name="order_id" value="<?= (int)$order['order_id']; ?>">
+            
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Cancel Order</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
-            </form>
-        </div>
+                <div class="modal-body">
+                    <label class="form-label">Reason for cancellation</label>
+                    <textarea name="reason" class="form-control" rows="4" required></textarea>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <button type="submit" class="btn btn-danger">Confirm Cancel</button>
+                </div>
+            </div>
+        </form>
     </div>
+</div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 </body>

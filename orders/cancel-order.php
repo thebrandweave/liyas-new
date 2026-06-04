@@ -1,10 +1,8 @@
 <?php
 require_once '../config/config.php';
 
-// Ensure user is logged in
 if (!isset($_SESSION['user_id'])) {
-    header("Location: /login/");
-    exit();
+    exit('Unauthorized');
 }
 
 $userId  = (int)$_SESSION['user_id'];
@@ -12,7 +10,7 @@ $orderId = (int)($_POST['order_id'] ?? 0);
 $reason  = trim($_POST['reason'] ?? '');
 
 if ($orderId > 0 && !empty($reason)) {
-    // Update status, reasons, and timestamps
+    // Perform update check
     $stmt = $pdo->prepare("
         UPDATE orders
         SET status = 'cancelled',
@@ -31,11 +29,11 @@ if ($orderId > 0 && !empty($reason)) {
     ]);
 }
 
-// Fixed: Redirects using absolute pathing to prevent "Order not found" routing errors
+// Redirect using custom clean routing fallback parameters
 echo "
 <script>
 alert('Order cancelled successfully');
-window.location.href = '/orders/view-details.php?id=" . $orderId . "';
+window.location.href = 'view-details?id=" . $orderId . "';
 </script>
 ";
 exit();
