@@ -244,8 +244,71 @@ $page_title   = "Orders";
 			justify-content: center;
 			animation: fadeIn 0.2s ease-out;
 		}
+		.badge{
+    padding:8px 14px;
+    border-radius:20px;
+    font-size:12px;
+    font-weight:600;
+    letter-spacing:.3px;
+}
 
-		
+.badge-pending{
+    background:#fff7e6;
+    color:#d97706;
+}
+
+.badge-processing{
+    background:#eff6ff;
+    color:#2563eb;
+}
+
+.badge-shipped{
+    background:#eef2ff;
+    color:#4f46e5;
+}
+
+.badge-delivered{
+    background:#ecfdf5;
+    color:#059669;
+}
+
+.badge-cancelled{
+    background:#fef2f2;
+    color:#dc2626;
+}
+
+
+.action-group{
+    display:flex;
+    gap:8px;
+}
+
+.action-btn{
+    width:38px;
+    height:38px;
+    border:none;
+    border-radius:10px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    cursor:pointer;
+    transition:.2s;
+    text-decoration:none;
+}
+
+.view-btn{
+    background:#ecfdf5;
+    color:#059669;
+}
+
+.status-btn{
+    background:#eff6ff;
+    color:#2563eb;
+}
+
+.action-btn:hover{
+    transform:translateY(-2px);
+}
 		.modal-overlay.active { display: flex; }
 		@keyframes fadeIn {
 			from { opacity: 0; }
@@ -586,13 +649,26 @@ color:var(--text-secondary);
 											<br><small style="color: var(--text-muted);">IST</small>
 										</td>
 										<td>
-											<a href="view.php?id=<?= $order['order_id'] ?>" class="btn-action btn-view">
-												<i class='bx bx-show'></i> View
-											</a>
-											<a href="javascript:void(0);" onclick="openStatusModal(<?= $order['order_id'] ?>, '<?= htmlspecialchars($order['status'], ENT_QUOTES) ?>')" class="btn-action btn-edit">
-												<i class='bx bx-edit'></i> Status
-											</a>
-										</td>
+    <div class="action-group">
+
+        <a href="view.php?id=<?= $order['order_id'] ?>" class="action-btn view-btn">
+            <i class='bx bx-show'></i>
+        </a>
+
+        <button
+            type="button"
+            class="action-btn status-btn"
+            onclick="openStatusModal(
+                <?= $order['order_id'] ?>,
+                '<?= htmlspecialchars($order['status'], ENT_QUOTES) ?>'
+            )">
+
+            <i class='bx bx-edit'></i>
+
+        </button>
+
+    </div>
+</td>
 									</tr>
 									<?php endforeach; ?>
 								</tbody>
