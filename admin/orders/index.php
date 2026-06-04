@@ -705,7 +705,7 @@ color:var(--text-secondary);
             <i class='bx bx-show'></i>
         </a>
 
-        <button
+        <!-- <button
             type="button"
             class="action-btn status-btn"
             onclick="openStatusModal(
@@ -715,7 +715,7 @@ color:var(--text-secondary);
 
             <i class='bx bx-edit'></i>
 
-        </button>
+        </button> -->
 
     </div>
 </td>
