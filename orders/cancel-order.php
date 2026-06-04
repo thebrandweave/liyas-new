@@ -9,17 +9,22 @@ $userId  = (int)$_SESSION['user_id'];
 $orderId = (int)($_POST['order_id'] ?? 0);
 $reason  = trim($_POST['reason'] ?? '');
 
-if ($orderId > 0 && !empty($reason)) {
-    // Perform update check
+if ($orderId <= 0 || empty($reason)) {
+    die("Invalid request");
+}
+
+try {
+
     $stmt = $pdo->prepare("
         UPDATE orders
-        SET status = 'cancelled',
+        SET
+            status = 'cancelled',
             cancellation_reason = ?,
             cancelled_at = NOW(),
             updated_at = NOW()
         WHERE order_id = ?
-          AND user_id = ?
-          AND status IN ('pending', 'processing')
+        AND user_id = ?
+        AND status IN ('pending','processing')
     ");
 
     $stmt->execute([
@@ -27,13 +32,32 @@ if ($orderId > 0 && !empty($reason)) {
         $orderId,
         $userId
     ]);
-}
+    echo "<pre>";
+echo "Order ID: ".$orderId."\n";
+echo "User ID: ".$userId."\n";
+echo "Rows Updated: ".$stmt->rowCount()."\n";
+print_r($stmt->errorInfo());
+echo "</pre>";
+exit;
 
-// Redirect using custom clean routing fallback parameters
-echo "
-<script>
-alert('Order cancelled successfully');
-window.location.href = 'view-details?id=" . $orderId . "';
-</script>
-";
-exit();
+    if ($stmt->rowCount() > 0) {
+
+        echo "
+        <script>
+        alert('Order cancelled successfully');
+        window.location.href='view-details?id={$orderId}';
+        </script>";
+    } else {
+
+        echo "
+        <script>
+        alert('Order could not be cancelled.');
+        window.location.href='view-details?id={$orderId}';
+        </script>";
+    }
+
+} catch(PDOException $e) {
+
+    die($e->getMessage());
+
+}
