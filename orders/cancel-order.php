@@ -1,17 +1,29 @@
 <?php
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
+
 require_once '../config/config.php';
 
-if (!isset($_SESSION['user_id'])) {
-    exit('Unauthorized');
-}
+echo "<h3>Debug Info</h3>";
 
-$userId = (int)$_SESSION['user_id'];
+echo "Session User ID: ";
+echo $_SESSION['user_id'] ?? 'NOT SET';
+
+echo "<br><br>";
+
+echo "POST Data:<br>";
+echo "<pre>";
+print_r($_POST);
+echo "</pre>";
+
+$userId = (int)($_SESSION['user_id'] ?? 0);
 $orderId = (int)($_POST['order_id'] ?? 0);
 $reason  = trim($_POST['reason'] ?? '');
 
-// Fixed: Added cancellation_reason and cancelled_at fields to the query
+echo "Order ID: $orderId <br>";
+echo "User ID: $userId <br>";
+echo "Reason: $reason <br><br>";
+
 $stmt = $pdo->prepare("
     UPDATE orders
     SET status = 'cancelled',
@@ -28,10 +40,4 @@ $stmt->execute([
     $userId
 ]);
 
-echo "
-<script>
-alert('Order cancelled successfully');
-window.location.href='index.php';
-</script>
-";
-exit;
+echo "<h3>Rows Updated: " . $stmt->rowCount() . "</h3>";
