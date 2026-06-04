@@ -563,8 +563,14 @@ $page_title   = "Orders";
 										</td>
 										<td><?= htmlspecialchars($order['customer_phone'] ?? '—') ?></td>
 										<td>
-											<span style="max-width: 250px; word-break: break-word; font-size: 13px; color: var(--text-secondary);">
-												<?= htmlspecialchars($order['shipping_address_full']) ?>
+<span style="
+display:block;
+max-width:350px;
+white-space:normal;
+overflow-wrap:anywhere;
+font-size:13px;
+color:var(--text-secondary);
+">												<?= htmlspecialchars($order['shipping_address_full']) ?>
 											</span>
 										</td>
 										<td><strong><?= formatCurrency($order['total_amount']) ?></strong></td>
