@@ -32,13 +32,21 @@ $totalEntries = count($entries);
 <style>
     /* ... Your existing styles ... */
     body { background:#f8fafc; margin:0; font-family: 'Inter', sans-serif; }
-    /* .container { display:flex; min-height:100vh; }
-    .main-content { flex:1; padding:32px 40px; } */
     .card { background:#fff; border:1px solid #e5e7eb; border-radius:18px; padding:28px; }
     table { width:100%; border-collapse:collapse; margin-top:16px; }
     thead th { font-size:12px; text-transform:uppercase; color:#64748b; background:#f8fafc; padding:14px; text-align:left; }
     tbody td { padding:16px 14px; font-size:14px; color:#0f172a; border-top:1px solid #e5e7eb; }
     .btn-view { padding:8px 14px; font-size:13px; border-radius:8px; background:#10b981; color:#fff; border:none; cursor:pointer; }
+    .table-wrapper{
+    max-height: 70vh;
+    overflow-y: auto;
+    overflow-x: auto;
+    margin-top: 16px;
+}
+
+.table-wrapper table{
+    width: 100%;
+}
 .content-area,
 .main-content,
 .card {
@@ -68,14 +76,22 @@ $totalEntries = count($entries);
     <?php include '../includes/sidebar.php'; ?>
     <div class="main-content">
         <div class="card">
+            <div class="header">
+    <div class="breadcrumb">
+        <span>Campaigns / Entries</span>
+    </div>
+</div>
+
+<div class="content-area">
             <div class="card-top">
                 <div>
                     <h2>Entries / Leads</h2>
                     <div class="meta">Total <?= $totalEntries ?> Submissions</div>
                 </div>
             </div>
-
-            <table>
+</div>
+           <div class="table-wrapper">
+<table>
                 <thead>
                     <tr>
                         <th>#</th>
@@ -102,6 +118,7 @@ $totalEntries = count($entries);
                     <?php endforeach; ?>
                 </tbody>
             </table>
+                    </div>
         </div>
     </div>
 </div>
