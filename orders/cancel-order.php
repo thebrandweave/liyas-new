@@ -1,29 +1,22 @@
 <?php
+
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
 
 require_once '../config/config.php';
 
-echo $_SERVER['REQUEST_METHOD'];
-exit;
+if (!isset($_SESSION['user_id'])) {
+    die("User not logged in");
+}
 
-echo "Session User ID: ";
-echo $_SESSION['user_id'] ?? 'NOT SET';
-
-echo "<br><br>";
-
-echo "POST Data:<br>";
 echo "<pre>";
+echo "REQUEST METHOD: " . $_SERVER['REQUEST_METHOD'] . "\n\n";
 print_r($_POST);
 echo "</pre>";
 
-$userId = (int)($_SESSION['user_id'] ?? 0);
+$userId = (int)$_SESSION['user_id'];
 $orderId = (int)($_POST['order_id'] ?? 0);
 $reason  = trim($_POST['reason'] ?? '');
-
-echo "Order ID: $orderId <br>";
-echo "User ID: $userId <br>";
-echo "Reason: $reason <br><br>";
 
 $stmt = $pdo->prepare("
     UPDATE orders

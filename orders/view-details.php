@@ -431,23 +431,28 @@ $imagePath = !empty($item['product_image'])
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<div class="modal fade" id="cancelModal" tabindex="-1">
+<!-- Cancel Order Modal -->
+<div class="modal fade" id="cancelModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog">
+
         <form action="cancel-order.php" method="POST">
+
+            <input
+                type="hidden"
+                name="order_id"
+                value="<?= (int)$order['order_id']; ?>">
+
             <div class="modal-content">
 
                 <div class="modal-header">
                     <h5 class="modal-title">Cancel Order</h5>
+
                     <button type="button"
                             class="btn-close"
                             data-bs-dismiss="modal"></button>
                 </div>
 
                 <div class="modal-body">
-
-                    <input type="hidden"
-                           name="order_id"
-                           value="<?= $order['order_id'] ?>">
 
                     <label class="form-label">
                         Reason for cancellation
@@ -462,7 +467,8 @@ $imagePath = !empty($item['product_image'])
                 </div>
 
                 <div class="modal-footer">
-                    <button style="color:black;" type="button"
+
+                    <button type="button"
                             class="btn btn-secondary"
                             data-bs-dismiss="modal">
                         Close
@@ -472,10 +478,13 @@ $imagePath = !empty($item['product_image'])
                             class="btn btn-danger">
                         Confirm Cancel
                     </button>
+
                 </div>
 
             </div>
+
         </form>
+
     </div>
 </div>
 </body>
