@@ -245,38 +245,7 @@ $page_title   = "Orders";
 			animation: fadeIn 0.2s ease-out;
 		}
 
-		.badge{
-    padding:8px 14px;
-    border-radius:20px;
-    font-size:12px;
-    font-weight:600;
-    letter-spacing:.3px;
-}
-
-.badge-pending{
-    background:#fff7e6;
-    color:#d97706;
-}
-
-.badge-processing{
-    background:#eff6ff;
-    color:#2563eb;
-}
-
-.badge-shipped{
-    background:#eef2ff;
-    color:#4f46e5;
-}
-
-.badge-delivered{
-    background:#ecfdf5;
-    color:#059669;
-}
-
-.badge-cancelled{
-    background:#fef2f2;
-    color:#dc2626;
-}
+		
 		.modal-overlay.active { display: flex; }
 		@keyframes fadeIn {
 			from { opacity: 0; }
