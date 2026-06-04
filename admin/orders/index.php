@@ -310,7 +310,6 @@ $page_title   = "Orders";
     transform:translateY(-2px);
 }
 
-
 .status-pill{
     border:none;
     border-radius:999px;
@@ -702,7 +701,9 @@ color:var(--text-secondary);
 										<td>
     <div class="action-group">
 
-        
+        <a href="view.php?id=<?= $order['order_id'] ?>" class="action-btn view-btn">
+            <i class='bx bx-show'></i>
+        </a>
 
         <button
             type="button"
