@@ -4,7 +4,8 @@ ini_set('display_errors', 1);
 
 require_once '../config/config.php';
 
-echo "<h3>Debug Info</h3>";
+echo $_SERVER['REQUEST_METHOD'];
+exit;
 
 echo "Session User ID: ";
 echo $_SESSION['user_id'] ?? 'NOT SET';
