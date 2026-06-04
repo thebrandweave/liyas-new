@@ -309,6 +309,49 @@ $page_title   = "Orders";
 .action-btn:hover{
     transform:translateY(-2px);
 }
+
+
+.status-pill{
+    border:none;
+    border-radius:999px;
+    padding:8px 14px;
+    font-size:13px;
+    font-weight:600;
+    cursor:pointer;
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+    transition:.2s;
+}
+
+.status-pill:hover{
+    transform:translateY(-1px);
+}
+
+.status-pending{
+    background:#fff7e6;
+    color:#d97706;
+}
+
+.status-processing{
+    background:#eff6ff;
+    color:#2563eb;
+}
+
+.status-shipped{
+    background:#eef2ff;
+    color:#4f46e5;
+}
+
+.status-delivered{
+    background:#ecfdf5;
+    color:#059669;
+}
+
+.status-cancelled{
+    background:#fef2f2;
+    color:#dc2626;
+}
 		.modal-overlay.active { display: flex; }
 		@keyframes fadeIn {
 			from { opacity: 0; }
@@ -640,10 +683,18 @@ color:var(--text-secondary);
 										</td>
 										<td><strong><?= formatCurrency($order['total_amount']) ?></strong></td>
 										<td>
-											<span class="badge badge-<?= htmlspecialchars($order['status']) ?>">
-												<?= ucfirst($order['status']) ?>
-											</span>
-										</td>
+    <button
+        class="status-pill status-<?= htmlspecialchars($order['status']) ?>"
+        onclick="openStatusModal(
+            <?= $order['order_id'] ?>,
+            '<?= htmlspecialchars($order['status'], ENT_QUOTES) ?>'
+        )">
+
+        <?= ucfirst($order['status']) ?>
+        <i class='bx bx-chevron-down'></i>
+
+    </button>
+</td>
 										<td>
 											<span style="font-size: 13px;"><?= formatIST($order['created_at']) ?></span>
 											<br><small style="color: var(--text-muted);">IST</small>
@@ -651,9 +702,7 @@ color:var(--text-secondary);
 										<td>
     <div class="action-group">
 
-        <a href="view.php?id=<?= $order['order_id'] ?>" class="action-btn view-btn">
-            <i class='bx bx-show'></i>
-        </a>
+        
 
         <button
             type="button"
