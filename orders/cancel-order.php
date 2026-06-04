@@ -1,4 +1,10 @@
 <?php
+
+echo "<pre>";
+print_r($_POST);
+echo "</pre>";
+exit;
+
 require_once '../config/config.php';
 
 if (!isset($_SESSION['user_id'])) {
@@ -9,9 +15,14 @@ $userId  = (int)$_SESSION['user_id'];
 $orderId = (int)($_POST['order_id'] ?? 0);
 $reason  = trim($_POST['reason'] ?? '');
 
-if ($orderId <= 0 || empty($reason)) {
-    die("Invalid request");
-}
+echo "<pre>";
+echo "REQUEST METHOD: " . $_SERVER['REQUEST_METHOD'] . "\n\n";
+print_r($_POST);
+
+echo "\nSESSION USER:\n";
+print_r($_SESSION);
+
+exit;
 
 try {
 
