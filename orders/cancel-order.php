@@ -23,18 +23,17 @@ if ($orderId > 0 && !empty($reason)) {
           AND status IN ('pending','processing')
     ");
 
-    $stmt->execute([
-        $reason,
-        $orderId,
-        $userId
-    ]);
-}
+$stmt->execute([
+    $reason,
+    $orderId,
+    $userId
+]);
 
-// Redirect back to the details view page so they instantly see the dynamic state change
+// Clear redirect directly to your working orders index directory
 echo "
 <script>
 alert('Order cancelled successfully');
-window.location.href = 'view-details.php?id=" . $orderId . "';
+window.location.href = './'; 
 </script>
 ";
 exit();
