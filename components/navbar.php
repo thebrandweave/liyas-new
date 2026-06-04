@@ -132,6 +132,7 @@ $logout_link = $navBase . '/logout.php';
 
 
   .my-orders-btn {
+    margin:auto;
     display: flex;
     align-items: center;
     gap: 2px;
