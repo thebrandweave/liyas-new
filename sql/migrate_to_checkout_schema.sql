@@ -37,6 +37,8 @@ CREATE TABLE IF NOT EXISTS orders (
     shipping_address_id INT NOT NULL,
     payment_method ENUM('cod', 'card', 'paypal') DEFAULT 'cod', 
     payment_status ENUM('pending', 'paid', 'failed', 'refunded') DEFAULT 'pending',
+    cancellation_reason TEXT NULL,
+    cancelled_at DATETIME NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE,

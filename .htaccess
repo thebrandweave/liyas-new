@@ -1,13 +1,3 @@
-# Allow POST requests to submit.php to pass through
-<IfModule mod_rewrite.c>
-    RewriteEngine On
-    RewriteCond %{REQUEST_METHOD} POST
-    RewriteCond %{REQUEST_URI} ^/join/submit\.php$ [NC]
-    RewriteRule .* - [L]
-    
-    
-</IfModule>
-
 # Root .htaccess - Security and Redirects
 <IfModule mod_rewrite.c>
     RewriteEngine On
@@ -32,6 +22,8 @@
     
     # Redirect other old .php URLs to clean URLs (301 permanent redirect)
     # BUT preserve query strings - exclude admin directory and cart API from this rule
+    # Do not redirect POST requests to prevent losing POST payload
+    RewriteCond %{REQUEST_METHOD} !POST
     RewriteCond %{THE_REQUEST} /([^.]+)\.php[\s?] [NC]
     RewriteCond %{REQUEST_URI} !^/redeem\.php$ [NC]
     RewriteCond %{REQUEST_URI} !^/admin/ [NC]

@@ -262,8 +262,13 @@ $discountValue = $totalListingPrice - $order['total_amount'];
                 </div>
                 <div class="modal-footer border-top-0 pb-4 px-4 gap-2">
                     <button type="button" class="btn btn-light fw-semibold text-muted px-3 py-2 rounded-3" data-bs-dismiss="modal">Go Back</button>
-                    <button type="submit" class="btn btn-danger fw-semibold px-4 py-2 rounded-3 shadow-sm">Confirm Cancellation</button>
-                </div>
+<button type="submit"
+        name="cancel_order"
+        value="1"
+        class="btn btn-danger fw-semibold px-4 py-2 rounded-3 shadow-sm">
+    Confirm Cancellation
+</button>            
+    </div>
             </div>
         </form>
     </div>
