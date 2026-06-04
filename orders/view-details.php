@@ -245,23 +245,24 @@ $discountValue = $totalListingPrice - $order['total_amount'];
         </div>
     </div>
 
-   <div class="modal fade" id="cancelModal" tabindex="-1" aria-hidden="true">
+ <div class="modal fade" id="cancelModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog">
         <form action="cancel-order.php" method="POST">
-            <input type="hidden" name="order_id" value="<?= (int)$order['order_id']; ?>">
+            <input type="hidden" name="order_id" value="<?= (int)$orderId; ?>">
             
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">Cancel Order</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            <div class="modal-content border-0 shadow-lg rounded-3">
+                <div class="modal-header border-bottom-0 pt-4 px-4">
+                    <h5 class="modal-title fw-bold text-dark">Cancel Order #<?= (int)$orderId; ?></h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
-                <div class="modal-body">
-                    <label class="form-label">Reason for cancellation</label>
-                    <textarea name="reason" class="form-control" rows="4" required></textarea>
+                <div class="modal-body px-4">
+                    <p class="text-muted small">Please provide a reason for cancelling this order. This status update will automatically reflect across all employee and administration dashboards immediately.</p>
+                    <label class="form-label fw-semibold text-secondary small">Reason for cancellation</label>
+                    <textarea name="reason" class="form-control border-2 rounded-3" rows="4" placeholder="Type your cancellation reasoning here..." required></textarea>
                 </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                    <button type="submit" class="btn btn-danger">Confirm Cancel</button>
+                <div class="modal-footer border-top-0 pb-4 px-4 gap-2">
+                    <button type="button" class="btn btn-light fw-semibold text-muted px-3 py-2 rounded-3" data-bs-dismiss="modal">Go Back</button>
+                    <button type="submit" class="btn btn-danger fw-semibold px-4 py-2 rounded-3 shadow-sm">Confirm Cancellation</button>
                 </div>
             </div>
         </form>
