@@ -247,7 +247,7 @@ $discountValue = $totalListingPrice - $order['total_amount'];
 
  <div class="modal fade" id="cancelModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog">
-        <form action="cancel-order.php" method="POST">
+       <form action="/orders/cancel-order.php" method="POST">
             <input type="hidden" name="order_id" value="<?= (int)$orderId; ?>">
             
             <div class="modal-content border-0 shadow-lg rounded-3">

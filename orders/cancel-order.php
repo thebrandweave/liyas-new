@@ -16,12 +16,12 @@ $orderId = (int)($_POST['order_id'] ?? 0);
 $reason  = trim($_POST['reason'] ?? '');
 
 echo "<pre>";
-echo "REQUEST METHOD: " . $_SERVER['REQUEST_METHOD'] . "\n\n";
+
+echo "METHOD = " . $_SERVER['REQUEST_METHOD'] . "\n\n";
+
 print_r($_POST);
 
-echo "\nSESSION USER:\n";
-print_r($_SESSION);
-
+echo "</pre>";
 exit;
 
 try {
