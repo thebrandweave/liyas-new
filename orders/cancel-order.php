@@ -1,6 +1,7 @@
 <?php
 require_once '../config/config.php';
 
+// Ensure user is logged in
 if (!isset($_SESSION['user_id'])) {
     header("Location: /login/");
     exit();
@@ -11,7 +12,7 @@ $orderId = (int)($_POST['order_id'] ?? 0);
 $reason  = trim($_POST['reason'] ?? '');
 
 if ($orderId > 0 && !empty($reason)) {
-    // Update database status, reason, and cancellation timestamp
+    // Update status, reasons, and timestamps
     $stmt = $pdo->prepare("
         UPDATE orders
         SET status = 'cancelled',
@@ -20,20 +21,21 @@ if ($orderId > 0 && !empty($reason)) {
             updated_at = NOW()
         WHERE order_id = ?
           AND user_id = ?
-          AND status IN ('pending','processing')
+          AND status IN ('pending', 'processing')
     ");
 
-$stmt->execute([
-    $reason,
-    $orderId,
-    $userId
-]);
+    $stmt->execute([
+        $reason,
+        $orderId,
+        $userId
+    ]);
+}
 
-// Clear redirect directly to your working orders index directory
+// Fixed: Redirects using absolute pathing to prevent "Order not found" routing errors
 echo "
 <script>
 alert('Order cancelled successfully');
-window.location.href = './'; 
+window.location.href = '/orders/view-details.php?id=" . $orderId . "';
 </script>
 ";
 exit();
