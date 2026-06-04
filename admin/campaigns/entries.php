@@ -32,14 +32,20 @@ $totalEntries = count($entries);
 <style>
     /* ... Your existing styles ... */
     body { background:#f8fafc; margin:0; font-family: 'Inter', sans-serif; }
-    .container { display:flex; min-height:100vh; }
-    .main-content { flex:1; padding:32px 40px; }
+    /* .container { display:flex; min-height:100vh; }
+    .main-content { flex:1; padding:32px 40px; } */
     .card { background:#fff; border:1px solid #e5e7eb; border-radius:18px; padding:28px; }
     table { width:100%; border-collapse:collapse; margin-top:16px; }
     thead th { font-size:12px; text-transform:uppercase; color:#64748b; background:#f8fafc; padding:14px; text-align:left; }
     tbody td { padding:16px 14px; font-size:14px; color:#0f172a; border-top:1px solid #e5e7eb; }
     .btn-view { padding:8px 14px; font-size:13px; border-radius:8px; background:#10b981; color:#fff; border:none; cursor:pointer; }
-
+.content-area,
+.main-content,
+.card {
+    overflow: visible !important;
+    max-height: none !important;
+    height: auto !important;
+}
     /* MODAL STYLES */
     .modal-overlay {
         position: fixed; inset: 0; background: rgba(0,0,0,0.5);
