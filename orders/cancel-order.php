@@ -1,5 +1,6 @@
 <?php
-
+echo "METHOD = " . $_SERVER['REQUEST_METHOD'];
+exit;
 echo "<pre>";
 print_r($_POST);
 echo "</pre>";
