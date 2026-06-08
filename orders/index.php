@@ -242,7 +242,7 @@ $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
     <?php include '../components/navbar.php'; ?>
 
     <div class="container py-5">
-        <h2 class="page-title mb-4" >My <span style="page-title" style="color:#4ad2e2">Orders</span></h2>
+        <h2 class="page-title mb-4" >My <span  style="color:#4ad2e2;font-size:2.5rem; font-weight:800;">Orders</span></h2>
 
 
 
