@@ -277,7 +277,7 @@ $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
                 <img src="../assets/images/shopping-trolley.png" width="60" class="mb-4" alt="No orders">
                 <h3>No Orders Yet</h3>
                 <p class="text-muted">You haven't placed any orders yet.</p>
-                <button><a href="/products/" class="btn btn-primary">Browse Products</a></button>
+                <a href="/products/" class="btn btn-primary">Browse Products</a>
             </div>
         <?php endif; ?>
     </div>
