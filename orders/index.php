@@ -283,7 +283,9 @@ $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
     padding: 14px 44px;
     font-weight: 600;
     transition: .3s;
-    border: none;">Browse Products</a>
+    border: none;" 
+    list-style:none;
+    >Browse Products</a>
             </div>
         <?php endif; ?>
     </div>
