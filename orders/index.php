@@ -227,6 +227,7 @@ $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
             font-weight: 600;
             transition: .3s;
             border: none;
+            text-decoration:none;
         }
 
         .contact-submit:hover {
