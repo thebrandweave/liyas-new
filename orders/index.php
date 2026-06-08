@@ -242,11 +242,9 @@ $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
     <?php include '../components/navbar.php'; ?>
 
     <div class="container py-5">
-        <h2 class="page-title mb-4">My Orders</h2>
+        <h2 class="page-title mb-4" >My <span style="page-title" style="color:#4ad2e2">Orders</span></h2>
 
-        <div class="mb-4">
-            <input type="text" id="searchOrders" class="form-control form-control-lg" placeholder="Search your orders...">
-        </div>
+
 
         <?php if(count($orders) > 0): ?>
             <div id="ordersContainer">
