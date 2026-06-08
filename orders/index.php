@@ -108,7 +108,7 @@ $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
             </div>
         <?php else: ?>
             <div class="empty-orders">
-                <img src="../assets/images/empty-order.svg" width="180" class="mb-4" alt="No orders">
+                <img src="../assets/images/shopping-trolley.png" width="180" class="mb-4" alt="No orders">
                 <h3>No Orders Yet</h3>
                 <p class="text-muted">You haven't placed any orders yet.</p>
                 <a href="/products/" class="btn btn-primary">Browse Products</a>
