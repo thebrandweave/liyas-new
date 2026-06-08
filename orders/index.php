@@ -277,7 +277,13 @@ $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
                 <img src="../assets/images/shopping-trolley.png" width="60" class="mb-4" alt="No orders">
                 <h3>No Orders Yet</h3>
                 <p class="text-muted">You haven't placed any orders yet.</p>
-                <a href="/products/" class="btn btn-primary">Browse Products</a>
+                <a href="/products/" style="background: linear-gradient(135deg, #3bb6c4, #4ad2e2);
+    color: #fff;
+    border-radius: 50px;
+    padding: 14px 44px;
+    font-weight: 600;
+    transition: .3s;
+    border: none;">Browse Products</a>
             </div>
         <?php endif; ?>
     </div>
