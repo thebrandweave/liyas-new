@@ -667,7 +667,9 @@ $social_links = $social_links_stmt->fetchAll(PDO::FETCH_ASSOC);
         <?php endforeach; ?>
     </div>
     
-    <button id="backToTop" title="Go to top"><i class="fas fa-arrow-up"></i></button>
+    <button id="backToTop" title="Go to top">
+    <img style="width:20px;" src="/up-arrow.png" alt="Top" class="flaticon-img">
+</button>
 
     <!-- <section class="page-header" id="home">
         <div class="container">
