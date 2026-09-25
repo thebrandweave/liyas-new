@@ -4,6 +4,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,100..900;1,100..900&display=swap" rel="stylesheet">
   <title>Connect With Us</title>
 
   <style>
@@ -18,7 +21,10 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      font-family: Arial, Helvetica, sans-serif;
+       font-family: "Montserrat", sans-serif;
+  font-optical-sizing: auto;
+  font-weight: 400;
+  font-style: normal;
       background: linear-gradient(
         135deg,
         #f8f9fa,
