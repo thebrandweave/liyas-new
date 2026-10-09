@@ -164,7 +164,7 @@ $more_badge_total = $ads_count + $reviews_pending_count + $social_count + $subs_
                     id="moreOptionsToggle" 
                     class="nav-item <?= $is_more_active ? 'active' : '' ?>" 
                     style="width: 100%; border: none; background: transparent; cursor: pointer; text-align: left; display: flex; align-items: center; justify-content: space-between;">
-                <div style="display: flex; align-items: center; gap: 10px;">
+                <div style="display: flex; align-items: center; gap: 4px;">
                     <i class='bx bx-grid-alt'></i>
                     <span>More Options</span>
                 </div>
