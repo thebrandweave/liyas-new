@@ -60,7 +60,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_status'])) {
         handleOrderStatusStockChange($pdo, $order_id, $old_status, $new_status);
         $order['status'] = $new_status;
 
-        if ($new_status === 'delivered') {
+        if ($new_status === 'delivered' || $old_status === 'delivered' || $new_status === 'cancelled') {
             updateShopRewardProgress($pdo, $shopName, $order['phone']);
             $rewardInfo = getShopRewardInfo($pdo, $shopName);
         }

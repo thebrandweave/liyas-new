@@ -39,13 +39,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_status'])) {
             // Adjust stock if cancelled / un-cancelled
             handleOrderStatusStockChange($pdo, $order_id, $old_status, $new_status);
 
-            // If delivered, update reward progress
-            if ($new_status === 'delivered') {
-                $oData = $pdo->prepare("SELECT shop_name, phone FROM orders WHERE order_id = ?");
+            // Update reward progress if delivered, cancelled, or un-delivered
+            if ($new_status === 'delivered' || $old_status === 'delivered' || $new_status === 'cancelled') {
+                $oData = $pdo->prepare("SELECT shop_name, customer_name, phone FROM orders WHERE order_id = ?");
                 $oData->execute([$order_id]);
                 $ord = $oData->fetch(PDO::FETCH_ASSOC);
-                if ($ord && !empty($ord['shop_name'])) {
-                    updateShopRewardProgress($pdo, $ord['shop_name'], $ord['phone']);
+                if ($ord) {
+                    $sName = !empty($ord['shop_name']) ? $ord['shop_name'] : (!empty($ord['customer_name']) ? $ord['customer_name'] : '');
+                    if ($sName !== '') {
+                        updateShopRewardProgress($pdo, $sName, $ord['phone'] ?? '');
+                    }
                 }
             }
 
@@ -252,7 +255,7 @@ function renderOrdersTbodyRows(array $orders, string $status_filter = 'all', str
                         <div style="margin-top: 4px;">
                             <?php if ((int)$order['is_zone_read'] === 1): ?>
                                 <span class="zone-seen-badge seen" id="zone-status-badge-<?= (int)$order['order_id'] ?>" title="<?= !empty($order['zone_read_at']) ? 'Checked by ' . $zoneDisplay . ' on ' . date('d M Y, h:i A', strtotime($order['zone_read_at'])) : 'Checked by ' . $zoneDisplay ?>">
-                                    <i class='bx bx-check-double'></i> Checked by Zone
+                                    <i class='bx bx-check-double'></i> Checked
                                 </span>
                             <?php else: ?>
                                 <span class="zone-seen-badge unread" id="zone-status-badge-<?= (int)$order['order_id'] ?>" title="Waiting for <?= $zoneDisplay ?> to open / check">

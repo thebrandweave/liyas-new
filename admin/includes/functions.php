@@ -94,7 +94,7 @@ function generateBillNumber($pdo) {
 }
 
 /**
- * Update shop reward progress when an order is completed
+ * Update shop reward progress when an order is completed, cancelled, or updated
  * Threshold defaults to 10 completed orders
  */
 function updateShopRewardProgress($pdo, $shop_name, $phone = '') {
@@ -105,14 +105,14 @@ function updateShopRewardProgress($pdo, $shop_name, $phone = '') {
 		$threshold = (int)getSystemSetting($pdo, 'reward_threshold', 10);
 		if ($threshold <= 0) $threshold = 10;
 
-		// Count delivered orders for this shop
-		$stmt = $pdo->prepare("SELECT COUNT(*) FROM orders WHERE shop_name = ? AND status = 'delivered'");
-		$stmt->execute([$shop_name]);
+		// Count delivered orders for this shop (matching shop_name or customer_name fallback)
+		$stmt = $pdo->prepare("SELECT COUNT(*) FROM orders WHERE (TRIM(shop_name) = ? OR (COALESCE(TRIM(shop_name), '') = '' AND TRIM(customer_name) = ?)) AND status = 'delivered'");
+		$stmt->execute([$shop_name, $shop_name]);
 		$completed = (int)$stmt->fetchColumn();
 
 		$reward_status = ($completed >= $threshold) ? 'eligible' : 'in_progress';
 
-		$chk = $pdo->prepare("SELECT id, reward_status FROM rewards WHERE shop_name = ?");
+		$chk = $pdo->prepare("SELECT id, reward_status FROM rewards WHERE TRIM(shop_name) = ?");
 		$chk->execute([$shop_name]);
 		$row = $chk->fetch(PDO::FETCH_ASSOC);
 
@@ -130,7 +130,7 @@ function updateShopRewardProgress($pdo, $shop_name, $phone = '') {
 }
 
 /**
- * Get shop reward information
+ * Get shop reward information (with auto-reconciliation to live delivered count)
  */
 function getShopRewardInfo($pdo, $shop_name) {
 	$shop_name = trim($shop_name ?? '');
@@ -140,14 +140,16 @@ function getShopRewardInfo($pdo, $shop_name) {
 	if ($threshold <= 0) $threshold = 10;
 
 	try {
-		$stmt = $pdo->prepare("SELECT * FROM rewards WHERE shop_name = ?");
+		// Live count actual delivered orders
+		$cntStmt = $pdo->prepare("SELECT COUNT(*) FROM orders WHERE (TRIM(shop_name) = ? OR (COALESCE(TRIM(shop_name), '') = '' AND TRIM(customer_name) = ?)) AND status = 'delivered'");
+		$cntStmt->execute([$shop_name, $shop_name]);
+		$completed = (int)$cntStmt->fetchColumn();
+
+		$stmt = $pdo->prepare("SELECT * FROM rewards WHERE TRIM(shop_name) = ?");
 		$stmt->execute([$shop_name]);
 		$row = $stmt->fetch(PDO::FETCH_ASSOC);
 
 		if (!$row) {
-			$cntStmt = $pdo->prepare("SELECT COUNT(*) FROM orders WHERE shop_name = ? AND status = 'delivered'");
-			$cntStmt->execute([$shop_name]);
-			$completed = (int)$cntStmt->fetchColumn();
 			return [
 				'shop_name' => $shop_name,
 				'completed_orders' => $completed,
@@ -155,6 +157,16 @@ function getShopRewardInfo($pdo, $shop_name) {
 				'reward_status' => ($completed >= $threshold) ? 'eligible' : 'in_progress',
 				'remaining_orders' => max(0, $threshold - $completed)
 			];
+		}
+
+		// Reconcile if live count or threshold differs from cached row
+		if ((int)$row['completed_orders'] !== $completed || (int)$row['reward_threshold'] !== $threshold) {
+			$newStatus = ($row['reward_status'] === 'claimed') ? 'claimed' : (($completed >= $threshold) ? 'eligible' : 'in_progress');
+			$up = $pdo->prepare("UPDATE rewards SET completed_orders = ?, reward_threshold = ?, reward_status = ?, updated_at = NOW() WHERE id = ?");
+			$up->execute([$completed, $threshold, $newStatus, $row['id']]);
+			$row['completed_orders'] = $completed;
+			$row['reward_threshold'] = $threshold;
+			$row['reward_status'] = $newStatus;
 		}
 
 		$row['remaining_orders'] = max(0, (int)$row['reward_threshold'] - (int)$row['completed_orders']);

@@ -222,8 +222,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_order'])) {
                     ]);
                 }
 
-                if ($status === 'delivered') {
-                    updateShopRewardProgress($pdo, $shop_name, $phone);
+                if ($new_status === 'delivered' || $old_status === 'delivered' || $new_status === 'cancelled') {
+                    $sName = !empty($shop_name) ? $shop_name : (!empty($customer_name) ? $customer_name : '');
+                    if ($sName !== '') {
+                        updateShopRewardProgress($pdo, $sName, $phone);
+                    }
+                    if (!empty($order['shop_name']) && $order['shop_name'] !== $sName) {
+                        updateShopRewardProgress($pdo, $order['shop_name'], $order['phone'] ?? '');
+                    }
                 }
 
                 $pdo->commit();

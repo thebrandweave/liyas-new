@@ -1,5 +1,6 @@
 <?php
 require_once '../config/config.php';
+require_once __DIR__ . '/../admin/includes/functions.php';
 
 if (!isset($_SESSION['user_id'])) {
     exit('Unauthorized');
@@ -12,7 +13,7 @@ $reason  = trim($_POST['reason'] ?? '');
 if ($orderId > 0 && !empty($reason)) {
     try {
         // Fetch order details before updating to know which product and quantity to restore
-        $chk = $pdo->prepare("SELECT product_id, quantity FROM orders WHERE order_id = ? AND user_id = ? AND status IN ('pending', 'processing')");
+        $chk = $pdo->prepare("SELECT product_id, quantity, shop_name, customer_name, phone FROM orders WHERE order_id = ? AND user_id = ? AND status IN ('pending', 'processing')");
         $chk->execute([$orderId, $userId]);
         $ordData = $chk->fetch(PDO::FETCH_ASSOC);
 
@@ -43,6 +44,13 @@ if ($orderId > 0 && !empty($reason)) {
             while ($it = $itemStmt->fetch(PDO::FETCH_ASSOC)) {
                 if (!$ordData || (int)$it['product_id'] !== (int)$ordData['product_id']) {
                     adjustProductStock($pdo, (int)$it['product_id'], +(int)$it['quantity'], "Customer cancelled order #{$orderId}");
+                }
+            }
+
+            if ($ordData) {
+                $sName = !empty($ordData['shop_name']) ? $ordData['shop_name'] : (!empty($ordData['customer_name']) ? $ordData['customer_name'] : '');
+                if ($sName !== '') {
+                    updateShopRewardProgress($pdo, $sName, $ordData['phone'] ?? '');
                 }
             }
 

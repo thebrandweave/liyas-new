@@ -19,13 +19,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_status'])) {
         if ($up->rowCount() > 0) {
             handleOrderStatusStockChange($pdo, $order_id, $old_status, $new_status);
             $msg = "Order status updated to " . ucfirst($new_status);
-            if ($new_status === 'delivered') {
+            if ($new_status === 'delivered' || $old_status === 'delivered' || $new_status === 'cancelled') {
                 $oStmt = $pdo->prepare("SELECT shop_name, customer_name, phone FROM orders WHERE order_id = ?");
                 $oStmt->execute([$order_id]);
                 $oData = $oStmt->fetch(PDO::FETCH_ASSOC);
                 if ($oData) {
                     $sName = $oData['shop_name'] ?: ($oData['customer_name'] ?: '');
-                    updateShopRewardProgress($pdo, $sName, $oData['phone']);
+                    if ($sName !== '') {
+                        updateShopRewardProgress($pdo, $sName, $oData['phone'] ?? '');
+                    }
                 }
             }
         }
