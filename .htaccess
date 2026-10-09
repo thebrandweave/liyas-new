@@ -1,3 +1,50 @@
+# Root .htaccess - Liyas International Multi-Zone System
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # Exclude direct physical files and directories from all rewrites
+    RewriteCond %{REQUEST_FILENAME} -f [OR]
+    RewriteCond %{REQUEST_FILENAME} -d
+    RewriteRule ^ - [L]
+
+    # Special handler for root index
+    RewriteRule ^$ index-temp.php [L]
+
+    # Dynamic Zone Delivery Portal Routes:
+    # 1. Matches /{zone_slug}/{action} -> zone/{action}.php?zone={zone_slug}
+    RewriteCond %{REQUEST_URI} !/(admin|assets|uploads|config|vendor|public|join|redeem|error-pages|cart|scripts|sql|zone) [NC]
+    RewriteRule ^([a-zA-Z0-9_-]+)/([a-zA-Z0-9_-]+)/?$ zone/$2.php?zone=$1 [L,QSA]
+
+    # 2. Matches /{zone_slug} -> zone/index.php?zone={zone_slug}
+    RewriteCond %{REQUEST_URI} !/(admin|assets|uploads|config|vendor|public|join|redeem|error-pages|cart|scripts|sql|zone) [NC]
+    RewriteRule ^([a-zA-Z0-9_-]+)/?$ zone/index.php?zone=$1 [L,QSA]
+
+    # Clean URL support: automatically maps /admin/dashboard/index to /admin/dashboard/index.php
+    RewriteCond %{REQUEST_FILENAME}.php -f
+    RewriteRule ^(.*)$ $1.php [L,QSA]
+
+    # Handle /redeem route
+    RewriteCond %{REQUEST_URI} ^.*/redeem/?$ [NC]
+    RewriteRule ^redeem/?$ redeem/index.php [L]
+
+    # Redirect other unmatched non-file requests to public/
+    RewriteCond %{REQUEST_URI} !/(admin|zone|public|join|assets|uploads)/ [NC]
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^(.*)$ public/$1 [L]
+</IfModule>
+
+# Security Headers
+<IfModule mod_headers.c>
+    Header set X-Content-Type-Options "nosniff"
+    Header set X-Frame-Options "SAMEORIGIN"
+    Header set X-XSS-Protection "1; mode=block"
+</IfModule>
+
+# Prevent access to sensitive directories
+<IfModule mod_rewrite.c>
+    RewriteRule ^(config|scripts|sql|vendor)/ - [F,L]
+</IfModule>
 # Root .htaccess - Security and Redirects
 <IfModule mod_rewrite.c>
     RewriteEngine On
