@@ -30,6 +30,11 @@ if (empty($zone_slug)) {
 // Sanitize slug
 $zone_slug = strtolower(trim(preg_replace('/[^a-z0-9_-]/', '', $zone_slug)));
 
+if ($zone_slug === 'index-temp') {
+    include dirname(__DIR__) . '/index-temp.php';
+    exit;
+}
+
 if (empty($zone_slug)) {
     http_response_code(404);
     echo renderZoneNotFound("No delivery zone specified.");

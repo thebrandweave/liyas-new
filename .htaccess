@@ -3,10 +3,10 @@
     RewriteEngine On
 
     # --------------------------------------------------
-    # 1. Redirect direct access to index-temp.php → /
+    # 1. Handle Homepage at /, /index-temp, and /index-temp/
     # --------------------------------------------------
-    RewriteCond %{THE_REQUEST} \s/+index-temp\.php(?:[\s?]) [NC]
-    RewriteRule ^index-temp\.php$ / [R=301,L]
+    RewriteRule ^$ index-temp.php [L]
+    RewriteRule ^index-temp/?$ index-temp.php [L]
 
     # --------------------------------------------------
     # 2. Exclude cart API files from rewrites and redirects
@@ -26,7 +26,7 @@
 
     # --------------------------------------------------
     # 5. Redirect direct .php URLs to clean URLs
-    #    Preserve query strings; exclude admin and APIs
+    #    Preserve query strings; exclude admin, index-temp, and APIs
     # --------------------------------------------------
     RewriteCond %{REQUEST_METHOD} !POST
     RewriteCond %{THE_REQUEST} \s/+([^\s?]+)\.php(?:[\s?]) [NC]
@@ -37,35 +37,30 @@
     RewriteRule ^(.+)\.php$ /%1 [R=301,L,NE]
 
     # --------------------------------------------------
-    # 6. Load the temporary homepage at /
-    # --------------------------------------------------
-    RewriteRule ^$ index-temp.php [L]
-
-    # --------------------------------------------------
-    # 7. Do not rewrite existing physical files/directories
+    # 6. Do not rewrite existing physical files/directories
     # --------------------------------------------------
     RewriteCond %{REQUEST_FILENAME} -f [OR]
     RewriteCond %{REQUEST_FILENAME} -d
     RewriteRule ^ - [L]
 
     # --------------------------------------------------
-    # 8. Multi-zone routes
+    # 7. Multi-zone routes
     #    /{zone_slug}/{action}
     #    → zone/{action}.php?zone={zone_slug}
     # --------------------------------------------------
-    RewriteCond %{REQUEST_URI} !^/(admin|assets|uploads|config|vendor|public|join|redeem|error-pages|cart|scripts|sql|zone)(/|$) [NC]
+    RewriteCond %{REQUEST_URI} !^/(admin|assets|uploads|config|vendor|public|join|redeem|error-pages|cart|scripts|sql|zone|index-temp)(/|$) [NC]
     RewriteRule ^([a-zA-Z0-9_-]+)/([a-zA-Z0-9_-]+)/?$ zone/$2.php?zone=$1 [L,QSA]
 
     # --------------------------------------------------
-    # 9. Multi-zone homepage
+    # 8. Multi-zone homepage
     #    /{zone_slug}
     #    → zone/index.php?zone={zone_slug}
     # --------------------------------------------------
-    RewriteCond %{REQUEST_URI} !^/(admin|assets|uploads|config|vendor|public|join|redeem|error-pages|cart|scripts|sql|zone)(/|$) [NC]
+    RewriteCond %{REQUEST_URI} !^/(admin|assets|uploads|config|vendor|public|join|redeem|error-pages|cart|scripts|sql|zone|index-temp)(/|$) [NC]
     RewriteRule ^([a-zA-Z0-9_-]+)/?$ zone/index.php?zone=$1 [L,QSA]
 
     # --------------------------------------------------
-    # 10. Clean URLs for existing PHP files
+    # 9. Clean URLs for existing PHP files
     #     Example: /admin/dashboard/index → index.php
     # --------------------------------------------------
     RewriteCond %{REQUEST_FILENAME} !-d
@@ -73,9 +68,9 @@
     RewriteRule ^(.+?)/?$ $1.php [L,QSA]
 
     # --------------------------------------------------
-    # 11. Fallback to public/ for unmatched requests
+    # 10. Fallback to public/ for unmatched requests
     # --------------------------------------------------
-    RewriteCond %{REQUEST_URI} !^/(admin|zone|public|join|assets|uploads|config|scripts|sql|vendor|redeem|cart|error-pages)(/|$) [NC]
+    RewriteCond %{REQUEST_URI} !^/(admin|zone|public|join|assets|uploads|config|scripts|sql|vendor|redeem|cart|error-pages|index-temp)(/|$) [NC]
     RewriteCond %{REQUEST_FILENAME} !-f
     RewriteCond %{REQUEST_FILENAME} !-d
     RewriteRule ^(.*)$ public/$1 [L]
