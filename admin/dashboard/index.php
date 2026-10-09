@@ -34,120 +34,144 @@ switch ($period) {
         break;
 }
 
-// 1. Total Products
-$total_products = (int)$pdo->query("SELECT COUNT(*) FROM products WHERE status = 'active'")->fetchColumn();
-
-// 2. Total Orders & Pending Orders (in the period)
-$order_counts_stmt = $pdo->prepare("
-    SELECT 
-        COUNT(*) as total_orders,
-        SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending_orders,
-        SUM(CASE WHEN status = 'delivered' THEN 1 ELSE 0 END) as delivered_orders
-    FROM orders o
-    WHERE 1=1 $date_condition
-");
-$order_counts_stmt->execute();
-$counts = $order_counts_stmt->fetch(PDO::FETCH_ASSOC);
-$total_orders = (int)($counts['total_orders'] ?? 0);
-$pending_orders = (int)($counts['pending_orders'] ?? 0);
-$delivered_orders = (int)($counts['delivered_orders'] ?? 0);
-
-// Global pending orders across all time for notification card
-$all_time_pending = (int)$pdo->query("SELECT COUNT(*) FROM orders WHERE status = 'pending'")->fetchColumn();
-
-// 3. Total Revenue: calculated from delivered orders
-$rev_stmt = $pdo->prepare("
-    SELECT COALESCE(SUM(total_amount), 0) 
-    FROM orders o 
-    WHERE status = 'delivered' $date_condition
-");
-$rev_stmt->execute();
-$total_revenue = (float)$rev_stmt->fetchColumn();
-
-// 4. Warehouse Stocks overview
-$stock_data = $pdo->query("
-    SELECT 
-        COALESCE(SUM(case_stock), 0) as total_central_stock,
-        (SELECT COALESCE(SUM(quantity), 0) FROM orders WHERE status != 'cancelled') as total_dispatched_cases
-    FROM products
-    WHERE status = 'active'
-")->fetch(PDO::FETCH_ASSOC);
-$total_central_cases = (int)($stock_data['total_central_stock'] ?? 0);
-$total_dispatched_cases = (int)($stock_data['total_dispatched_cases'] ?? 0);
-$total_remaining_cases = max(0, $total_central_cases - $total_dispatched_cases);
-
-// 5. Zone Financial Summary Grid:
-// | Zone | Cash | Credited | Due | (calculated from orders and delivery receipts)
-$zone_financial_query = "
-    SELECT 
-        z.id,
-        z.name as zone_name,
-        z.slug as zone_slug,
-        z.status as zone_status,
-        COUNT(o.order_id) as total_zone_orders,
-        SUM(CASE WHEN o.status = 'delivered' THEN 1 ELSE 0 END) as delivered_zone_orders,
-        SUM(CASE WHEN o.status = 'pending' THEN 1 ELSE 0 END) as pending_zone_orders,
-        COALESCE(SUM(CASE WHEN o.status = 'delivered' THEN o.total_amount ELSE 0 END), 0) as total_sales,
-        COALESCE(SUM(r.cash_amount), 0) as total_cash,
-        COALESCE(SUM(r.credited_amount), 0) as total_credited,
-        COALESCE(SUM(r.due_amount), 0) as total_due
-    FROM zones z
-    LEFT JOIN orders o ON z.id = o.zone_id " . ($date_condition ? str_replace('AND', 'AND', $date_condition) : '') . "
-    LEFT JOIN receipts r ON o.order_id = r.order_id
-    GROUP BY z.id
-    ORDER BY z.name ASC
-";
-$zone_financials = $pdo->query($zone_financial_query)->fetchAll(PDO::FETCH_ASSOC);
-
-// Totals across all zones
+// ----------------------------------------------------
+// Initialize default metric variables to avoid undefined notices
+// ----------------------------------------------------
+$total_products = 0;
+$total_orders = 0;
+$pending_orders = 0;
+$delivered_orders = 0;
+$all_time_pending = 0;
+$total_revenue = 0.0;
+$total_central_cases = 0;
+$total_dispatched_cases = 0;
+$total_remaining_cases = 0;
+$zone_financials = [];
 $sum_cash = 0;
 $sum_credited = 0;
 $sum_due = 0;
-foreach ($zone_financials as $zf) {
-    $sum_cash += (float)$zf['total_cash'];
-    $sum_credited += (float)$zf['total_credited'];
-    $sum_due += (float)$zf['total_due'];
+$recent_orders = [];
+$prod_stocks = [];
+
+try {
+    // 1. Total Products
+    $total_products = (int)$pdo->query("SELECT COUNT(*) FROM products WHERE status = 'active'")->fetchColumn();
+
+    // 2. Total Orders & Pending Orders (in the period)
+    $order_counts_stmt = $pdo->prepare("
+        SELECT 
+            COUNT(*) as total_orders,
+            SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending_orders,
+            SUM(CASE WHEN status = 'delivered' THEN 1 ELSE 0 END) as delivered_orders
+        FROM orders o
+        WHERE 1=1 $date_condition
+    ");
+    $order_counts_stmt->execute();
+    $counts = $order_counts_stmt->fetch(PDO::FETCH_ASSOC);
+    $total_orders = (int)($counts['total_orders'] ?? 0);
+    $pending_orders = (int)($counts['pending_orders'] ?? 0);
+    $delivered_orders = (int)($counts['delivered_orders'] ?? 0);
+
+    // Global pending orders across all time for notification card
+    $all_time_pending = (int)$pdo->query("SELECT COUNT(*) FROM orders WHERE status = 'pending'")->fetchColumn();
+
+    // 3. Total Revenue: calculated from delivered orders
+    $rev_stmt = $pdo->prepare("
+        SELECT COALESCE(SUM(total_amount), 0) 
+        FROM orders o 
+        WHERE status = 'delivered' $date_condition
+    ");
+    $rev_stmt->execute();
+    $total_revenue = (float)$rev_stmt->fetchColumn();
+
+    // 4. Warehouse Stocks overview
+    $stock_data = $pdo->query("
+        SELECT 
+            COALESCE(SUM(case_stock), 0) as total_central_stock,
+            (SELECT COALESCE(SUM(quantity), 0) FROM orders WHERE status != 'cancelled') as total_dispatched_cases
+        FROM products
+        WHERE status = 'active'
+    ")->fetch(PDO::FETCH_ASSOC);
+    $total_central_cases = (int)($stock_data['total_central_stock'] ?? 0);
+    $total_dispatched_cases = (int)($stock_data['total_dispatched_cases'] ?? 0);
+    $total_remaining_cases = max(0, $total_central_cases - $total_dispatched_cases);
+
+    // 5. Zone Financial Summary Grid
+    $zone_financial_query = "
+        SELECT 
+            z.id,
+            z.name as zone_name,
+            z.slug as zone_slug,
+            z.status as zone_status,
+            COUNT(o.order_id) as total_zone_orders,
+            SUM(CASE WHEN o.status = 'delivered' THEN 1 ELSE 0 END) as delivered_zone_orders,
+            SUM(CASE WHEN o.status = 'pending' THEN 1 ELSE 0 END) as pending_zone_orders,
+            COALESCE(SUM(CASE WHEN o.status = 'delivered' THEN o.total_amount ELSE 0 END), 0) as total_sales,
+            COALESCE(SUM(r.cash_amount), 0) as total_cash,
+            COALESCE(SUM(r.credited_amount), 0) as total_credited,
+            COALESCE(SUM(r.due_amount), 0) as total_due
+        FROM zones z
+        LEFT JOIN orders o ON z.id = o.zone_id " . ($date_condition ? str_replace('AND', 'AND', $date_condition) : '') . "
+        LEFT JOIN receipts r ON o.order_id = r.order_id
+        GROUP BY z.id, z.name, z.slug, z.status
+        ORDER BY z.name ASC
+    ";
+    $zone_financials = $pdo->query($zone_financial_query)->fetchAll(PDO::FETCH_ASSOC);
+
+    // Totals across all zones
+    foreach ($zone_financials as $zf) {
+        $sum_cash += (float)($zf['total_cash'] ?? 0);
+        $sum_credited += (float)($zf['total_credited'] ?? 0);
+        $sum_due += (float)($zf['total_due'] ?? 0);
+    }
+
+    // 6. Recent Orders
+    $recent_stmt = $pdo->query("
+        SELECT 
+            o.order_id, 
+            o.order_number, 
+            o.shop_name, 
+            o.customer_name, 
+            o.phone, 
+            o.total_amount, 
+            o.status, 
+            o.created_at,
+            z.name as zone_name,
+            z.slug as zone_slug,
+            MAX(r.bill_number) as bill_number
+        FROM orders o
+        LEFT JOIN zones z ON o.zone_id = z.id
+        LEFT JOIN receipts r ON o.order_id = r.order_id
+        GROUP BY o.order_id, o.order_number, o.shop_name, o.customer_name, o.phone, o.total_amount, o.status, o.created_at, z.name, z.slug
+        ORDER BY o.created_at DESC
+        LIMIT 8
+    ");
+    $recent_orders = $recent_stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    // 7. Product Inventory Stock distribution
+    $prod_stocks = $pdo->query("
+        SELECT 
+            p.product_id,
+            p.product_name,
+            p.name,
+            p.case_stock,
+            p.case_price,
+            p.net_content,
+            p.net_content_unit,
+            COALESCE(SUM(CASE WHEN o.status != 'cancelled' THEN o.quantity ELSE 0 END), 0) as in_zones
+        FROM products p
+        LEFT JOIN orders o ON p.product_id = o.product_id
+        WHERE p.status = 'active'
+        GROUP BY p.product_id, p.product_name, p.name, p.case_stock, p.case_price, p.net_content, p.net_content_unit
+        ORDER BY p.case_price ASC
+    ")->fetchAll(PDO::FETCH_ASSOC);
+
+} catch (PDOException $e) {
+    error_log("Dashboard query exception: " . $e->getMessage());
+    if (function_exists('ensureWarehouseSchema')) {
+        ensureWarehouseSchema($pdo);
+    }
 }
-
-// 6. Recent Orders
-$recent_stmt = $pdo->query("
-    SELECT 
-        o.order_id, 
-        o.order_number, 
-        o.shop_name, 
-        o.customer_name, 
-        o.phone, 
-        o.total_amount, 
-        o.status, 
-        o.created_at,
-        z.name as zone_name,
-        z.slug as zone_slug,
-        r.bill_number
-    FROM orders o
-    LEFT JOIN zones z ON o.zone_id = z.id
-    LEFT JOIN receipts r ON o.order_id = r.order_id
-    ORDER BY o.created_at DESC
-    LIMIT 8
-");
-$recent_orders = $recent_stmt->fetchAll(PDO::FETCH_ASSOC);
-
-// 7. Product Inventory Stock distribution
-$prod_stocks = $pdo->query("
-    SELECT 
-        p.product_id,
-        p.product_name,
-        p.name,
-        p.case_stock,
-        p.case_price,
-        p.net_content,
-        p.net_content_unit,
-        COALESCE(SUM(CASE WHEN o.status != 'cancelled' THEN o.quantity ELSE 0 END), 0) as in_zones
-    FROM products p
-    LEFT JOIN orders o ON p.product_id = o.product_id
-    WHERE p.status = 'active'
-    GROUP BY p.product_id
-    ORDER BY p.case_price ASC
-")->fetchAll(PDO::FETCH_ASSOC);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -418,16 +442,16 @@ $prod_stocks = $pdo->query("
                                     </tr>
                                 <?php else: ?>
                                     <?php foreach ($zone_financials as $zf): 
-                                        $portalUrl = BASE_URL . '/' . htmlspecialchars($zf['zone_slug']);
-                                        $cash = (float)$zf['total_cash'];
-                                        $credit = (float)$zf['total_credited'];
-                                        $due = (float)$zf['total_due'];
-                                        $sales = (float)$zf['total_sales'];
+                                        $portalUrl = rtrim(BASE_URL, '/') . '/' . htmlspecialchars($zf['zone_slug'] ?? '');
+                                        $cash = (float)($zf['total_cash'] ?? 0);
+                                        $credit = (float)($zf['total_credited'] ?? 0);
+                                        $due = (float)($zf['total_due'] ?? 0);
+                                        $sales = (float)($zf['total_sales'] ?? 0);
                                     ?>
                                     <tr>
                                         <td>
                                             <div style="font-weight: 600; color: #1e293b; font-size: 14px;">
-                                                <?= htmlspecialchars($zf['zone_name']) ?>
+                                                <?= htmlspecialchars($zf['zone_name'] ?? '') ?>
                                             </div>
                                         </td>
                                         <td>
@@ -501,8 +525,8 @@ $prod_stocks = $pdo->query("
                                         <tr><td colspan="6" style="text-align: center; padding: 2rem; color: #64748b;">No recent orders.</td></tr>
                                     <?php else: ?>
                                         <?php foreach ($recent_orders as $ord): 
-                                            $ordNum = $ord['order_number'] ?: ('#' . $ord['order_id']);
-                                            $sName = htmlspecialchars($ord['shop_name'] ?: ($ord['customer_name'] ?: 'Customer'));
+                                            $ordNum = !empty($ord['order_number']) ? $ord['order_number'] : ('#' . ($ord['order_id'] ?? ''));
+                                            $sName = htmlspecialchars(!empty($ord['shop_name']) ? $ord['shop_name'] : (!empty($ord['customer_name']) ? $ord['customer_name'] : 'Customer'));
                                         ?>
                                         <tr>
                                             <td>
@@ -514,14 +538,14 @@ $prod_stocks = $pdo->query("
                                                 <div style="font-weight: 500; color: #1e293b;"><?= $sName ?></div>
                                             </td>
                                             <td>
-                                                <span style="font-size: 12px; color: #475569;"><?= htmlspecialchars($ord['zone_name'] ?: 'Central') ?></span>
+                                                <span style="font-size: 12px; color: #475569;"><?= htmlspecialchars(!empty($ord['zone_name']) ? $ord['zone_name'] : 'Central') ?></span>
                                             </td>
                                             <td>
-                                                <strong><?= formatCurrency($ord['total_amount']) ?></strong>
+                                                <strong><?= formatCurrency($ord['total_amount'] ?? 0) ?></strong>
                                             </td>
                                             <td>
-                                                <span class="badge <?= getStatusBadgeClass($ord['status']) ?>">
-                                                    <?= ucfirst($ord['status']) ?>
+                                                <span class="badge <?= getStatusBadgeClass($ord['status'] ?? '') ?>">
+                                                    <?= ucfirst($ord['status'] ?? '') ?>
                                                 </span>
                                             </td>
                                             <td>
@@ -545,9 +569,9 @@ $prod_stocks = $pdo->query("
                         </div>
                         <div style="padding: 1rem 1.5rem;">
                             <?php foreach ($prod_stocks as $ps): 
-                                $pName = htmlspecialchars($ps['product_name'] ?: $ps['name']);
-                                $cStock = (int)$ps['case_stock'];
-                                $inZones = (int)$ps['in_zones'];
+                                $pName = htmlspecialchars(!empty($ps['product_name']) ? $ps['product_name'] : (!empty($ps['name']) ? $ps['name'] : 'Product'));
+                                $cStock = (int)($ps['case_stock'] ?? 0);
+                                $inZones = (int)($ps['in_zones'] ?? 0);
                                 $rem = max(0, $cStock - $inZones);
                                 $pct = ($cStock > 0) ? min(100, round(($rem / $cStock) * 100)) : 0;
                             ?>

@@ -17,8 +17,15 @@ use Firebase\JWT\Key;
 // 1. DATABASE CONFIGURATION
 // ============================================
 
-// Toggle this variable to switch environments
-$is_live = true;
+// Auto-detect environment (local vs live production)
+$is_local = (
+    (isset($_SERVER['HTTP_HOST']) && (
+        in_array($_SERVER['HTTP_HOST'], ['localhost', '127.0.0.1', '::1']) || 
+        strpos($_SERVER['HTTP_HOST'], 'localhost:') === 0
+    )) ||
+    (php_sapi_name() === 'cli' && (strpos(__DIR__, 'xampp') !== false || strpos(__DIR__, 'htdocs') !== false))
+);
+$is_live = !$is_local;
 
 if ($is_live) {
     // -------------------
@@ -81,6 +88,10 @@ try {
     $pdo->exec("SET time_zone = '+05:30'");
     $pdo_campaign->exec("SET time_zone = '+05:30'");
 
+    // Auto-sync warehouse schema if needed
+    require_once __DIR__ . '/schema_sync.php';
+    ensureWarehouseSchema($pdo);
+
 } catch (PDOException $e) {
     // Log error internally
     error_log("Database Connection Failed: " . $e->getMessage());
@@ -102,7 +113,7 @@ $JWT_SECRET = "super_secure_secret_987654321";
 $JWT_EXPIRE = 3600;
 
 if ($is_live) {
-    define('BASE_URL', 'https://liyasinternational.com/');
+    define('BASE_URL', 'https://liyasinternational.com');
 } else {
     define('BASE_URL', 'http://localhost/liyas-new');
 }
