@@ -197,7 +197,7 @@ if (file_exists($logoPath)) {
             display: inline-flex;
             align-items: center;
             gap: 6px;
-            padding: 10px 14px;
+            padding: 10px 10px;
             border-radius: 10px;
             font-size: 13px;
             font-weight: 700;
@@ -387,7 +387,7 @@ if (file_exists($logoPath)) {
             color: #ffffff;
             padding: 10px 12px;
             border: 1px solid #0f172a;
-            font-size: 12px;
+            font-size: 9px;
             font-weight: 700;
             text-transform: uppercase;
             letter-spacing: 0.04em;
@@ -681,19 +681,13 @@ if (file_exists($logoPath)) {
     <div class="no-print-bar">
         <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
             <a href="<?= zone_url($zone_slug) ?>" class="btn-ctrl">
-                <i class='bx bx-arrow-back'></i> Portal (<?= htmlspecialchars($zone_name) ?>)
+                <i class='bx bx-arrow-back'></i>
             </a>
-            <?php if ($order_id > 0): ?>
-                <a href="<?= zone_url($zone_slug, 'order', ['id' => $order_id]) ?>" class="btn-ctrl">
-                    <i class='bx bx-file'></i> Order
-                </a>
-            <?php endif; ?>
-        </div>
 
-        <div class="action-buttons-group">
+  <div class="action-buttons-group">
             <button onclick="shareViaWhatsApp()" id="btnWaShare" class="btn-ctrl btn-whatsapp-share" title="Send Receipt via WhatsApp directly with auto PDF download and clipboard image">
-                <i class='bx bxl-whatsapp' style="font-size: 20px;"></i>
-                <span>Send via WhatsApp</span>
+                <i class='bx bxl-whatsapp' style="font-size: 15px;"></i>
+                <span>Send to WhatsApp</span>
             </button>
 
             <button onclick="downloadReceiptPdf()" id="btnDownloadPdf" class="btn-ctrl btn-pdf-download" title="Download official PDF receipt file">
@@ -701,16 +695,13 @@ if (file_exists($logoPath)) {
                 <span>Download PDF</span>
             </button>
 
-            <button onclick="downloadReceiptImage()" id="btnDownloadImg" class="btn-ctrl" title="Save receipt as high-resolution image (PNG)">
-                <i class='bx bx-image' style="font-size: 18px; color: #2563eb;"></i>
-                <span>Save Image</span>
-            </button>
+          
 
-            <button onclick="window.print()" class="btn-ctrl btn-print" title="Print receipt or thermal 80mm/58mm format">
-                <i class='bx bx-printer' style="font-size: 18px;"></i>
-                <span>Print / Thermal</span>
-            </button>
+          
         </div>
+        </div>
+
+      
     </div>
 
     <!-- Success banner if freshly generated -->

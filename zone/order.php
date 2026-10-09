@@ -549,7 +549,7 @@ $stepLevel = $statusSteps[$currentStatus] ?? 1;
                     <span class="step-label">Packed</span>
                 </div>
                 <div class="step-node <?= ($stepLevel >= 3) ? (($stepLevel > 3) ? 'completed' : 'active') : '' ?>">
-                    <div class="step-circle"><i class='bx bx-truck'></i></div>
+                    <div class="step-circle"><i class='bx bx-archive-out'></i></div>
                     <span class="step-label">Shipped</span>
                 </div>
                 <div class="step-node <?= ($stepLevel >= 4) ? 'completed' : '' ?>">
@@ -734,7 +734,7 @@ $stepLevel = $statusSteps[$currentStatus] ?? 1;
                         Due: <strong style="color: <?= ((float)$order['receipt_due'] > 0) ? '#dc2626' : '#059669' ?>;"><?= formatCurrency($order['receipt_due']) ?></strong>
                     </div>
 
-                    <div style="display: flex; gap: 10px; flex-direction: column;">
+                    <div style="display: flex; gap: 10px; flex-direction:column;">
                         <a href="<?= zone_url($zone_slug, 'receipt', ['id' => $order_id]) ?>" target="_blank" class="btn-action-large btn-primary-blue">
                             <i class='bx bx-printer' style="font-size: 20px;"></i> View &amp; Print Receipt
                         </a>
