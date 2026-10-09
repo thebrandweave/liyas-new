@@ -227,8 +227,8 @@ function renderOrdersTbodyRows(array $orders, string $status_filter = 'all', str
                         <?php endif; ?>
                     </div>
                     <?php if (!empty($order['bill_number'])): ?>
-                        <div style="font-size: 11px; color: #059669; font-weight: 500;">
-                            <i class='bx bx-receipt'></i> <?= htmlspecialchars($order['bill_number']) ?>
+                        <div style="font-size: 11px; color: #c61b1b; font-weight: 500;">
+                            <span>Bill No</span> <?= htmlspecialchars($order['bill_number']) ?>
                         </div>
                     <?php endif; ?>
                 </td>

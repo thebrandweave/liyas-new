@@ -1062,7 +1062,7 @@ function buildWhatsAppLink($phone, $shop, $orderNum, $amount, $itemsText = '') {
             gap: 5px;
             padding: 5px 10px;
             border-radius: 8px;
-            font-size: 12px;
+            font-size: 18px;
             font-weight: 600;
             text-decoration: none;
             transition: all 0.15s ease;
