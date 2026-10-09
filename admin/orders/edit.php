@@ -12,6 +12,33 @@ $current_page = "orders";
 $page_title   = "Edit Order";
 $error = '';
 
+// Live AJAX Stock API endpoint for real-time stock sync with Warehouse Inventory (admin/products/index.php)
+if (isset($_GET['action']) && $_GET['action'] === 'get_live_stock') {
+    header('Content-Type: application/json');
+    try {
+        $stmt = $pdo->query("SELECT product_id, name, product_name, case_price, price, case_stock, stock, net_content, net_content_unit, status FROM products WHERE status != 'inactive' OR status IS NULL ORDER BY case_price ASC, name ASC");
+        $list = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $map = [];
+        foreach ($list as $p) {
+            $cPrice = (float)($p['case_price'] ?: $p['price']);
+            $cStock = (int)($p['case_stock'] ?: $p['stock']);
+            $pName = $p['product_name'] ?: $p['name'];
+            $map[(int)$p['product_id']] = [
+                'id'          => (int)$p['product_id'],
+                'name'        => $pName,
+                'price'       => $cPrice,
+                'stock'       => $cStock,
+                'net_content' => $p['net_content'],
+                'unit'        => $p['net_content_unit']
+            ];
+        }
+        echo json_encode(['success' => true, 'products' => $map, 'timestamp' => time()]);
+    } catch (Exception $e) {
+        echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+    }
+    exit;
+}
+
 $order_id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
 
 $stmt = $pdo->prepare("SELECT * FROM orders WHERE order_id = ?");
@@ -26,8 +53,8 @@ if (!$order) {
 // Load active zones
 $zones = $pdo->query("SELECT id, name, slug FROM zones ORDER BY name ASC")->fetchAll(PDO::FETCH_ASSOC);
 
-// Load active products
-$products = $pdo->query("SELECT product_id, name, product_name, case_price, price, case_stock, stock, net_content, net_content_unit FROM products ORDER BY name ASC")->fetchAll(PDO::FETCH_ASSOC);
+// Load products matching Central Warehouse Product Inventory (admin/products/index.php)
+$products = $pdo->query("SELECT product_id, name, product_name, case_price, price, case_stock, stock, net_content, net_content_unit FROM products WHERE status != 'inactive' OR status IS NULL ORDER BY case_price ASC, name ASC")->fetchAll(PDO::FETCH_ASSOC);
 
 // Build structured products map for JS lookup
 $products_map = [];
@@ -542,9 +569,22 @@ $displayOrderNum = $order['order_number'] ?: ('#' . $order['order_id']);
                         </div>
 
                         <!-- Multi-Product Repeater Section -->
-                        <div class="form-section-title" style="margin-top: 1.75rem;">
-                            <i class='bx bx-shopping-bag' style="color: #059669; font-size: 20px;"></i>
-                            Order Products &amp; Quantities
+                        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; margin-top: 1.75rem; margin-bottom: 0.5rem; gap: 10px;">
+                            <div class="form-section-title" style="margin: 0;">
+                                <i class='bx bx-shopping-bag' style="color: #059669; font-size: 20px;"></i>
+                                Order Products &amp; Quantities
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <span id="stockSyncIndicator" style="font-size: 12px; color: #059669; font-weight: 600; display: inline-flex; align-items: center; gap: 4px;">
+                                    <i class='bx bx-check-circle'></i> Stock Synced with Product Inventory
+                                </span>
+                                <button type="button" onclick="refreshLiveStocks(true)" class="btn-refresh-stock" style="background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 6px; padding: 4px 10px; font-size: 12px; color: #334155; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; font-weight: 500;" title="Refresh available stock from Warehouse Inventory">
+                                    <i class='bx bx-refresh' id="refreshStockIcon"></i> Refresh Stock
+                                </button>
+                                <a href="../products/index.php" target="_blank" style="font-size: 12px; color: #2563eb; text-decoration: none; font-weight: 500; display: inline-flex; align-items: center; gap: 3px;" title="View Central Warehouse Product Inventory">
+                                    <i class='bx bx-link-external'></i> View Inventory
+                                </a>
+                            </div>
                         </div>
 
                         <div class="items-table-card">
@@ -552,10 +592,10 @@ $displayOrderNum = $order['order_number'] ?: ('#' . $order['order_id']);
                                 <table class="items-table" id="itemsTable">
                                     <thead>
                                         <tr>
-                                            <th style="min-width: 250px;">Product Item <span style="color: #ef4444;">*</span></th>
-                                            <th style="min-width: 140px;">Available Stock</th>
+                                            <th style="min-width: 280px;">Product Item <span style="color: #ef4444;">*</span></th>
+                                            <th style="min-width: 150px;">Available Stock (Warehouse)</th>
                                             <th style="min-width: 130px; text-align: right;">Rate / Case (₹) <span style="color: #ef4444;">*</span></th>
-                                            <th style="min-width: 110px; text-align: center;">Qty (Cases) <span style="color: #ef4444;">*</span></th>
+                                            <th style="min-width: 120px; text-align: center;">Qty (Cases) <span style="color: #ef4444;">*</span></th>
                                             <th style="min-width: 130px; text-align: right;">Line Total (₹)</th>
                                             <th style="width: 50px; text-align: center;"></th>
                                         </tr>
@@ -566,7 +606,7 @@ $displayOrderNum = $order['order_number'] ?: ('#' . $order['order_id']);
                                             $fRate = isset($fItem['rate']) && $fItem['rate'] !== '' ? (float)$fItem['rate'] : ($fPid && isset($products_map[$fPid]) ? $products_map[$fPid]['price'] : '');
                                         ?>
                                             <tr class="item-row" data-index="<?= $idx ?>">
-                                                <td>
+                                                 <td>
                                                     <select name="items[<?= $idx ?>][product_id]" class="form-control item-product-select" onchange="handleProductChange(this)" oninput="handleProductChange(this)" required>
                                                         <option value="">-- Select Product --</option>
                                                         <?php foreach ($products as $prod): 
@@ -574,18 +614,30 @@ $displayOrderNum = $order['order_number'] ?: ('#' . $order['order_id']);
                                                             $cStock = (int)($prod['case_stock'] ?: $prod['stock']);
                                                             $pName = htmlspecialchars($prod['product_name'] ?: $prod['name']);
                                                             $isSelected = ($fPid === (int)$prod['product_id']);
+                                                            $stockText = $cStock > 0 ? (number_format($cStock) . ' Cases in Stock') : 'Out of Stock (0)';
                                                         ?>
                                                             <option value="<?= $prod['product_id'] ?>" 
                                                                     data-price="<?= $cPrice ?>" 
                                                                     data-stock="<?= $cStock ?>"
                                                                     <?= $isSelected ? 'selected' : '' ?>>
-                                                                <?= $pName ?> (₹<?= number_format($cPrice, 2) ?>/cs)
+                                                                <?= $pName ?> (₹<?= number_format($cPrice, 2) ?>/cs) &mdash; <?= $stockText ?>
                                                             </option>
                                                         <?php endforeach; ?>
                                                     </select>
                                                 </td>
                                                 <td>
-                                                    <span class="badge-stock stock-display">--</span>
+                                                    <?php if ($fPid > 0 && isset($products_map[$fPid])): 
+                                                        $stk = (int)$products_map[$fPid]['stock'];
+                                                        if ($stk <= 0): ?>
+                                                            <span class="badge-stock out-of-stock stock-display"><i class='bx bx-x-circle'></i> Out of Stock (0)</span>
+                                                        <?php elseif ($stk < 20): ?>
+                                                            <span class="badge-stock low-stock stock-display"><i class='bx bx-time'></i> Low Stock: <?= $stk ?> cs</span>
+                                                        <?php else: ?>
+                                                            <span class="badge-stock in-stock stock-display"><i class='bx bx-check-circle'></i> In Stock: <?= $stk ?> cs</span>
+                                                        <?php endif; ?>
+                                                    <?php else: ?>
+                                                        <span class="badge-stock stock-display">-- Select Product --</span>
+                                                    <?php endif; ?>
                                                 </td>
                                                 <td style="text-align: right;">
                                                     <input type="number" step="0.01" min="0" name="items[<?= $idx ?>][rate]" class="form-control item-rate-input" oninput="handleRateOrQtyChange(this)" style="width: 115px; text-align: right; font-weight: 600;" placeholder="0.00" value="<?= ($fRate !== '') ? number_format((float)$fRate, 2, '.', '') : '' ?>" required>
@@ -673,13 +725,39 @@ $displayOrderNum = $order['order_number'] ?: ('#' . $order['order_id']);
 
         let nextRowIndex = <?= count($form_items) ?>;
 
-        // Generate options HTML dynamically from PRODUCTS_MAP
+        // Helper to format stock badge HTML matching warehouse inventory rules
+        function formatStockBadgeHtml(stock) {
+            if (stock === null || stock === undefined || isNaN(stock)) {
+                return '<span class="badge-stock stock-display">-- Select Product --</span>';
+            }
+            const s = parseInt(stock);
+            if (s <= 0) {
+                return `<span class="badge-stock out-of-stock stock-display"><i class='bx bx-x-circle'></i> Out of Stock (0)</span>`;
+            } else if (s < 20) {
+                return `<span class="badge-stock low-stock stock-display"><i class='bx bx-time'></i> Low Stock: ${s} cs</span>`;
+            } else {
+                return `<span class="badge-stock in-stock stock-display"><i class='bx bx-check-circle'></i> In Stock: ${s} cs</span>`;
+            }
+        }
+
+        // Helper to update stock badge cell of a row
+        function updateStockBadge(row, stock) {
+            if (!row) return;
+            const td = row.querySelector('td:nth-child(2)');
+            if (td) {
+                td.innerHTML = formatStockBadgeHtml(stock);
+            }
+        }
+
+        // Generate options HTML dynamically from PRODUCTS_MAP with stock display
         function getProductOptionsHtml(selectedId = 0) {
             let html = '<option value="">-- Select Product --</option>';
             for (const pid in PRODUCTS_MAP) {
                 const p = PRODUCTS_MAP[pid];
                 const sel = (parseInt(selectedId) === parseInt(p.id)) ? 'selected' : '';
-                html += `<option value="${p.id}" data-price="${p.price}" data-stock="${p.stock}" ${sel}>${p.name} (₹${parseFloat(p.price).toFixed(2)}/cs)</option>`;
+                const stockVal = parseInt(p.stock) || 0;
+                const stockText = stockVal > 0 ? `${Number(stockVal).toLocaleString()} Cases in Stock` : 'Out of Stock (0)';
+                html += `<option value="${p.id}" data-price="${p.price}" data-stock="${stockVal}" ${sel}>${p.name} (₹${parseFloat(p.price).toFixed(2)}/cs) &mdash; ${stockText}</option>`;
             }
             return html;
         }
@@ -694,7 +772,6 @@ $displayOrderNum = $order['order_number'] ?: ('#' . $order['order_id']);
             delete row.dataset.userTypingRate;
 
             const rateInput = row.querySelector('.item-rate-input');
-            const stockDisplay = row.querySelector('.stock-display');
             const selectedOption = select.options[select.selectedIndex];
             const pid = select.value ? parseInt(select.value) : 0;
 
@@ -719,19 +796,9 @@ $displayOrderNum = $order['order_number'] ?: ('#' . $order['order_id']);
 
             // Update stock badge
             if (pid > 0 && stock !== null && !isNaN(stock)) {
-                if (stock <= 0) {
-                    stockDisplay.textContent = 'Out of Stock (0)';
-                    stockDisplay.className = 'badge-stock out-of-stock';
-                } else if (stock < 10) {
-                    stockDisplay.textContent = stock + ' Cases (Low)';
-                    stockDisplay.className = 'badge-stock low-stock';
-                } else {
-                    stockDisplay.textContent = stock + ' Cases';
-                    stockDisplay.className = 'badge-stock in-stock';
-                }
+                updateStockBadge(row, stock);
             } else {
-                stockDisplay.textContent = '--';
-                stockDisplay.className = 'badge-stock';
+                updateStockBadge(row, null);
             }
 
             // Update rate
@@ -759,7 +826,7 @@ $displayOrderNum = $order['order_number'] ?: ('#' . $order['order_id']);
             recalculateAll();
         }
 
-        // Calculate single row line total
+        // Calculate single row line total and check stock availability warning
         function updateRowLineTotal(row) {
             if (!row) return { valid: false, qty: 0, rate: 0, lineTotal: 0 };
             const select = row.querySelector('.item-product-select');
@@ -773,6 +840,24 @@ $displayOrderNum = $order['order_number'] ?: ('#' . $order['order_id']);
             const lineTotal = rate * qty;
 
             lineTotalDisplay.textContent = '₹' + lineTotal.toFixed(2);
+
+            // Inline stock warning if entered qty exceeds available warehouse stock
+            let stockWarn = row.querySelector('.stock-warning-note');
+            let availableStock = null;
+            if (pid > 0 && PRODUCTS_MAP[pid]) {
+                availableStock = parseInt(PRODUCTS_MAP[pid].stock);
+            }
+            if (pid > 0 && availableStock !== null && !isNaN(availableStock) && qty > availableStock) {
+                if (!stockWarn) {
+                    stockWarn = document.createElement('div');
+                    stockWarn.className = 'stock-warning-note';
+                    stockWarn.style.cssText = 'font-size: 11px; color: #dc2626; font-weight: 600; margin-top: 4px; display: flex; align-items: center; gap: 3px; justify-content: center;';
+                    qtyInput.parentNode.appendChild(stockWarn);
+                }
+                stockWarn.innerHTML = `<i class='bx bx-error-circle'></i> Exceeds stock (${availableStock} cs)`;
+            } else if (stockWarn) {
+                stockWarn.remove();
+            }
 
             return {
                 valid: pid > 0,
@@ -795,9 +880,10 @@ $displayOrderNum = $order['order_number'] ?: ('#' . $order['order_id']);
                 rateInput.value = '';
                 delete row.dataset.userTypingRate;
                 row.querySelector('.item-qty-input').value = '1';
-                row.querySelector('.stock-display').textContent = '--';
-                row.querySelector('.stock-display').className = 'badge-stock';
+                updateStockBadge(row, null);
                 row.querySelector('.linetotal-display').textContent = '₹0.00';
+                const stockWarn = row.querySelector('.stock-warning-note');
+                if (stockWarn) stockWarn.remove();
                 recalculateAll();
             } else {
                 row.remove();
@@ -818,7 +904,7 @@ $displayOrderNum = $order['order_number'] ?: ('#' . $order['order_id']);
                     </select>
                 </td>
                 <td>
-                    <span class="badge-stock stock-display">--</span>
+                    <span class="badge-stock stock-display">-- Select Product --</span>
                 </td>
                 <td style="text-align: right;">
                     <input type="number" step="0.01" min="0" name="items[${nextRowIndex}][rate]" class="form-control item-rate-input" oninput="handleRateOrQtyChange(this)" style="width: 115px; text-align: right; font-weight: 600;" placeholder="0.00" required>
@@ -870,6 +956,61 @@ $displayOrderNum = $order['order_number'] ?: ('#' . $order['order_id']);
             displayTotalAmount.textContent = '₹' + grandTotal.toFixed(2);
         }
 
+        // Live Stock Fetching from Central Warehouse Inventory
+        async function refreshLiveStocks(manual = false) {
+            const icon = document.getElementById('refreshStockIcon');
+            const indicator = document.getElementById('stockSyncIndicator');
+            if (icon && manual) icon.classList.add('bx-spin');
+
+            try {
+                const response = await fetch('edit.php?id=<?= $order_id ?>&action=get_live_stock&t=' + Date.now(), {
+                    headers: { 'Cache-Control': 'no-cache' }
+                });
+                if (!response.ok) throw new Error('Network error');
+                const data = await response.json();
+                if (data.success && data.products) {
+                    // Update PRODUCTS_MAP
+                    for (const pid in data.products) {
+                        PRODUCTS_MAP[pid] = data.products[pid];
+                    }
+
+                    // Update existing dropdowns while preserving current selections
+                    const rows = itemsTableBody.querySelectorAll('.item-row');
+                    rows.forEach(row => {
+                        const select = row.querySelector('.item-product-select');
+                        if (select) {
+                            const currentVal = select.value;
+                            select.innerHTML = getProductOptionsHtml(currentVal);
+                            select.value = currentVal;
+                        }
+                        const pid = select && select.value ? parseInt(select.value) : 0;
+                        if (pid > 0 && PRODUCTS_MAP[pid]) {
+                            updateStockBadge(row, PRODUCTS_MAP[pid].stock);
+                        } else if (pid === 0) {
+                            updateStockBadge(row, null);
+                        }
+                        updateRowLineTotal(row);
+                    });
+
+                    if (indicator) {
+                        const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                        indicator.innerHTML = `<i class='bx bx-check-circle'></i> Stock Synced (${timeStr})`;
+                        indicator.style.color = '#059669';
+                    }
+                }
+            } catch (err) {
+                console.warn('Live stock sync failed:', err);
+                if (indicator && manual) {
+                    indicator.innerHTML = `<i class='bx bx-error'></i> Sync failed`;
+                    indicator.style.color = '#dc2626';
+                }
+            } finally {
+                if (icon && manual) {
+                    setTimeout(() => icon.classList.remove('bx-spin'), 500);
+                }
+            }
+        }
+
         // Delegated event fallbacks on table body
         itemsTableBody.addEventListener('change', function(e) {
             const select = e.target.closest('.item-product-select');
@@ -902,25 +1043,12 @@ $displayOrderNum = $order['order_number'] ?: ('#' . $order['order_id']);
             itemsTableBody.querySelectorAll('.item-row').forEach(row => {
                 const select = row.querySelector('.item-product-select');
                 if (select && select.value) {
-                    const selectedOption = select.options[select.selectedIndex];
                     const pid = parseInt(select.value) || 0;
-                    let stock = selectedOption ? selectedOption.getAttribute('data-stock') : null;
-                    if (stock === null && PRODUCTS_MAP[pid]) stock = PRODUCTS_MAP[pid].stock;
-                    const stockDisplay = row.querySelector('.stock-display');
-                    if (stock !== null && !isNaN(stock)) {
-                        stock = parseInt(stock);
-                        if (stock <= 0) {
-                            stockDisplay.textContent = 'Out of Stock (0)';
-                            stockDisplay.className = 'badge-stock out-of-stock';
-                        } else if (stock < 10) {
-                            stockDisplay.textContent = stock + ' Cases (Low)';
-                            stockDisplay.className = 'badge-stock low-stock';
-                        } else {
-                            stockDisplay.textContent = stock + ' Cases';
-                            stockDisplay.className = 'badge-stock in-stock';
-                        }
+                    if (pid > 0 && PRODUCTS_MAP[pid]) {
+                        updateStockBadge(row, PRODUCTS_MAP[pid].stock);
                     }
                     const rateInput = row.querySelector('.item-rate-input');
+                    const selectedOption = select.options[select.selectedIndex];
                     if (!rateInput.value && selectedOption && selectedOption.getAttribute('data-price')) {
                         rateInput.value = parseFloat(selectedOption.getAttribute('data-price')).toFixed(2);
                     }
@@ -928,6 +1056,11 @@ $displayOrderNum = $order['order_number'] ?: ('#' . $order['order_id']);
                 updateRowLineTotal(row);
             });
             recalculateAll();
+
+            // Background stock auto-refresh every 15 seconds
+            setInterval(() => {
+                refreshLiveStocks(false);
+            }, 15000);
         }
 
         if (document.readyState === 'loading') {
