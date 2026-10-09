@@ -235,6 +235,94 @@ $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
             box-shadow: 0 12px 30px rgba(74,210,226,.35);
             color: #fff;
         }
+        /* Order status badges */
+        .order-status-badge {
+            display: inline-block;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 700;
+            text-transform: capitalize;
+            border: 1px solid transparent;
+            line-height: 1.2;
+        }
+
+        .order-status-pending {
+            background: #fef3c7;
+            color: #92400e;
+            border-color: #fcd34d;
+        }
+
+        .order-status-processing {
+            background: #dbeafe;
+            color: #1d4ed8;
+            border-color: #93c5fd;
+        }
+
+        .order-status-shipped {
+            background: #f3e8ff;
+            color: #7e22ce;
+            border-color: #d8b4fe;
+        }
+
+        .order-status-delivered {
+            background: #dcfce7;
+            color: #15803d;
+            border-color: #86efac;
+        }
+
+        .order-status-cancelled {
+            background: #fee2e2;
+            color: #b91c1c;
+            border-color: #fca5a5;
+        }
+
+        .order-status-returned {
+            background: #ede9fe;
+            color: #5b21b6;
+            border-color: #c4b5fd;
+        }
+
+        .order-status-default {
+            background: #f1f5f9;
+            color: #475569;
+            border-color: #cbd5e1;
+        }
+
+        /* Payment Status Badges */
+        .payment-status-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+            border: 1px solid transparent;
+        }
+        .payment-status-paid {
+            background: #dcfce7;
+            color: #15803d;
+            border-color: #86efac;
+        }
+        .payment-status-pending {
+            background: #fef3c7;
+            color: #92400e;
+            border-color: #fcd34d;
+        }
+        .payment-status-failed {
+            background: #fee2e2;
+            color: #b91c1c;
+            border-color: #fca5a5;
+        }
+        .payment-status-refunded {
+            background: #ede9fe;
+            color: #6d28d9;
+            border-color: #c4b5fd;
+        }
+        .payment-status-default {
+            background: #f1f5f9;
+            color: #475569;
+            border-color: #cbd5e1;
+        }
     </style>
 </head>
 <body>
@@ -250,12 +338,69 @@ $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
             <div id="ordersContainer">
             <?php foreach($orders as $order): ?>
                 <?php
-                    $status = strtolower(trim($order['status']));
-                    $dotColor = '#22c55e'; // default green
+                    $status = strtolower(trim((string)($order['status'] ?? '')));
 
-                    if($status == 'pending')   $dotColor = '#f59e0b';
-                    if($status == 'cancelled') $dotColor = '#ef4444';
-                    if($status == 'returned')  $dotColor = '#8b5cf6';
+                    switch ($status) {
+                        case 'pending':
+                            $dotColor    = '#f59e0b';
+                            $statusClass = 'order-status-pending';
+                            $statusLabel = 'Pending';
+                            break;
+                        case 'processing':
+                            $dotColor    = '#2563eb';
+                            $statusClass = 'order-status-processing';
+                            $statusLabel = 'Processing';
+                            break;
+                        case 'shipped':
+                            $dotColor    = '#9333ea';
+                            $statusClass = 'order-status-shipped';
+                            $statusLabel = 'Shipped';
+                            break;
+                        case 'delivered':
+                            $dotColor    = '#16a34a';
+                            $statusClass = 'order-status-delivered';
+                            $statusLabel = 'Delivered';
+                            break;
+                        case 'cancelled':
+                            $dotColor    = '#dc2626';
+                            $statusClass = 'order-status-cancelled';
+                            $statusLabel = 'Cancelled';
+                            break;
+                        case 'returned':
+                            $dotColor    = '#7c3aed';
+                            $statusClass = 'order-status-returned';
+                            $statusLabel = 'Returned';
+                            break;
+                        default:
+                            $dotColor    = '#64748b';
+                            $statusClass = 'order-status-default';
+                            $statusLabel = !empty($status) ? ucfirst($status) : 'Pending';
+                            break;
+                    }
+
+                    $paymentStatus = strtolower(trim((string)($order['payment_status'] ?? '')));
+                    switch ($paymentStatus) {
+                        case 'paid':
+                            $paymentBadgeClass = 'payment-status-paid';
+                            $paymentLabel      = 'Paid';
+                            break;
+                        case 'pending':
+                            $paymentBadgeClass = 'payment-status-pending';
+                            $paymentLabel      = 'Pending';
+                            break;
+                        case 'failed':
+                            $paymentBadgeClass = 'payment-status-failed';
+                            $paymentLabel      = 'Failed';
+                            break;
+                        case 'refunded':
+                            $paymentBadgeClass = 'payment-status-refunded';
+                            $paymentLabel      = 'Refunded';
+                            break;
+                        default:
+                            $paymentBadgeClass = 'payment-status-default';
+                            $paymentLabel      = !empty($paymentStatus) ? ucfirst($paymentStatus) : 'Pending';
+                            break;
+                    }
                 ?>
 
                 <div class="order-box mb-4">
@@ -272,10 +417,18 @@ $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
                         <div class="col-md-3">
                             <div class="status-line">
-                                <span class="status-dot" style="background:<?= $dotColor ?>"></span>
-                                <strong><?= ucfirst($order['status']); ?></strong>
+                                <span class="status-dot" style="background: <?= $dotColor ?>;"></span>
+                                <span class="order-status-badge <?= $statusClass ?>">
+                                    <?= htmlspecialchars($statusLabel, ENT_QUOTES, 'UTF-8') ?>
+                                </span>
                             </div>
-                            <small class="text-muted">Payment: <?= ucfirst($order['payment_status']); ?></small>
+
+                            <div style="font-size: 12px; color: #64748b; margin-top: 4px; display: flex; align-items: center; gap: 5px;">
+                                <span>Payment:</span>
+                                <span class="payment-status-badge <?= $paymentBadgeClass ?>">
+                                    <?= htmlspecialchars($paymentLabel, ENT_QUOTES, 'UTF-8') ?>
+                                </span>
+                            </div>
                         </div>
 
                         <div class="col-md-2 text-md-end mt-3 mt-md-0">
