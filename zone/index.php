@@ -121,7 +121,12 @@ $orders_stmt = $pdo->prepare("
         r.cash_amount as receipt_cash,
         r.credited_amount as receipt_credit,
         r.due_amount as receipt_due,
-        r.payment_type as receipt_pay_type
+        r.payment_type as receipt_pay_type,
+        (SELECT COUNT(*) FROM order_items oi WHERE oi.order_id = o.order_id) AS items_count,
+        (SELECT GROUP_CONCAT(CONCAT(COALESCE(p2.product_name, p2.name), ' (', oi2.quantity, 'cs)') SEPARATOR ', ') 
+         FROM order_items oi2 
+         JOIN products p2 ON oi2.product_id = p2.product_id 
+         WHERE oi2.order_id = o.order_id) AS items_summary
     FROM orders o
     LEFT JOIN products p ON o.product_id = p.product_id
     LEFT JOIN receipts r ON o.order_id = r.order_id
@@ -148,13 +153,14 @@ $metrics_stmt->execute([$zone_id]);
 $metrics = $metrics_stmt->fetch(PDO::FETCH_ASSOC);
 
 // Helper function for WhatsApp link
-function buildWhatsAppLink($phone, $shop, $orderNum, $amount) {
+function buildWhatsAppLink($phone, $shop, $orderNum, $amount, $itemsText = '') {
     $clean = preg_replace('/[^0-9]/', '', $phone ?? '');
     if (empty($clean)) return '';
     if (strlen($clean) === 10) {
         $clean = '91' . $clean;
     }
-    $text = "Hello {$shop}, this is Liyas Water Delivery regarding Order #{$orderNum} (Total: {$amount}).";
+    $itemDesc = !empty($itemsText) ? " [{$itemsText}]" : "";
+    $text = "Hello {$shop}, this is Liyas Water Delivery regarding Order #{$orderNum}{$itemDesc} (Total: {$amount}).";
     return "https://wa.me/{$clean}?text=" . rawurlencode($text);
 }
 ?>
@@ -1636,13 +1642,14 @@ function buildWhatsAppLink($phone, $shop, $orderNum, $amount) {
                     $shop = htmlspecialchars($order['shop_name'] ?: ($order['customer_name'] ?: 'Customer'));
                     $loc = htmlspecialchars($order['location'] ?: 'Area / Shop');
                     $prod = htmlspecialchars($order['product_name'] ?: ($order['fallback_name'] ?: 'Liyas Mineral Water'));
+                    $itemsSummary = !empty($order['items_summary']) ? htmlspecialchars($order['items_summary']) : $prod;
                     $qty = (int)$order['quantity'];
                     $amount = formatCurrency($order['total_amount']);
                     $status = strtolower($order['status']);
                     $phone = $order['phone'] ?? '';
                     $hasReceipt = !empty($order['bill_number']);
                     $mapsUrl = "https://www.google.com/maps/search/?api=1&query=" . urlencode($loc . ' ' . $zone_name);
-                    $waLink = buildWhatsAppLink($phone, $shop, $ordNum, $amount);
+                    $waLink = buildWhatsAppLink($phone, $shop, $ordNum, $amount, $itemsSummary);
                     $createdDate = date('d M Y, h:i A', strtotime($order['created_at']));
                     $searchData = strtolower($shop . ' ' . $ordNum . ' ' . $loc . ' ' . $phone . ' ' . ($order['bill_number'] ?? ''));
                 ?>
@@ -1679,7 +1686,7 @@ function buildWhatsAppLink($phone, $shop, $orderNum, $amount) {
                         <!-- Left Details: Product & Contacts -->
                         <div class="contact-box">
                             <div class="product-highlight">
-                                <span><?= $prod ?></span>
+                                <span><?= $itemsSummary ?></span>
                                 <span class="qty-pill"><?= $qty ?> Cases</span>
                             </div>
 

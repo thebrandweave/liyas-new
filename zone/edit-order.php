@@ -24,7 +24,18 @@ if ((int)$order['is_zone_read'] === 0) {
 }
 
 $error = '';
-$baseAmount = ($order['unit_price'] ?: 0) * ($order['quantity'] ?: 1);
+$order_items = getOrderItems($pdo, $order_id);
+$itemsBaseTotal = 0.0;
+foreach ($order_items as $oi) {
+    $itemsBaseTotal += (float)$oi['line_total'];
+}
+if ($itemsBaseTotal <= 0 && (float)$order['total_amount'] > 0) {
+    $itemsBaseTotal = (float)$order['total_amount'] + (float)$order['discount'];
+}
+if ($itemsBaseTotal <= 0) {
+    $itemsBaseTotal = ($order['unit_price'] ?: 0) * ($order['quantity'] ?: 1);
+}
+$baseAmount = $itemsBaseTotal;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_discount'])) {
     $discount = (float)($_POST['discount'] ?? 0);
