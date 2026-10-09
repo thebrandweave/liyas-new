@@ -5,8 +5,10 @@ require_once dirname(__DIR__, 2) . '/config/config.php';
 use Firebase\JWT\JWT;
 use Firebase\JWT\Key;
 
+$loginUrl = BASE_URL . '/admin/login.php';
+
 if (!isset($_SESSION['admin_id'], $_SESSION['jwt_token'])) {
-    header("Location: ./login.php");
+    header("Location: " . $loginUrl);
     exit;
 }
 
@@ -20,7 +22,7 @@ $row = $stmt->fetch(PDO::FETCH_ASSOC);
 if (!$row) {
     session_unset();
     session_destroy();
-    header("Location: ./login.php");
+    header("Location: " . $loginUrl);
     exit;
 }
 
@@ -31,7 +33,7 @@ try {
         $invalidate->execute([$jwt]);
         session_unset();
         session_destroy();
-        header("Location: ../login.php");
+        header("Location: " . $loginUrl);
         exit;
     }
 } catch (Exception $e) {
@@ -39,7 +41,7 @@ try {
     $invalidate->execute([$jwt]);
     session_unset();
     session_destroy();
-    header("Location: ./login.php");
+    header("Location: " . $loginUrl);
     exit;
 }
 ?>

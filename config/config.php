@@ -1,4 +1,3 @@
-
 <?php
 
 define('ROOT_PATH', dirname(__DIR__)); 
@@ -105,14 +104,14 @@ $JWT_EXPIRE = 3600;
 if ($is_live) {
     define('BASE_URL', 'https://liyasinternational.com/');
 } else {
-    define('BASE_URL', 'http://localhost/liyas-mineral-water');
+    define('BASE_URL', 'http://localhost/liyas-new');
 }
 
 $ROOT_PATH = dirname(__DIR__);
 define('UPLOAD_DIR', '/uploads/');
 define('UPLOAD_DIR_SERVER', $ROOT_PATH . '/uploads/');
 
-if (session_status() === PHP_SESSION_NONE) {
+if (session_status() === PHP_SESSION_NONE && !headers_sent()) {
     session_start();
 }
 
@@ -161,5 +160,153 @@ function getMysqliConnection() {
     }
     $mysqli->set_charset("utf8mb4");
     return $mysqli;
+}
+
+/**
+ * Adjust product warehouse stock (case_stock and stock)
+ * @param PDO $pdo
+ * @param int $productId
+ * @param int $delta Negative to reduce (e.g. order placed), positive to restore (e.g. order cancelled)
+ * @param string $reason Optional description
+ * @return bool
+ */
+function adjustProductStock(PDO $pdo, int $productId, int $delta, string $reason = ''): bool {
+    if ($productId <= 0 || $delta === 0) {
+        return false;
+    }
+    try {
+        if ($delta > 0) {
+            $stmt = $pdo->prepare("
+                UPDATE products 
+                SET case_stock = case_stock + ?,
+                    stock = stock + ?,
+                    updated_at = NOW()
+                WHERE product_id = ?
+            ");
+            return $stmt->execute([$delta, $delta, $productId]);
+        } else {
+            $reduceBy = abs($delta);
+            $stmt = $pdo->prepare("
+                UPDATE products 
+                SET case_stock = GREATEST(0, case_stock - ?),
+                    stock = GREATEST(0, stock - ?),
+                    updated_at = NOW()
+                WHERE product_id = ?
+            ");
+            return $stmt->execute([$reduceBy, $reduceBy, $productId]);
+        }
+    } catch (PDOException $e) {
+        error_log("adjustProductStock error for product {$productId}: " . $e->getMessage());
+        return false;
+    }
+}
+
+/**
+ * Get all order items for an order with full product details.
+ * Falls back to orders table record if order_items has not been populated.
+ * @param PDO $pdo
+ * @param int $orderId
+ * @return array
+ */
+function getOrderItems(PDO $pdo, int $orderId): array {
+    if ($orderId <= 0) {
+        return [];
+    }
+
+    $stmt = $pdo->prepare("
+        SELECT 
+            oi.order_item_id,
+            oi.order_id,
+            oi.product_id,
+            oi.quantity,
+            oi.price_at_purchase,
+            (oi.quantity * oi.price_at_purchase) AS line_total,
+            p.name,
+            p.product_name,
+            p.net_content,
+            p.net_content_unit,
+            p.case_price,
+            p.price,
+            p.case_stock,
+            p.stock
+        FROM order_items oi
+        LEFT JOIN products p ON oi.product_id = p.product_id
+        WHERE oi.order_id = ?
+        ORDER BY oi.order_item_id ASC
+    ");
+    $stmt->execute([$orderId]);
+    $items = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    // Fallback for legacy single-item orders
+    if (empty($items)) {
+        $fallbackStmt = $pdo->prepare("
+            SELECT 
+                0 AS order_item_id,
+                o.order_id,
+                o.product_id,
+                o.quantity,
+                COALESCE(o.unit_price, p.case_price, p.price, 0) AS price_at_purchase,
+                (o.quantity * COALESCE(o.unit_price, p.case_price, p.price, 0)) AS line_total,
+                p.name,
+                p.product_name,
+                p.net_content,
+                p.net_content_unit,
+                p.case_price,
+                p.price,
+                p.case_stock,
+                p.stock
+            FROM orders o
+            LEFT JOIN products p ON o.product_id = p.product_id
+            WHERE o.order_id = ? AND o.product_id IS NOT NULL AND o.product_id > 0
+        ");
+        $fallbackStmt->execute([$orderId]);
+        $fb = $fallbackStmt->fetch(PDO::FETCH_ASSOC);
+        if ($fb) {
+            $items[] = $fb;
+        }
+    }
+
+    return $items;
+}
+
+/**
+ * Handle stock adjustments when an order's status changes:
+ * - If order is cancelled: restore stock (+quantity for each product item)
+ * - If order is un-cancelled (restored): deduct stock (-quantity for each product item)
+ */
+function handleOrderStatusStockChange(PDO $pdo, int $orderId, string $oldStatus, string $newStatus): void {
+    if ($orderId <= 0 || empty($oldStatus) || empty($newStatus) || strtolower($oldStatus) === strtolower($newStatus)) {
+        return;
+    }
+    $oldStatus = strtolower(trim($oldStatus));
+    $newStatus = strtolower(trim($newStatus));
+
+    // Fetch all items belonging to this order
+    $items = getOrderItems($pdo, $orderId);
+
+    if (empty($items)) {
+        return;
+    }
+
+    // 1. Moving to cancelled from an active status -> RESTORE stock
+    if ($oldStatus !== 'cancelled' && $newStatus === 'cancelled') {
+        foreach ($items as $item) {
+            $pid = (int)($item['product_id'] ?? 0);
+            $qty = (int)($item['quantity'] ?? 0);
+            if ($pid > 0 && $qty > 0) {
+                adjustProductStock($pdo, $pid, +$qty, "Order #{$orderId} cancelled");
+            }
+        }
+    }
+    // 2. Moving from cancelled to an active status -> RE-DEDUCT stock
+    elseif ($oldStatus === 'cancelled' && $newStatus !== 'cancelled') {
+        foreach ($items as $item) {
+            $pid = (int)($item['product_id'] ?? 0);
+            $qty = (int)($item['quantity'] ?? 0);
+            if ($pid > 0 && $qty > 0) {
+                adjustProductStock($pdo, $pid, -$qty, "Order #{$orderId} un-cancelled to {$newStatus}");
+            }
+        }
+    }
 }
 ?>

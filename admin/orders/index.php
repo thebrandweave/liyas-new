@@ -1,863 +1,627 @@
 <?php
-require_once '../../config/config.php';
-require_once '../includes/auth_check.php';
-require_once '../includes/functions.php'; // Include the new functions file
+require_once __DIR__ . '/../../config/config.php';
+require_once __DIR__ . '/../includes/auth_check.php';
+require_once __DIR__ . '/../includes/activity_logger.php';
+require_once __DIR__ . '/../includes/functions.php';
 
-// Read filter/search/page from request
-$filter = $_GET['filter'] ?? $_POST['filter'] ?? 'all';
-$search = $_GET['search'] ?? $_POST['search'] ?? '';
-$page   = isset($_GET['page']) ? (int)$_GET['page'] : (isset($_POST['page']) ? (int)$_POST['page'] : 1);
-$per_page = 50;
-$offset   = ($page - 1) * $per_page;
+$current_page = "orders";
+$page_title   = "Warehouse Orders";
 
-// Build where + params once and reuse everywhere
-$params = [];
-$where_clause = buildOrderFilterWhereClause($filter, $search, $params); // Use the function from includes/functions.php
-
-// CSV EXPORT
-if (isset($_GET['export']) && $_GET['export'] === 'csv') {
-	try {
-		$query = "SELECT 
-					o.order_id, 
-					u.name AS customer_name, 
-					u.email AS customer_email, 
-					sa.phone_number AS customer_phone,
-					CONCAT(sa.address_line_1, ', ', sa.city, ', ', sa.state, ' - ', sa.zip_code) AS shipping_address_full,
-					o.total_amount, 
-					o.status, 
-					o.created_at, 
-					o.updated_at
-				  FROM orders o
-				  JOIN users u ON o.user_id = u.user_id
-				  JOIN shipping_addresses sa ON o.shipping_address_id = sa.address_id
-				  $where_clause
-				  ORDER BY o.created_at DESC";
-
-		$stmt = $pdo->prepare($query);
-		if (!empty($params)) {
-			bindFilterParams($stmt, $params); // Use the function from includes/functions.php
-		}
-		$stmt->execute();
-		$orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
-	} catch (PDOException $e) {
-		die("Error fetching orders: " . $e->getMessage());
-	}
-
-	if (empty($orders)) {
-		die("No orders found to export with the current filters.");
-	}
-
-	$filter_name = ucfirst($filter);
-	$filename = "Orders_{$filter_name}_" . date('Y-m-d_His') . ".csv";
-
-	header('Content-Type: text/csv; charset=utf-8');
-	header('Content-Disposition: attachment; filename="' . $filename . '"');
-	header('Pragma: no-cache');
-	header('Expires: 0');
-
-	$output = fopen('php://output', 'w');
-	fprintf($output, chr(0xEF).chr(0xBB).chr(0xBF));
-
-	$headers = [
-		'Order ID',
-		'Customer Name',
-		'Email',
-		'Phone',
-		'Shipping Address',
-		'Total Amount',
-		'Status',
-		'Created At',
-		'Updated At'
-	];
-	fputcsv($output, $headers);
-
-	foreach ($orders as $order) {
-		$row = [
-			$order['order_id'],
-			$order['customer_name'],
-			$order['customer_email'] ?? '',
-			$order['customer_phone'] ?? '',
-			$order['shipping_address_full'],
-			$order['total_amount'],
-			ucfirst($order['status']),
-			formatIST($order['created_at']), // Use the function from includes/functions.php
-			formatIST($order['updated_at'])  // Use the function from includes/functions.php
-		];
-		fputcsv($output, $row);
-	}
-
-	fclose($output);
-	exit;
-}
+// Filters from request
+$status_filter = $_GET['filter'] ?? 'all';
+$zone_filter   = $_GET['zone'] ?? 'all';
+$search        = trim($_GET['search'] ?? '');
+$page          = max(1, (int)($_GET['page'] ?? 1));
+$per_page      = 25;
+$offset        = ($page - 1) * $per_page;
 
 // Handle status update
-$update_message = '';
-$update_type = '';
+$success_message = '';
+$error_message   = '';
+if (isset($_GET['added'])) { $success_message = "Order created successfully!"; }
+if (isset($_GET['updated'])) { $success_message = "Order updated successfully!"; }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_status'])) {
-	$order_id = isset($_POST['order_id']) ? (int)$_POST['order_id'] : 0;
-	$new_status = isset($_POST['status']) ? $_POST['status'] : '';
+    $order_id   = (int)($_POST['order_id'] ?? 0);
+    $new_status = $_POST['status'] ?? '';
+    $allowed    = ['pending', 'processing', 'shipped', 'delivered', 'cancelled'];
 
-	if ($order_id > 0 && in_array($new_status, ['pending', 'processing', 'shipped', 'delivered', 'cancelled'])) {
-		try {
-			$updateStmt = $pdo->prepare("UPDATE orders SET status = ?, updated_at = NOW() WHERE order_id = ?");
-			$updateStmt->execute([$new_status, $order_id]);
-			$updated_count = $updateStmt->rowCount();
+    if ($order_id > 0 && in_array($new_status, $allowed)) {
+        try {
+            $oldStmt = $pdo->prepare("SELECT status FROM orders WHERE order_id = ?");
+            $oldStmt->execute([$order_id]);
+            $old_status = (string)$oldStmt->fetchColumn();
 
-			if ($updated_count > 0) {
-				header("Location: " . buildOrderRedirectUrl($filter, $search, $page, $order_id)); // Use the function from includes/functions.php
-				exit;
-			} else {
-				$update_message = "Order not found or already has this status.";
-				$update_type = 'error';
-			}
-		} catch (PDOException $e) {
-			$update_message = "Error updating order status: " . $e->getMessage();
-			$update_type = 'error';
-			error_log("Status update error: " . $e->getMessage());
-		}
-	} else {
-		$update_message = 'Invalid order ID or status.';
-		$update_type = 'error';
-	}
+            $upStmt = $pdo->prepare("UPDATE orders SET status = ?, updated_at = NOW() WHERE order_id = ?");
+            $upStmt->execute([$new_status, $order_id]);
+
+            // Adjust stock if cancelled / un-cancelled
+            handleOrderStatusStockChange($pdo, $order_id, $old_status, $new_status);
+
+            // If delivered, update reward progress
+            if ($new_status === 'delivered') {
+                $oData = $pdo->prepare("SELECT shop_name, phone FROM orders WHERE order_id = ?");
+                $oData->execute([$order_id]);
+                $ord = $oData->fetch(PDO::FETCH_ASSOC);
+                if ($ord && !empty($ord['shop_name'])) {
+                    updateShopRewardProgress($pdo, $ord['shop_name'], $ord['phone']);
+                }
+            }
+
+            quickLog($pdo, 'update_status', 'order', $order_id, "Updated order #{$order_id} status to {$new_status}");
+            $success_message = "Order status updated to " . ucfirst($new_status);
+        } catch (PDOException $e) {
+            $error_message = "Error updating status: " . $e->getMessage();
+        }
+    }
 }
 
-// Message from redirect
-if (isset($_GET['updated'])) {
-	$update_message = "Order status updated successfully!";
-	$update_type = 'success';
+// Load zones for filter dropdown
+$zones_list = $pdo->query("SELECT id, name, slug FROM zones ORDER BY name ASC")->fetchAll(PDO::FETCH_ASSOC);
+
+// Build query
+$where_params = [];
+$where_clauses = [];
+
+if ($status_filter === 'unchecked') {
+    $where_clauses[] = "o.zone_id IS NOT NULL AND o.zone_id > 0 AND o.is_zone_read = 0 AND o.status != 'cancelled'";
+} elseif ($status_filter !== 'all' && in_array($status_filter, ['pending', 'processing', 'shipped', 'delivered', 'cancelled'])) {
+    $where_clauses[] = "o.status = :status";
+    $where_params[':status'] = $status_filter;
 }
 
-// Stats (global)
-try {
-	$stats_query = "SELECT 
-		COUNT(*) as total_orders,
-		SUM(CASE WHEN o.status = 'pending' THEN 1 ELSE 0 END) as pending_orders,
-		SUM(CASE WHEN o.status = 'processing' THEN 1 ELSE 0 END) as processing_orders,
-		SUM(CASE WHEN o.status = 'shipped' THEN 1 ELSE 0 END) as shipped_orders,
-		SUM(CASE WHEN o.status = 'delivered' THEN 1 ELSE 0 END) as delivered_orders,
-		SUM(CASE WHEN o.status = 'cancelled' THEN 1 ELSE 0 END) as cancelled_orders,
-		SUM(o.total_amount) as total_revenue
-	FROM orders o"; // Added alias 'o' for consistency with joined queries
-	$stats_result = $pdo->query($stats_query)->fetch(PDO::FETCH_ASSOC);
-	$total_orders = (int)($stats_result['total_orders'] ?? 0);
-	$pending_orders = (int)($stats_result['pending_orders'] ?? 0);
-	$processing_orders = (int)($stats_result['processing_orders'] ?? 0);
-	$shipped_orders = (int)($stats_result['shipped_orders'] ?? 0);
-	$delivered_orders = (int)($stats_result['delivered_orders'] ?? 0);
-	$cancelled_orders = (int)($stats_result['cancelled_orders'] ?? 0);
-	$total_revenue = (float)($stats_result['total_revenue'] ?? 0);
-} catch (PDOException $e) {
-	$total_orders = $pending_orders = $processing_orders = $shipped_orders = $delivered_orders = $cancelled_orders = 0;
-	$total_revenue = 0;
-	error_log("Statistics query error: " . $e->getMessage());
+if ($zone_filter !== 'all' && !empty($zone_filter)) {
+    if (is_numeric($zone_filter)) {
+        $where_clauses[] = "o.zone_id = :zone_id";
+        $where_params[':zone_id'] = (int)$zone_filter;
+    } else {
+        $where_clauses[] = "z.slug = :zone_slug";
+        $where_params[':zone_slug'] = $zone_filter;
+    }
 }
 
-// Count filtered records (for pagination)
-try {
-	$count_query = "SELECT COUNT(o.order_id) FROM orders o
-					JOIN users u ON o.user_id = u.user_id
-					JOIN shipping_addresses sa ON o.shipping_address_id = sa.address_id
-					$where_clause";
-	$count_stmt = $pdo->prepare($count_query);
-	if (!empty($params)) {
-		bindFilterParams($count_stmt, $params); // Use the function from includes/functions.php
-	}
-	$count_stmt->execute();
-	$total_records = (int)$count_stmt->fetchColumn();
-	$total_pages = $per_page > 0 ? ceil($total_records / $per_page) : 1;
-} catch (PDOException $e) {
-	$total_records = 0;
-	$total_pages = 0;
-	error_log("Order count error: " . $e->getMessage());
+if (!empty($search)) {
+    $where_clauses[] = "(
+        o.shop_name LIKE :search 
+        OR o.customer_name LIKE :search 
+        OR o.phone LIKE :search 
+        OR o.location LIKE :search 
+        OR o.order_number LIKE :search 
+        OR o.order_id = :order_id_search
+    )";
+    $where_params[':search'] = "%$search%";
+    $where_params[':order_id_search'] = is_numeric($search) ? (int)$search : -1;
 }
 
-// Fetch paginated orders
-try {
-	$query = "SELECT 
-					o.order_id, 
-					u.name AS customer_name, 
-					u.email AS customer_email, 
-					sa.phone_number AS customer_phone,
-					CONCAT(sa.address_line_1, ', ', sa.city, ', ', sa.state, ' - ', sa.zip_code) AS shipping_address_full,
-					o.total_amount, 
-					o.status, 
-					o.created_at, 
-					o.updated_at
-			  FROM orders o
-			  JOIN users u ON o.user_id = u.user_id
-			  JOIN shipping_addresses sa ON o.shipping_address_id = sa.address_id
-			  $where_clause
-			  ORDER BY o.created_at DESC
-			  LIMIT :limit OFFSET :offset";
-	$stmt = $pdo->prepare($query);
-	if (!empty($params)) {
-		bindFilterParams($stmt, $params); // Use the function from includes/functions.php
-	}
-	$stmt->bindValue(':limit', $per_page, PDO::PARAM_INT);
-	$stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
-	$stmt->execute();
-	$orders = $stmt->fetchAll();
-} catch (PDOException $e) {
-	$orders = [];
-	error_log("Orders fetch error: " . $e->getMessage());
-}
+$where_sql = !empty($where_clauses) ? "WHERE " . implode(" AND ", $where_clauses) : "";
 
-// Basic setup
-$admin_name   = htmlspecialchars($_SESSION['admin_name'] ?? 'Admin');
-$current_page = "orders";
-$page_title   = "Orders";
+// Count total matching
+$count_query = "
+    SELECT COUNT(*) 
+    FROM orders o 
+    LEFT JOIN zones z ON o.zone_id = z.id
+    $where_sql
+";
+$cntStmt = $pdo->prepare($count_query);
+foreach ($where_params as $k => $v) {
+    if ($k === ':order_id_search' || $k === ':zone_id') {
+        $cntStmt->bindValue($k, $v, PDO::PARAM_INT);
+    } else {
+        $cntStmt->bindValue($k, $v, PDO::PARAM_STR);
+    }
+}
+$cntStmt->execute();
+$total_orders_count = (int)$cntStmt->fetchColumn();
+$total_pages = ceil($total_orders_count / $per_page);
+
+// Fetch orders with zone and product details
+$orders_query = "
+    SELECT 
+        o.*,
+        z.name as zone_name,
+        z.slug as zone_slug,
+        p.product_name,
+        p.name as fallback_product_name,
+        p.net_content,
+        p.net_content_unit,
+        u.name as web_user_name,
+        r.bill_number,
+        (SELECT COUNT(*) FROM order_items oi WHERE oi.order_id = o.order_id) AS items_count,
+        (SELECT GROUP_CONCAT(CONCAT(COALESCE(p2.product_name, p2.name), ' (', oi2.quantity, 'cs)') SEPARATOR ', ') 
+         FROM order_items oi2 
+         JOIN products p2 ON oi2.product_id = p2.product_id 
+         WHERE oi2.order_id = o.order_id) AS items_summary
+    FROM orders o
+    LEFT JOIN zones z ON o.zone_id = z.id
+    LEFT JOIN products p ON o.product_id = p.product_id
+    LEFT JOIN users u ON o.user_id = u.user_id
+    LEFT JOIN receipts r ON o.order_id = r.order_id
+    $where_sql
+    ORDER BY o.created_at DESC
+    LIMIT :limit OFFSET :offset
+";
+$stmt = $pdo->prepare($orders_query);
+foreach ($where_params as $k => $v) {
+    if ($k === ':order_id_search' || $k === ':zone_id') {
+        $stmt->bindValue($k, $v, PDO::PARAM_INT);
+    } else {
+        $stmt->bindValue($k, $v, PDO::PARAM_STR);
+    }
+}
+$stmt->bindValue(':limit', (int)$per_page, PDO::PARAM_INT);
+$stmt->bindValue(':offset', (int)$offset, PDO::PARAM_INT);
+$stmt->execute();
+$orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+// Global status breakdown counts
+$counts_data = $pdo->query("
+    SELECT 
+        COUNT(*) as total,
+        SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending,
+        SUM(CASE WHEN status = 'processing' THEN 1 ELSE 0 END) as processing,
+        SUM(CASE WHEN status = 'shipped' THEN 1 ELSE 0 END) as shipped,
+        SUM(CASE WHEN status = 'delivered' THEN 1 ELSE 0 END) as delivered,
+        SUM(CASE WHEN status = 'cancelled' THEN 1 ELSE 0 END) as cancelled
+    FROM orders
+")->fetch(PDO::FETCH_ASSOC);
+
+// Count active orders not yet checked by delivery zones
+$unchecked_count = (int)$pdo->query("
+    SELECT COUNT(*) 
+    FROM orders 
+    WHERE zone_id IS NOT NULL AND zone_id > 0 AND is_zone_read = 0 AND status != 'cancelled'
+")->fetchColumn();
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
-	<meta charset="UTF-8">
-	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	
-	<!-- Favicon -->
-	<link rel="icon" type="image/jpeg" href="../../assets/images/logo/logo-bg.jpg">
-	<link rel="shortcut icon" type="image/jpeg" href="../../assets/images/logo/logo-bg.jpg">
-	<link rel="apple-touch-icon" href="../../assets/images/logo/logo-bg.jpg">
-	<link rel="icon" type="image/jpeg" sizes="32x32" href="../../assets/images/logo/logo-bg.jpg">
-	<link rel="icon" type="image/jpeg" sizes="16x16" href="../../assets/images/logo/logo-bg.jpg">
-	
-	<!-- Google Font: Poppins -->
-	<link rel="preconnect" href="https://fonts.googleapis.com">
-	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-	<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&display=swap" rel="stylesheet">
-	<link href='https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css' rel='stylesheet'>
-	<link rel="stylesheet" href="../assets/css/prody-admin.css">
-	<title>Orders - Liyas Admin</title>
-	<style>
-		.modal-overlay {
-			display: none;
-			position: fixed;
-			top: 0;
-			left: 0;
-			width: 100%;
-			height: 100%;
-			background: rgba(0, 0, 0, 0.45);
-			backdrop-filter: blur(5px);
-			-webkit-backdrop-filter: blur(5px);
-			z-index: 10000;
-			align-items: center;
-			justify-content: center;
-			animation: fadeIn 0.2s ease-out;
-		}
-		.badge{
-    padding:8px 14px;
-    border-radius:20px;
-    font-size:12px;
-    font-weight:600;
-    letter-spacing:.3px;
-}
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Orders Management - Liyas Admin</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&display=swap" rel="stylesheet">
+    <link href='https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css' rel='stylesheet'>
+    <link rel="stylesheet" href="../assets/css/prody-admin.css">
+    <style>
+        body { font-family: 'Poppins', sans-serif; }
+        .filter-bar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 1.25rem;
+        }
+        .status-pill-group {
+            display: inline-flex;
+            background: #fff;
+            border: 1px solid var(--border-light);
+            border-radius: 8px;
+            padding: 3px;
+            overflow-x: auto;
+            max-width: 100%;
+        }
+        .status-pill {
+            padding: 6px 14px;
+            font-size: 13px;
+            font-weight: 500;
+            color: #64748b;
+            text-decoration: none;
+            border-radius: 6px;
+            white-space: nowrap;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            transition: 0.15s;
+        }
+        .status-pill:hover {
+            color: #1e293b;
+            background: #f8fafc;
+        }
+        .status-pill.active {
+            background: #2563eb;
+            color: #fff;
+            font-weight: 600;
+        }
+        .badge-count-pill {
+            background: rgba(0,0,0,0.1);
+            padding: 1px 6px;
+            border-radius: 10px;
+            font-size: 11px;
+        }
+        .status-pill.active .badge-count-pill {
+            background: rgba(255,255,255,0.25);
+            color: #fff;
+        }
+        .zone-select-filter {
+            padding: 0.5rem 0.75rem;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            font-size: 13px;
+            font-family: inherit;
+            background: #fff;
+        }
+        .status-badge-select {
+            padding: 4px 8px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 600;
+            border: 1px solid transparent;
+            cursor: pointer;
+        }
+        .order-zone-tag {
+            background: #f0fdf4;
+            color: #166534;
+            border: 1px solid #bbf7d0;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 500;
+            display: inline-block;
+        }
+        .order-zone-tag.none {
+            background: #f1f5f9;
+            color: #64748b;
+            border-color: #e2e8f0;
+        }
 
-.badge-pending{
-    background:#fff7e6;
-    color:#d97706;
-}
-
-.badge-processing{
-    background:#eff6ff;
-    color:#2563eb;
-}
-
-.badge-shipped{
-    background:#eef2ff;
-    color:#4f46e5;
-}
-
-.badge-delivered{
-    background:#ecfdf5;
-    color:#059669;
-}
-
-.badge-cancelled{
-    background:#fef2f2;
-    color:#dc2626;
-}
-
-
-.action-group{
-    display:flex;
-    gap:8px;
-}
-
-.action-btn{
-    width:38px;
-    height:38px;
-    border:none;
-    border-radius:10px;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    cursor:pointer;
-    transition:.2s;
-    text-decoration:none;
-}
-
-.view-btn{
-    background:#ecfdf5;
-    color:#059669;
-}
-
-.status-btn{
-    background:#eff6ff;
-    color:#2563eb;
-}
-
-.action-btn:hover{
-    transform:translateY(-2px);
-}
-
-.status-pill{
-    border:none;
-    border-radius:999px;
-    padding:8px 14px;
-    font-size:13px;
-    font-weight:600;
-    cursor:pointer;
-    display:inline-flex;
-    align-items:center;
-    gap:6px;
-    transition:.2s;
-}
-
-.status-pill:hover{
-    transform:translateY(-1px);
-}
-
-.status-pending{
-    background:#fff7e6;
-    color:#d97706;
-}
-
-.status-processing{
-    background:#eff6ff;
-    color:#2563eb;
-}
-
-.status-shipped{
-    background:#eef2ff;
-    color:#4f46e5;
-}
-
-.status-delivered{
-    background:#ecfdf5;
-    color:#059669;
-}
-
-.status-cancelled{
-    background:#fef2f2;
-    color:#dc2626;
-}
-		.modal-overlay.active { display: flex; }
-		@keyframes fadeIn {
-			from { opacity: 0; }
-			to   { opacity: 1; }
-		}
-		.modal-dialog {
-			background: white;
-			border-radius: 16px;
-			box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-			max-width: 480px;
-			width: 90%;
-			max-height: 90vh;
-			overflow-y: auto;
-			animation: slideUp 0.25s ease-out;
-			position: relative;
-			z-index: 10001;
-		}
-		@keyframes slideUp {
-			from { opacity: 0; transform: translateY(30px) scale(0.95); }
-			to   { opacity: 1; transform: translateY(0) scale(1); }
-		}
-		.modal-header {
-			padding: 1.25rem 1.5rem;
-			border-bottom: 1px solid var(--grey);
-			display: flex;
-			align-items: center;
-			justify-content: space-between;
-		}
-		.modal-header h3 {
-			font-size: 1.1rem;
-			font-weight: 600;
-			color: var(--dark);
-			display: flex;
-			align-items: center;
-			gap: 0.5rem;
-		}
-		.modal-header .close-btn {
-			background: none;
-			border: none;
-			font-size: 1.5rem;
-			color: var(--dark-grey);
-			cursor: pointer;
-			width: 32px;
-			height: 32px;
-			display: flex;
-			align-items: center;
-			justify-content: center;
-			border-radius: 8px;
-			transition: all 0.15s;
-		}
-		.modal-header .close-btn:hover {
-			background: var(--grey);
-			color: var(--dark);
-		}
-		.modal-body {
-			padding: 1.25rem 1.5rem 0.75rem;
-			text-align: center;
-		}
-		.modal-body p {
-			color: var(--dark);
-			font-size: 0.95rem;
-			line-height: 1.5;
-			margin-bottom: 0.75rem;
-		}
-		.modal-footer {
-			padding: 0.9rem 1.5rem 1.25rem;
-			border-top: 1px solid var(--grey);
-			display: flex;
-			gap: 0.75rem;
-			justify-content: flex-end;
-		}
-		.modal-btn {
-			padding: 0.6rem 1.3rem;
-			border: none;
-			border-radius: 999px;
-			font-size: 0.9rem;
-			font-weight: 600;
-			cursor: pointer;
-			transition: all 0.15s;
-			font-family: var(--opensans);
-			display: inline-flex;
-			align-items: center;
-			gap: 0.45rem;
-		}
-		.modal-btn-cancel {
-			background: var(--grey);
-			color: var(--dark);
-		}
-		.modal-btn-cancel:hover {
-			background: var(--dark-grey);
-			color: #fff;
-		}
-		.modal-btn-primary {
-			background: var(--blue);
-			color: white;
-		}
-		.modal-btn-primary:hover {
-			background: #2563eb;
-			transform: translateY(-1px);
-			box-shadow: 0 4px 12px rgba(37, 99, 235, 0.35);
-		}
-		body.modal-active {
-			overflow: hidden;
-		}
-		body.modal-active #content {
-			filter: blur(2px);
-			transition: filter 0.2s;
-		}
-		.alert {
-			margin: 1rem 0;
-			padding: 0.75rem 1rem;
-			border-radius: 8px;
-			font-size: 0.95rem;
-			display: flex;
-			align-items: center;
-			gap: 0.5rem;
-		}
-		.alert-success {
-			background: #dcfce7;
-			color: #166534;
-			border: 1px solid #bbf7d0;
-		}
-		.alert-error {
-			background: #fee2e2;
-			color: #b91c1c;
-			border: 1px solid #fecaca;
-		}
-		.status {
-			padding: 0.4rem 0.8rem;
-			border-radius: 999px;
-			font-size: 0.85rem;
-			font-weight: 600;
-			display: inline-block;
-		}
-		.status.pending,
-		.badge-pending { background: var(--yellow-light); color: #92400e; }
-		.status.processing,
-		.badge-processing { background: var(--blue-light); color: var(--blue-dark); }
-		.status.shipped,
-		.badge-shipped { background: #e0e7ff; color: #3730a3; }
-		.status.delivered,
-		.badge-completed { background: var(--green-light); color: #065f46; }
-		.status.cancelled,
-		.badge-cancelled { background: #fee2e2; color: #991b1b; }
-		
-		.table-responsive-wrapper {
-			width: 100%;
-			overflow-x: auto;
-			overflow-y: visible;
-			-webkit-overflow-scrolling: touch;
-			position: relative;
-		}
-		
-		.table-responsive-wrapper table {
-			min-width: 900px;
-			width: 100%;
-		}
-		
-		/* Mobile optimizations */
-		@media (max-width: 768px) {
-			.table-responsive-wrapper {
-				overflow-x: scroll;
-				-webkit-overflow-scrolling: touch;
-				scrollbar-width: thin;
-				scrollbar-color: var(--border-medium) transparent;
-			}
-			
-			.table-responsive-wrapper::-webkit-scrollbar {
-				height: 8px;
-			}
-			
-			.table-responsive-wrapper::-webkit-scrollbar-track {
-				background: var(--bg-main);
-				border-radius: 4px;
-			}
-			
-			.table-responsive-wrapper::-webkit-scrollbar-thumb {
-				background: var(--border-medium);
-				border-radius: 4px;
-			}
-			
-			.table-responsive-wrapper::-webkit-scrollbar-thumb:hover {
-				background: var(--text-secondary);
-			}
-			
-			.table-responsive-wrapper table {
-				min-width: 1000px;
-			}
-			
-			.table-responsive-wrapper table th,
-			.table-responsive-wrapper table td {
-				padding: 0.75rem 1rem;
-				font-size: 13px;
-			}
-			
-			.table-responsive-wrapper table th:first-child,
-			.table-responsive-wrapper table td:first-child {
-				position: sticky;
-				left: 0;
-				background: var(--bg-white);
-				z-index: 10;
-				box-shadow: 2px 0 4px rgba(0,0,0,0.05);
-			}
-			
-			.table-responsive-wrapper table th:last-child,
-			.table-responsive-wrapper table td:last-child {
-				min-width: 180px;
-			}
-		}
-		
-		@media (max-width: 480px) {
-			.table-responsive-wrapper table {
-				min-width: 1100px;
-			}
-			
-			.table-responsive-wrapper table th,
-			.table-responsive-wrapper table td {
-				padding: 0.5rem 0.75rem;
-				font-size: 12px;
-			}
-		}
-	</style>
+        .zone-seen-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            padding: 2px 7px;
+            border-radius: 6px;
+            white-space: nowrap;
+            transition: all 0.3s ease;
+        }
+        .zone-seen-badge.seen {
+            background: #ecfdf5;
+            color: #059669;
+            border: 1px solid #a7f3d0;
+        }
+        .zone-seen-badge.unread {
+            background: #fffbeb;
+            color: #d97706;
+            border: 1px solid #fde68a;
+        }
+        .order-num-status-dot {
+            display: inline-block;
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            margin-left: 4px;
+            vertical-align: middle;
+        }
+        .order-num-status-dot.unread {
+            background: #f59e0b;
+            box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.25);
+            animation: pulse-dot 1.5s infinite;
+        }
+        @keyframes pulse-dot {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.3); }
+        }
+        @keyframes status-highlight {
+            0% { background: #bbf7d0; transform: scale(1.1); }
+            100% { background: #ecfdf5; transform: scale(1); }
+        }
+    </style>
 </head>
 <body>
-	<div class="container">
-		<?php include '../includes/sidebar.php'; ?>
-		
-		<div class="main-content">
-			<div class="header">
-				<div class="breadcrumb">
-					<i class='bx bx-home'></i>
-					<span>Orders</span>
-				</div>
-				<div class="header-actions">
-					<form action="index.php" method="GET" style="display: flex; align-items: center; gap: 0.5rem;">
-						<input type="search" name="search" placeholder="Search orders..." value="<?= htmlspecialchars($search) ?>" style="padding: 0.5rem 0.75rem; border: 1px solid var(--border-light); border-radius: 6px; font-size: 14px; font-family: inherit;">
-						<button type="submit" class="header-btn" style="padding: 0.5rem;">
-							<i class='bx bx-search'></i>
-						</button>
-					</form>
-				</div>
-			</div>
-			
-			<div class="content-area">
+    <div class="container">
+        <?php include __DIR__ . '/../includes/sidebar.php'; ?>
+        
+        <div class="main-content">
+            <div class="header">
+                <div class="breadcrumb"><i class='bx bx-cart'></i> <span>Warehouse Orders</span></div>
+                <div class="header-actions">
+                    <a href="create.php" class="btn-action btn-add noselect" style="text-decoration: none; padding: 0.5rem 1rem;">
+                        <span class="text">+ Add Order</span>
+                    </a>
+                </div>
+            </div>
+            
+            <div class="content-area">
+                <?php if (!empty($success_message)): ?><div class="alert alert-success" style="padding: 12px 16px; background: #d1fae5; color: #065f46; border-radius: 8px; margin-bottom: 1.5rem;"><?= htmlspecialchars($success_message) ?></div><?php endif; ?>
+                <?php if (!empty($error_message)): ?><div class="alert alert-error" style="padding: 12px 16px; background: #fee2e2; color: #991b1b; border-radius: 8px; margin-bottom: 1.5rem;"><?= htmlspecialchars($error_message) ?></div><?php endif; ?>
 
-				<?php if (!empty($update_message)): ?>
-					<div class="alert <?= $update_type === 'success' ? 'alert-success' : 'alert-error' ?>">
-						<?= htmlspecialchars($update_message) ?>
-					</div>
-				<?php endif; ?>
+                <!-- Filters Bar -->
+                <div class="filter-bar">
+                    <!-- Status Filter Pills -->
+                    <div class="status-pill-group">
+                        <a href="index.php?filter=all&zone=<?= urlencode($zone_filter) ?>&search=<?= urlencode($search) ?>" class="status-pill <?= ($status_filter === 'all') ? 'active' : '' ?>">
+                            All Orders <span class="badge-count-pill"><?= (int)($counts_data['total'] ?? 0) ?></span>
+                        </a>
+                        <a href="index.php?filter=unchecked&zone=<?= urlencode($zone_filter) ?>&search=<?= urlencode($search) ?>" class="status-pill <?= ($status_filter === 'unchecked') ? 'active' : '' ?>" style="<?= ($unchecked_count > 0 && $status_filter !== 'unchecked') ? 'border: 1px solid #fde68a; background: #fffbeb; color: #b45309;' : '' ?>" title="Orders assigned to zones that have not yet been checked by delivery staff">
+                            <i class='bx bx-bell' style="font-size: 14px;"></i> Unchecked <span class="badge-count-pill" style="<?= ($unchecked_count > 0 && $status_filter !== 'unchecked') ? 'background: #d97706; color: #fff;' : '' ?>"><?= $unchecked_count ?></span>
+                        </a>
+                        <a href="index.php?filter=pending&zone=<?= urlencode($zone_filter) ?>&search=<?= urlencode($search) ?>" class="status-pill <?= ($status_filter === 'pending') ? 'active' : '' ?>">
+                            Pending <span class="badge-count-pill"><?= (int)($counts_data['pending'] ?? 0) ?></span>
+                        </a>
+                        <a href="index.php?filter=processing&zone=<?= urlencode($zone_filter) ?>&search=<?= urlencode($search) ?>" class="status-pill <?= ($status_filter === 'processing') ? 'active' : '' ?>">
+                            Processing <span class="badge-count-pill"><?= (int)($counts_data['processing'] ?? 0) ?></span>
+                        </a>
+                        <a href="index.php?filter=shipped&zone=<?= urlencode($zone_filter) ?>&search=<?= urlencode($search) ?>" class="status-pill <?= ($status_filter === 'shipped') ? 'active' : '' ?>">
+                            Shipped <span class="badge-count-pill"><?= (int)($counts_data['shipped'] ?? 0) ?></span>
+                        </a>
+                        <a href="index.php?filter=delivered&zone=<?= urlencode($zone_filter) ?>&search=<?= urlencode($search) ?>" class="status-pill <?= ($status_filter === 'delivered') ? 'active' : '' ?>">
+                            Delivered <span class="badge-count-pill"><?= (int)($counts_data['delivered'] ?? 0) ?></span>
+                        </a>
+                        <a href="index.php?filter=cancelled&zone=<?= urlencode($zone_filter) ?>&search=<?= urlencode($search) ?>" class="status-pill <?= ($status_filter === 'cancelled') ? 'active' : '' ?>">
+                            Cancelled <span class="badge-count-pill"><?= (int)($counts_data['cancelled'] ?? 0) ?></span>
+                        </a>
+                    </div>
 
-				<div class="table-card" style="margin-bottom: 1.5rem;">
-					<div class="table-header">
-						<div class="table-title">Filter Orders</div>
-						<div class="table-actions">
-							<form method="GET" action="" id="filterForm" style="display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;">
-								<input type="hidden" name="search" id="searchInput" value="<?= htmlspecialchars($search) ?>">
-								<select name="filter" id="filterSelect" class="form-select" style="padding: 0.5rem 0.75rem; border: 1px solid var(--border-light); border-radius: 6px; font-size: 14px; font-family: inherit;">
-									<option value="all" <?= $filter === 'all' ? 'selected' : '' ?>>All Orders</option>
-									<option value="pending" <?= $filter === 'pending' ? 'selected' : '' ?>>Pending</option>
-									<option value="processing" <?= $filter === 'processing' ? 'selected' : '' ?>>Processing</option>
-									<option value="shipped" <?= $filter === 'shipped' ? 'selected' : '' ?>>Shipped</option>
-									<option value="delivered" <?= $filter === 'delivered' ? 'selected' : '' ?>>Delivered</option>
-									<option value="cancelled" <?= $filter === 'cancelled' ? 'selected' : '' ?>>Cancelled</option>
-								</select>
-								<button type="submit" class="table-btn">
-									<i class='bx bx-filter'></i> Apply
-								</button>
-								<button type="button" id="exportBtn" class="table-btn" style="background: var(--green); color: white; border-color: var(--green);">
-									<i class='bx bx-download'></i> Export
-								</button>
-								<?php if ($filter !== 'all' || !empty($search)): ?>
-									<a href="index.php" class="table-btn">
-										<i class='bx bx-x'></i> Clear
-									</a>
-								<?php endif; ?>
-							</form>
-						</div>
-					</div>
-				</div>
+                    <!-- Zone Filter & Search -->
+                    <form action="index.php" method="GET" style="display: flex; gap: 8px; align-items: center;">
+                        <input type="hidden" name="filter" value="<?= htmlspecialchars($status_filter) ?>">
+                        
+                        <select name="zone" class="zone-select-filter" onchange="this.form.submit()">
+                            <option value="all" <?= ($zone_filter === 'all') ? 'selected' : '' ?>>All Zones</option>
+                            <?php foreach ($zones_list as $z): ?>
+                                <option value="<?= htmlspecialchars($z['slug']) ?>" <?= ($zone_filter === $z['slug']) ? 'selected' : '' ?>>
+                                    <?= htmlspecialchars($z['name']) ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
 
-				<div class="table-card">
-					<div class="table-header">
-						<div class="table-title">
-							All Orders
-							<!-- <i class='bx bx-chevron-down'></i> -->
-						</div>
-					</div>
-					
-					<?php if (empty($orders)): ?>
-						<div style="padding: 3rem; text-align: center;">
-							<i class='bx bx-cart' style="font-size: 4rem; color: var(--text-muted); margin-bottom: 1rem;"></i>
-							<p style="color: var(--text-secondary); font-size: 1.1rem;">No orders found</p>
-						</div>
-					<?php else: ?>
-						<div class="table-responsive-wrapper">
-							<table>
-								<thead>
-									<tr>
-										<th>Customer</th>
-										<th>Contact</th>
-										<th>Address</th>
-										<th>Amount</th>
-										<th>Status</th>
-										<th>Created</th>
-										<th>Actions</th>
-									</tr>
-								</thead>
-								<tbody>
-									<?php foreach ($orders as $order): ?>
-									<tr>
-										<td>
-											<strong><?= htmlspecialchars($order['customer_name']) ?></strong>
-											<?php if ($order['customer_email']): ?>
-												<br><span style="color: var(--text-muted); font-size: 12px;"><?= htmlspecialchars($order['customer_email']) ?></span>
-											<?php endif; ?>
-										</td>
-										<td><?= htmlspecialchars($order['customer_phone'] ?? '—') ?></td>
-										<td>
-<span style="
-display:block;
-max-width:350px;
-white-space:normal;
-overflow-wrap:anywhere;
-font-size:13px;
-color:var(--text-secondary);
-">												<?= htmlspecialchars($order['shipping_address_full']) ?>
-											</span>
-										</td>
-										<td><strong><?= formatCurrency($order['total_amount']) ?></strong></td>
-										<td>
-    <button
-        class="status-pill status-<?= htmlspecialchars($order['status']) ?>"
-        onclick="openStatusModal(
-            <?= $order['order_id'] ?>,
-            '<?= htmlspecialchars($order['status'], ENT_QUOTES) ?>'
-        )">
+                        <input type="search" name="search" placeholder="Search orders..." value="<?= htmlspecialchars($search) ?>" class="form-input" style="width: 200px;">
+                        <button type="submit" class="header-btn" style="padding: 0.5rem;"><i class='bx bx-search'></i></button>
+                    </form>
+                </div>
 
-        <?= ucfirst($order['status']) ?>
-        <i class='bx bx-chevron-down'></i>
+                <!-- Orders Table Card -->
+                <div class="table-card">
+                    <div class="table-header" style="display: flex; justify-content: space-between; align-items: center; padding: 1.25rem 1.5rem;">
+                        <div class="table-title" style="font-size: 17px; font-weight: 600;">
+                            Orders (<?= number_format($total_orders_count) ?> total)
+                            <?php if ($zone_filter !== 'all'): ?>
+                                <span style="font-size: 13px; font-weight: normal; color: #2563eb;">— Filtered by Zone</span>
+                            <?php endif; ?>
+                        </div>
+                        <div class="table-actions">
+                            <a href="create.php" class="btn-action btn-add noselect" style="text-decoration: none;">
+                                <span class="text">+ Add Order</span>
+                            </a>
+                        </div>
+                    </div>
+                    
+                    <div class="table-responsive-wrapper">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Order ID</th>
+                                    <th>Shop / Customer</th>
+                                    <th>Zone</th>
+                                    <th>Product</th>
+                                    <th>Qty</th>
+                                    <th>Amount</th>
+                                    <th>Status</th>
+                                    <th>Date</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php if (empty($orders)): ?>
+                                    <tr>
+                                        <td colspan="9" style="text-align: center; padding: 3rem; color: #64748b;">
+                                            No orders matching your criteria. <a href="create.php" style="color: var(--blue);">Create an order</a>
+                                        </td>
+                                    </tr>
+                                <?php else: ?>
+                                    <?php foreach ($orders as $order): 
+                                        $displayOrderNum = $order['order_number'] ?: ('#' . $order['order_id']);
+                                        $shopName = htmlspecialchars($order['shop_name'] ?: ($order['customer_name'] ?: ($order['web_user_name'] ?: 'Customer #' . $order['user_id'])));
+                                        $prodName = htmlspecialchars($order['product_name'] ?: ($order['fallback_product_name'] ?: 'Liyas Water'));
+                                        $zoneDisplay = htmlspecialchars($order['zone_name'] ?: 'Unassigned');
+                                        $zoneSlug = htmlspecialchars($order['zone_slug'] ?? '');
+                                    ?>
+                                    <tr data-order-id="<?= $order['order_id'] ?>">
+                                        <td>
+                                            <div style="display: flex; align-items: center; gap: 4px;">
+                                                <a href="view.php?id=<?= $order['order_id'] ?>" style="font-weight: 600; color: #2563eb; text-decoration: none;">
+                                                    <?= $displayOrderNum ?>
+                                                </a>
+                                                <?php if (!empty($order['zone_name'])): ?>
+                                                    <?php if ((int)$order['is_zone_read'] === 1): ?>
+                                                        <i class='bx bx-check-double' id="zone-check-icon-<?= $order['order_id'] ?>" style="color: #059669; font-size: 16px;" title="<?= !empty($order['zone_read_at']) ? 'Checked by ' . $zoneDisplay . ' on ' . date('d M, h:i A', strtotime($order['zone_read_at'])) : 'Checked by ' . $zoneDisplay ?>"></i>
+                                                    <?php else: ?>
+                                                        <span class="order-num-status-dot unread" id="zone-check-icon-<?= $order['order_id'] ?>" title="Waiting for <?= $zoneDisplay ?> to check"></span>
+                                                    <?php endif; ?>
+                                                <?php endif; ?>
+                                            </div>
+                                            <?php if (!empty($order['bill_number'])): ?>
+                                                <div style="font-size: 11px; color: #059669; font-weight: 500;">
+                                                    <i class='bx bx-receipt'></i> <?= htmlspecialchars($order['bill_number']) ?>
+                                                </div>
+                                            <?php endif; ?>
+                                        </td>
+                                        <td>
+                                            <div style="font-weight: 600; color: #1e293b;">
+                                                <?= $shopName ?>
+                                            </div>
+                                            <?php if (!empty($order['location'])): ?>
+                                                <div style="font-size: 12px; color: #64748b;">
+                                                    <i class='bx bx-map-pin' style="font-size: 11px;"></i> <?= htmlspecialchars($order['location']) ?>
+                                                </div>
+                                            <?php endif; ?>
+                                            <?php if (!empty($order['phone'])): ?>
+                                                <div style="font-size: 12px; color: #64748b;">
+                                                    <i class='bx bx-phone' style="font-size: 11px;"></i> <?= htmlspecialchars($order['phone']) ?>
+                                                </div>
+                                            <?php endif; ?>
+                                        </td>
+                                        <td>
+                                            <?php if (!empty($order['zone_name'])): ?>
+                                                <span class="order-zone-tag">
+                                                    <?= $zoneDisplay ?>
+                                                </span>
+                                                <div style="margin-top: 4px;">
+                                                    <?php if ((int)$order['is_zone_read'] === 1): ?>
+                                                        <span class="zone-seen-badge seen" id="zone-status-badge-<?= $order['order_id'] ?>" title="<?= !empty($order['zone_read_at']) ? 'Checked by ' . $zoneDisplay . ' on ' . date('d M Y, h:i A', strtotime($order['zone_read_at'])) : 'Checked by ' . $zoneDisplay ?>">
+                                                            <i class='bx bx-check-double'></i> Checked by Zone
+                                                        </span>
+                                                    <?php else: ?>
+                                                        <span class="zone-seen-badge unread" id="zone-status-badge-<?= $order['order_id'] ?>" title="Waiting for <?= $zoneDisplay ?> to open / check">
+                                                            <i class='bx bx-bell'></i> Unchecked
+                                                        </span>
+                                                    <?php endif; ?>
+                                                </div>
+                                            <?php else: ?>
+                                                <span class="order-zone-tag none">Central</span>
+                                            <?php endif; ?>
+                                        </td>
+                                        <td>
+                                            <div style="font-weight: 600; color: #1e293b; display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                                                <span><?= $prodName ?></span>
+                                                <?php if ((int)($order['items_count'] ?? 0) > 1): ?>
+                                                    <span style="background: #eff6ff; color: #2563eb; border: 1px solid #bfdbfe; font-size: 11px; padding: 1px 6px; border-radius: 4px; font-weight: 700;" title="<?= htmlspecialchars($order['items_summary'] ?? '') ?>">
+                                                        +<?= ((int)$order['items_count'] - 1) ?> more
+                                                    </span>
+                                                <?php endif; ?>
+                                            </div>
+                                            <?php if ((int)($order['items_count'] ?? 0) > 1 && !empty($order['items_summary'])): ?>
+                                                <div style="font-size: 11px; color: #64748b; margin-top: 2px;" title="<?= htmlspecialchars($order['items_summary']) ?>">
+                                                    <?= htmlspecialchars($order['items_summary']) ?>
+                                                </div>
+                                            <?php elseif (!empty($order['net_content'])): ?>
+                                                <div style="font-size: 11px; color: #64748b;">
+                                                    <?= (float)$order['net_content'] ?> <?= htmlspecialchars($order['net_content_unit'] ?? '') ?>
+                                                </div>
+                                            <?php endif; ?>
+                                        </td>
+                                        <td>
+                                            <strong style="font-size: 14px;"><?= (int)$order['quantity'] ?></strong> <span style="font-size: 11px; color: #64748b;">Cases total</span>
+                                        </td>
+                                        <td>
+                                            <div style="font-weight: 600; color: #0f172a; font-size: 14px;">
+                                                <?= formatCurrency($order['total_amount']) ?>
+                                            </div>
+                                            <?php if ((float)$order['discount'] > 0): ?>
+                                                <div style="font-size: 11px; color: #ef4444;">
+                                                    - <?= formatCurrency($order['discount']) ?> off
+                                                </div>
+                                            <?php endif; ?>
+                                        </td>
+                                        <td>
+                                            <!-- Inline Quick Status Updater -->
+                                            <form action="index.php?filter=<?= urlencode($status_filter) ?>&zone=<?= urlencode($zone_filter) ?>" method="POST" style="margin: 0;">
+                                                <input type="hidden" name="update_status" value="1">
+                                                <input type="hidden" name="order_id" value="<?= $order['order_id'] ?>">
+                                                <select name="status" onchange="this.form.submit()" style="padding: 4px 8px; border-radius: 6px; font-size: 12px; font-weight: 600; border: 1px solid #d1d5db; background: #fff; cursor: pointer;">
+                                                    <option value="pending" <?= ($order['status'] === 'pending') ? 'selected' : '' ?>>Pending</option>
+                                                    <option value="processing" <?= ($order['status'] === 'processing') ? 'selected' : '' ?>>Processing</option>
+                                                    <option value="shipped" <?= ($order['status'] === 'shipped') ? 'selected' : '' ?>>Shipped</option>
+                                                    <option value="delivered" <?= ($order['status'] === 'delivered') ? 'selected' : '' ?>>Delivered</option>
+                                                    <option value="cancelled" <?= ($order['status'] === 'cancelled') ? 'selected' : '' ?>>Cancelled</option>
+                                                </select>
+                                            </form>
+                                        </td>
+                                        <td>
+                                            <div style="font-size: 13px; color: #475569;">
+                                                <?= date('d M Y', strtotime($order['created_at'])) ?>
+                                            </div>
+                                            <div style="font-size: 11px; color: #94a3b8;">
+                                                <?= date('H:i A', strtotime($order['created_at'])) ?>
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <div style="display: flex; gap: 6px; align-items: center;">
+                                                <a href="view.php?id=<?= $order['order_id'] ?>" class="btn-action" style="padding: 5px 8px; background: #f1f5f9; color: #334155; border-radius: 6px; text-decoration: none; font-size: 12px; display: inline-flex; align-items: center; gap: 3px;" title="View Order">
+                                                    <i class='bx bx-show'></i> View
+                                                </a>
+                                                <a href="edit.php?id=<?= $order['order_id'] ?>" class="btn-action" style="padding: 5px 8px; background: #e0f2fe; color: #0284c7; border-radius: 6px; text-decoration: none; font-size: 12px; display: inline-flex; align-items: center; gap: 3px;" title="Edit Order">
+                                                    <i class='bx bx-edit'></i> Edit
+                                                </a>
+                                                <a href="delete.php?id=<?= $order['order_id'] ?>" onclick="return confirm('Are you sure you want to delete order <?= addslashes($displayOrderNum) ?>?');" class="btn-action" style="padding: 5px 8px; background: #fee2e2; color: #dc2626; border-radius: 6px; text-decoration: none; font-size: 12px; display: inline-flex; align-items: center; gap: 3px;" title="Delete Order">
+                                                    <i class='bx bx-trash'></i>
+                                                </a>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    <?php endforeach; ?>
+                                <?php endif; ?>
+                            </tbody>
+                        </table>
+                    </div>
 
-    </button>
-</td>
-										<td>
-											<span style="font-size: 13px;"><?= formatIST($order['created_at']) ?></span>
-											<br><small style="color: var(--text-muted);">IST</small>
-										</td>
-										<td>
-    <div class="action-group">
-
-        <a href="view.php?id=<?= $order['order_id'] ?>" class="action-btn view-btn">
-            <i class='bx bx-show'></i>
-        </a>
-
-        <!-- <button
-            type="button"
-            class="action-btn status-btn"
-            onclick="openStatusModal(
-                <?= $order['order_id'] ?>,
-                '<?= htmlspecialchars($order['status'], ENT_QUOTES) ?>'
-            )">
-
-            <i class='bx bx-edit'></i>
-
-        </button> -->
-
+                    <!-- Pagination -->
+                    <?php if ($total_pages > 1): ?>
+                    <div style="padding: 1.25rem; display: flex; justify-content: center; gap: 6px; border-top: 1px solid var(--border-light);">
+                        <?php for ($i = 1; $i <= $total_pages; $i++): ?>
+                            <a href="index.php?page=<?= $i ?>&filter=<?= urlencode($status_filter) ?>&zone=<?= urlencode($zone_filter) ?>&search=<?= urlencode($search) ?>" 
+                               style="padding: 6px 12px; border-radius: 6px; text-decoration: none; font-size: 13px; font-weight: 500; <?= ($i === $page) ? 'background: #2563eb; color: #fff;' : 'background: #f1f5f9; color: #334155;' ?>">
+                                <?= $i ?>
+                            </a>
+                        <?php endfor; ?>
+                    </div>
+                    <?php endif; ?>
+                </div>
+            </div>
+        </div>
     </div>
-</td>
-									</tr>
-									<?php endforeach; ?>
-								</tbody>
-							</table>
-						</div>
 
-						<?php if ($total_pages > 1): ?>
-							<div style="padding: 1rem 1.5rem; border-top: 1px solid var(--border-light); display: flex; justify-content: center; gap: 0.75rem; align-items: center;">
-								<?php if ($page > 1): ?>
-									<a href="?page=<?= $page - 1 ?>&filter=<?= $filter ?>&search=<?= urlencode($search) ?>" class="table-btn">
-										<i class='bx bx-chevron-left'></i> Previous
-									</a>
-								<?php endif; ?>
-								
-								<span style="padding: 0.5rem 1rem; color: var(--text-secondary);">
-									Page <?= $page ?> of <?= $total_pages ?>
-								</span>
-								
-								<?php if ($page < $total_pages): ?>
-									<a href="?page=<?= $page + 1 ?>&filter=<?= $filter ?>&search=<?= urlencode($search) ?>" class="table-btn">
-										Next <i class='bx bx-chevron-right'></i>
-									</a>
-								<?php endif; ?>
-							</div>
-						<?php endif; ?>
-					<?php endif; ?>
-				</div>
-			</div>
-		</div>
-	</div>
+    <!-- Real-time Zone Check Status Poller -->
+    <script>
+        (function() {
+            const orderRows = document.querySelectorAll('tr[data-order-id]');
+            if (!orderRows.length) return;
 
-	<!-- Status Update Modal -->
-	<div id="statusModal" class="modal-overlay">
-		<div class="modal-dialog">
-			<div class="modal-header">
-				<h3>
-					<i class='bx bx-edit' style="color: var(--blue);"></i>
-					Update Order Status
-				</h3>
-				<button type="button" class="close-btn" onclick="closeStatusModal()">
-					<i class='bx bx-x'></i>
-				</button>
-			</div>
-			<div class="modal-body">
-				<form method="POST" action="" id="statusForm">
-					<input type="hidden" name="order_id" id="statusOrderId">
-					<input type="hidden" name="filter" value="<?= htmlspecialchars($filter) ?>">
-					<input type="hidden" name="search" value="<?= htmlspecialchars($search) ?>">
-					<input type="hidden" name="page" value="<?= $page ?>">
-					
-					<label for="statusSelect" style="display: block; margin-bottom: 0.5rem; font-weight: 600; color: var(--dark);">Select Status:</label>
-					<select name="status" id="statusSelect" style="width: 100%; padding: 0.75rem; border: 1px solid var(--grey); border-radius: 8px; font-family: var(--opensans); font-size: 0.95rem; margin-bottom: 1rem;">
-						<option value="pending">Pending</option>
-						<option value="processing">Processing</option>
-						<option value="shipped">Shipped</option>
-						<option value="delivered">Delivered</option>
-						<option value="cancelled">Cancelled</option>
-					</select>
-					
-					<p style="font-size: 0.85rem; color: #6b7280; margin-top: 0.5rem;">
-						This will update the order status immediately.
-					</p>
-				</form>
-			</div>
-			<div class="modal-footer">
-				<button type="button" class="modal-btn modal-btn-cancel" onclick="closeStatusModal()">
-					<i class='bx bx-x'></i> Cancel
-				</button>
-				<button type="button" class="modal-btn modal-btn-primary" onclick="submitStatusForm()">
-					<i class='bx bx-check'></i> Update Status
-				</button>
-			</div>
-		</div>
-	</div>
-	
-	<script>
-		document.getElementById('exportBtn').addEventListener('click', function(e) {
-			e.preventDefault();
-			const filterSelect = document.getElementById('filterSelect');
-			const searchInput = document.getElementById('searchInput');
-			let filter = filterSelect ? filterSelect.value : 'all';
-			let search = searchInput ? searchInput.value : '';
-			let exportUrl = '?export=csv&filter=' + encodeURIComponent(filter);
-			if (search) {
-				exportUrl += '&search=' + encodeURIComponent(search);
-			}
-			window.location.href = exportUrl;
-		});
+            const orderIds = Array.from(orderRows).map(row => row.getAttribute('data-order-id')).filter(Boolean);
+            if (!orderIds.length) return;
 
-		function openStatusModal(orderId, currentStatus) {
-			const modal = document.getElementById('statusModal');
-			const orderIdInput = document.getElementById('statusOrderId');
-			const statusSelect = document.getElementById('statusSelect');
-			
-			if (orderIdInput) orderIdInput.value = orderId;
-			if (statusSelect) statusSelect.value = currentStatus;
-			if (modal) {
-				modal.classList.add('active');
-				document.body.classList.add('modal-active');
-			}
-		}
+            function pollZoneStatus() {
+                fetch('check_zone_status.php?order_ids=' + orderIds.join(','))
+                    .then(res => res.json())
+                    .then(data => {
+                        if (!data.success || !data.statuses) return;
 
-		function closeStatusModal() {
-			const modal = document.getElementById('statusModal');
-			if (modal) {
-				modal.classList.remove('active');
-				document.body.classList.remove('modal-active');
-			}
-		}
+                        for (const orderId in data.statuses) {
+                            const st = data.statuses[orderId];
+                            const badge = document.getElementById('zone-status-badge-' + orderId);
+                            const icon = document.getElementById('zone-check-icon-' + orderId);
 
-		function submitStatusForm() {
-			const form = document.getElementById('statusForm');
-			if (form) {
-				const statusInput = document.createElement('input');
-				statusInput.type = 'hidden';
-				statusInput.name = 'update_status';
-				statusInput.value = '1';
-				form.appendChild(statusInput);
-				form.submit();
-			}
-		}
+                            if (badge) {
+                                if (st.is_zone_read === 1) {
+                                    if (!badge.classList.contains('seen')) {
+                                        badge.className = 'zone-seen-badge seen';
+                                        badge.innerHTML = `<i class='bx bx-check-double'></i> Checked by Zone`;
+                                        badge.title = st.zone_read_text ? `Checked by ${st.zone_name} on ${st.zone_read_text}` : `Checked by ${st.zone_name}`;
+                                        
+                                        // Animate highlight
+                                        badge.style.animation = 'status-highlight 1.5s ease';
+                                        setTimeout(() => { badge.style.animation = ''; }, 1600);
+                                    }
+                                } else {
+                                    if (!badge.classList.contains('unread')) {
+                                        badge.className = 'zone-seen-badge unread';
+                                        badge.innerHTML = `<i class='bx bx-bell'></i> Unchecked`;
+                                        badge.title = `Waiting for ${st.zone_name} to check`;
+                                    }
+                                }
+                            }
 
-		const statusModalOverlay = document.getElementById('statusModal');
-		if (statusModalOverlay) {
-			statusModalOverlay.addEventListener('click', function(e) {
-				if (e.target === statusModalOverlay) {
-					closeStatusModal();
-				}
-			});
-		}
+                            if (icon) {
+                                if (st.is_zone_read === 1) {
+                                    if (icon.tagName === 'SPAN') {
+                                        const newIcon = document.createElement('i');
+                                        newIcon.className = 'bx bx-check-double';
+                                        newIcon.id = 'zone-check-icon-' + orderId;
+                                        newIcon.style = 'color: #059669; font-size: 16px;';
+                                        newIcon.title = `Checked by ${st.zone_name}`;
+                                        icon.replaceWith(newIcon);
+                                    }
+                                }
+                            }
+                        }
+                    })
+                    .catch(err => console.debug('Zone check poll error:', err));
+            }
 
-		document.addEventListener('keydown', function(e) {
-			if (e.key === 'Escape') {
-				const statusModal = document.getElementById('statusModal');
-				if (statusModal && statusModal.classList.contains('active')) {
-					closeStatusModal();
-				}
-			}
-		});
-	</script>
+            // Poll every 8 seconds
+            setInterval(pollZoneStatus, 8000);
+        })();
+    </script>
 </body>
 </html>

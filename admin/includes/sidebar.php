@@ -2,12 +2,12 @@
 // Detect base path (admin subfolders)
 $current_dir_name = basename(dirname($_SERVER['SCRIPT_FILENAME']));
 
-// Added 'campaigns' to the list of subfolders for correct pathing
 $base_path = (in_array($current_dir_name, [
     'users',
     'orders',
     'products',
-    'categories',
+    'zones',
+    'dashboard',
     'qr-rewards',
     'activity-logs',
     'notifications',
@@ -15,7 +15,8 @@ $base_path = (in_array($current_dir_name, [
     'advertisements',
     'reviews',
     'social-links',
-    'campaigns'
+    'campaigns',
+    'revenue'
 ])) ? '../' : './';
 
 // Current page logic
@@ -25,36 +26,36 @@ $current_dir  = basename(dirname($_SERVER['PHP_SELF']));
 
 // Badge counts
 $products_count = 0;
-$categories_count = 0;
-$orders_count = 0;
+$zones_count = 0;
+$pending_orders_count = 0;
 $users_count = 0;
 $notifications_count = 0;
 $subs_count = 0;
 $ads_count = 0;
 $reviews_pending_count = 0;
 $social_count = 0;
-$campaign_submissions_count = 0; // New count for Campaign DB
+$campaign_submissions_count = 0;
 
 try {
     // --- MAIN DB COUNTS ---
     if (isset($pdo)) {
-        $products_count = $pdo->query("SELECT COUNT(*) FROM products")->fetchColumn();
-        $categories_count = $pdo->query("SELECT COUNT(*) FROM categories")->fetchColumn();
-        $orders_count = $pdo->query("SELECT COUNT(*) FROM orders WHERE status='pending'")->fetchColumn();
-        $users_count = $pdo->query("SELECT COUNT(*) FROM admins")->fetchColumn();
-        $subs_count = $pdo->query("SELECT COUNT(*) FROM newsletter_subscriptions WHERE status='subscribed'")->fetchColumn();
-        $ads_count = $pdo->query("SELECT COUNT(*) FROM advertisements")->fetchColumn();
-        $reviews_pending_count = $pdo->query("SELECT COUNT(*) FROM reviews WHERE status='pending'")->fetchColumn();
-        $social_count = $pdo->query("SELECT COUNT(*) FROM social_links")->fetchColumn();
+        $products_count = (int)$pdo->query("SELECT COUNT(*) FROM products WHERE status='active'")->fetchColumn();
+        $zones_count = (int)$pdo->query("SELECT COUNT(*) FROM zones WHERE status='active'")->fetchColumn();
+        $pending_orders_count = (int)$pdo->query("SELECT COUNT(*) FROM orders WHERE status='pending'")->fetchColumn();
+        $users_count = (int)$pdo->query("SELECT COUNT(*) FROM admins")->fetchColumn();
+        $subs_count = (int)$pdo->query("SELECT COUNT(*) FROM newsletter_subscriptions WHERE status='subscribed'")->fetchColumn();
+        $ads_count = (int)$pdo->query("SELECT COUNT(*) FROM advertisements")->fetchColumn();
+        $reviews_pending_count = (int)$pdo->query("SELECT COUNT(*) FROM reviews WHERE status='pending'")->fetchColumn();
+        $social_count = (int)$pdo->query("SELECT COUNT(*) FROM social_links")->fetchColumn();
 
         $stmtNotif = $pdo->prepare("SELECT COUNT(*) FROM notifications WHERE recipient_type='admin' AND is_read=0 AND admin_id = ?");
         $stmtNotif->execute([$_SESSION['admin_id'] ?? 0]);
-        $notifications_count = $stmtNotif->fetchColumn();
+        $notifications_count = (int)$stmtNotif->fetchColumn();
     }
 
-    // --- CAMPAIGN DB COUNTS (Using pdo_campaign) ---
+    // --- CAMPAIGN DB COUNTS ---
     if (isset($pdo_campaign)) {
-        $campaign_submissions_count = $pdo_campaign->query("SELECT COUNT(*) FROM submissions")->fetchColumn();
+        $campaign_submissions_count = (int)$pdo_campaign->query("SELECT COUNT(*) FROM submissions")->fetchColumn();
     }
 } catch (PDOException $e) {
     // silent fail
@@ -72,10 +73,10 @@ try {
 
     <div class="app-switcher" style="padding: 15px; margin-bottom: 5px;">
         <div style="display: flex; gap: 4px; background: rgba(0,0,0,0.05); padding: 4px; border-radius: 10px; border: 1px solid rgba(0,0,0,0.03);">
-            <a href="<?= $base_path ?>index.php" 
+            <a href="<?= $base_path ?>dashboard/index.php" 
                style="flex: 1; text-align: center; padding: 8px 4px; border-radius: 7px; font-size: 11px; text-decoration: none; display: flex; flex-direction: column; align-items: center; transition: 0.2s; <?= ($current_dir != 'campaigns') ? 'background: white; box-shadow: 0 2px 4px rgba(0,0,0,0.08); color: #2563eb; font-weight: 600;' : 'color: #94a3b8;' ?>">
                 <i class='bx bx-store-alt' style="font-size: 18px; margin-bottom: 2px;"></i>
-                Store
+                Warehouse
             </a>
             <a href="<?= $base_path ?>campaigns/index.php" 
                style="flex: 1; text-align: center; padding: 8px 4px; border-radius: 7px; font-size: 11px; text-decoration: none; display: flex; flex-direction: column; align-items: center; transition: 0.2s; <?= ($current_dir == 'campaigns') ? 'background: white; box-shadow: 0 2px 4px rgba(0,0,0,0.08); color: #0369a1; font-weight: 600;' : 'color: #94a3b8;' ?>">
@@ -109,38 +110,45 @@ try {
                 <?php endif; ?>
             </a>
 
-
         <?php else: ?>
-            <a href="<?= $base_path ?>index.php"
-               class="nav-item <?= ($current_file=='index.php' && $current_dir=='admin')?'active':'' ?>">
+            <a href="<?= $base_path ?>dashboard/index.php"
+               class="nav-item <?= ($current_dir=='dashboard'||($current_file=='index.php' && $current_dir=='admin'))?'active':'' ?>">
                 <i class='bx bx-home'></i>
                 <span>Dashboard</span>
-            </a>
-
-            <a href="<?= $base_path ?>products/index.php"
-               class="nav-item <?= ($current_dir=='products'||$current_page==='products')?'active':'' ?>">
-                <i class='bx bx-shopping-bag'></i>
-                <span>Products</span>
-                <?php if ($products_count>0): ?>
-                    <span class="nav-badge"><?= $products_count ?></span>
-                <?php endif; ?>
-            </a>
-
-            <a href="<?= $base_path ?>categories/index.php"
-               class="nav-item <?= ($current_dir=='categories'||$current_page==='categories')?'active':'' ?>">
-                <i class='bx bx-category'></i>
-                <span>Categories</span>
-                <?php if ($categories_count>0): ?>
-                    <span class="nav-badge"><?= $categories_count ?></span>
-                <?php endif; ?>
             </a>
 
             <a href="<?= $base_path ?>orders/index.php"
                class="nav-item <?= ($current_dir=='orders'||$current_page==='orders')?'active':'' ?>">
                 <i class='bx bx-cart'></i>
                 <span>Orders</span>
-                <?php if ($orders_count>0): ?>
-                    <span class="badge-count"><?= $orders_count ?></span>
+                <?php if ($pending_orders_count > 0): ?>
+                    <span class="badge-count" style="background:#ef4444; color:#fff; font-weight:600; border-radius:12px; padding:2px 8px; font-size:11px; display:inline-flex; align-items:center; gap:3px;">
+                        🔴 <?= $pending_orders_count ?>
+                    </span>
+                <?php endif; ?>
+            </a>
+
+            <a href="<?= $base_path ?>zones/index.php"
+               class="nav-item <?= ($current_dir=='zones'||$current_page==='zones')?'active':'' ?>">
+                <i class='bx bx-map-pin'></i>
+                <span>Zones</span>
+                <?php if ($zones_count > 0): ?>
+                    <span class="nav-badge"><?= $zones_count ?></span>
+                <?php endif; ?>
+            </a>
+
+            <a href="<?= $base_path ?>revenue/index.php"
+               class="nav-item <?= ($current_dir=='revenue'||$current_page==='revenue')?'active':'' ?>">
+                <i class='bx bx-line-chart'></i>
+                <span>Revenue</span>
+            </a>
+
+            <a href="<?= $base_path ?>products/index.php"
+               class="nav-item <?= ($current_dir=='products'||$current_page==='products')?'active':'' ?>">
+                <i class='bx bx-shopping-bag'></i>
+                <span>Products</span>
+                <?php if ($products_count > 0): ?>
+                    <span class="nav-badge"><?= $products_count ?></span>
                 <?php endif; ?>
             </a>
 
@@ -148,7 +156,7 @@ try {
                class="nav-item <?= ($current_dir=='advertisements'||$current_page==='advertisements')?'active':'' ?>">
                 <i class='bx bx-image'></i>
                 <span>Advertisements</span>
-                <?php if ($ads_count>0): ?>
+                <?php if ($ads_count > 0): ?>
                     <span class="nav-badge"><?= $ads_count ?></span>
                 <?php endif; ?>
             </a>
@@ -157,7 +165,7 @@ try {
                class="nav-item <?= ($current_dir=='reviews'||$current_page==='reviews')?'active':'' ?>">
                 <i class='bx bx-star'></i>
                 <span>Reviews</span>
-                <?php if ($reviews_pending_count>0): ?>
+                <?php if ($reviews_pending_count > 0): ?>
                     <span class="badge-count"><?= $reviews_pending_count ?></span>
                 <?php endif; ?>
             </a>
@@ -166,7 +174,7 @@ try {
                class="nav-item <?= ($current_dir=='social-links'||$current_page==='social-links')?'active':'' ?>">
                 <i class='bx bx-share-alt'></i>
                 <span>Social Media</span>
-                <?php if ($social_count>0): ?>
+                <?php if ($social_count > 0): ?>
                     <span class="nav-badge"><?= $social_count ?></span>
                 <?php endif; ?>
             </a>
@@ -175,7 +183,7 @@ try {
                class="nav-item <?= ($current_dir=='subscriptions'||$current_page==='subscriptions')?'active':'' ?>">
                 <i class='bx bx-envelope'></i>
                 <span>Newsletter</span>
-                <?php if ($subs_count>0): ?>
+                <?php if ($subs_count > 0): ?>
                     <span class="nav-badge"><?= $subs_count ?></span>
                 <?php endif; ?>
             </a>
@@ -184,7 +192,7 @@ try {
                class="nav-item <?= ($current_dir=='notifications'||$current_page==='notifications')?'active':'' ?>">
                 <i class='bx bx-bell'></i>
                 <span>Notifications</span>
-                <?php if ($notifications_count>0): ?>
+                <?php if ($notifications_count > 0): ?>
                     <span class="badge-count"><?= $notifications_count ?></span>
                 <?php endif; ?>
             </a>
@@ -193,7 +201,7 @@ try {
                class="nav-item <?= ($current_dir=='users'||$current_page==='users')?'active':'' ?>">
                 <i class='bx bx-group'></i>
                 <span>Users</span>
-                <?php if ($users_count>0): ?>
+                <?php if ($users_count > 0): ?>
                     <span class="nav-badge"><?= $users_count ?></span>
                 <?php endif; ?>
             </a>

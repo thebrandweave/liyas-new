@@ -25,13 +25,149 @@ function formatCurrency($amount) {
 }
 
 /**
- * Build WHERE clause + params for orders based on filter/search
- * @param string $filter
- * @param string $search
- * @param array $params Reference to an array for PDO bind values
- * @return string WHERE clause or empty string if no conditions
+ * Map order status to badge class
  */
-function buildOrderFilterWhereClause($filter, $search, &$params) {
+function getStatusBadgeClass($status) {
+	$status = strtolower($status ?? '');
+	$badgeMap = [
+		'pending' => 'badge-pending',
+		'processing' => 'badge-processing',
+		'shipped' => 'badge-processing',
+		'delivered' => 'badge-completed',
+		'cancelled' => 'badge-cancelled'
+	];
+	return $badgeMap[$status] ?? 'badge-pending';
+}
+
+/**
+ * Sanitize zone name to a clean URL-safe slug
+ * E.g., "Mangalore Zone" -> "mangalore", "North Mangalore" -> "north-mangalore"
+ */
+function sanitizeZoneSlug($name) {
+	$name = trim($name);
+	// Optionally strip "zone" suffix if whole word
+	$clean = preg_replace('/\bzone\b/i', '', $name);
+	$clean = trim($clean);
+	if (empty($clean)) {
+		$clean = $name;
+	}
+	$slug = strtolower(trim(preg_replace('/[^A-Za-z0-9-]+/', '-', $clean), '-'));
+	return $slug ?: 'zone-' . time();
+}
+
+/**
+ * Get setting value from system_settings
+ */
+function getSystemSetting($pdo, $key, $default = '') {
+	try {
+		$stmt = $pdo->prepare("SELECT setting_value FROM system_settings WHERE setting_key = ?");
+		$stmt->execute([$key]);
+		$val = $stmt->fetchColumn();
+		return ($val !== false) ? $val : $default;
+	} catch (Exception $e) {
+		return $default;
+	}
+}
+
+/**
+ * Generate sequential unique bill number: e.g. LI-000001
+ */
+function generateBillNumber($pdo) {
+	try {
+		$stmt = $pdo->query("SELECT MAX(id) FROM receipts");
+		$maxId = (int)$stmt->fetchColumn();
+		$nextId = $maxId + 1;
+		$billNum = '' . str_pad($nextId, 3, '0', STR_PAD_LEFT);
+
+		// Ensure uniqueness
+		$chk = $pdo->prepare("SELECT id FROM receipts WHERE bill_number = ?");
+		$chk->execute([$billNum]);
+		while ($chk->fetch()) {
+			$nextId++;
+			$billNum = 'LI-' . str_pad($nextId, 6, '0', STR_PAD_LEFT);
+			$chk->execute([$billNum]);
+		}
+		return $billNum;
+	} catch (Exception $e) {
+		return 'LI-' . date('Ymd') . '-' . rand(1000, 9999);
+	}
+}
+
+/**
+ * Update shop reward progress when an order is completed
+ * Threshold defaults to 10 completed orders
+ */
+function updateShopRewardProgress($pdo, $shop_name, $phone = '') {
+	$shop_name = trim($shop_name ?? '');
+	if (empty($shop_name)) return;
+
+	try {
+		$threshold = (int)getSystemSetting($pdo, 'reward_threshold', 10);
+		if ($threshold <= 0) $threshold = 10;
+
+		// Count delivered orders for this shop
+		$stmt = $pdo->prepare("SELECT COUNT(*) FROM orders WHERE shop_name = ? AND status = 'delivered'");
+		$stmt->execute([$shop_name]);
+		$completed = (int)$stmt->fetchColumn();
+
+		$reward_status = ($completed >= $threshold) ? 'eligible' : 'in_progress';
+
+		$chk = $pdo->prepare("SELECT id, reward_status FROM rewards WHERE shop_name = ?");
+		$chk->execute([$shop_name]);
+		$row = $chk->fetch(PDO::FETCH_ASSOC);
+
+		if ($row) {
+			$newStatus = ($row['reward_status'] === 'claimed') ? 'claimed' : $reward_status;
+			$up = $pdo->prepare("UPDATE rewards SET completed_orders = ?, reward_threshold = ?, reward_status = ?, customer_phone = COALESCE(NULLIF(?, ''), customer_phone), updated_at = NOW() WHERE id = ?");
+			$up->execute([$completed, $threshold, $newStatus, $phone, $row['id']]);
+		} else {
+			$ins = $pdo->prepare("INSERT INTO rewards (shop_name, customer_phone, completed_orders, reward_threshold, reward_status) VALUES (?, ?, ?, ?, ?)");
+			$ins->execute([$shop_name, $phone, $completed, $threshold, $reward_status]);
+		}
+	} catch (Exception $e) {
+		error_log("Error updating reward: " . $e->getMessage());
+	}
+}
+
+/**
+ * Get shop reward information
+ */
+function getShopRewardInfo($pdo, $shop_name) {
+	$shop_name = trim($shop_name ?? '');
+	if (empty($shop_name)) return null;
+
+	$threshold = (int)getSystemSetting($pdo, 'reward_threshold', 10);
+	if ($threshold <= 0) $threshold = 10;
+
+	try {
+		$stmt = $pdo->prepare("SELECT * FROM rewards WHERE shop_name = ?");
+		$stmt->execute([$shop_name]);
+		$row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+		if (!$row) {
+			$cntStmt = $pdo->prepare("SELECT COUNT(*) FROM orders WHERE shop_name = ? AND status = 'delivered'");
+			$cntStmt->execute([$shop_name]);
+			$completed = (int)$cntStmt->fetchColumn();
+			return [
+				'shop_name' => $shop_name,
+				'completed_orders' => $completed,
+				'reward_threshold' => $threshold,
+				'reward_status' => ($completed >= $threshold) ? 'eligible' : 'in_progress',
+				'remaining_orders' => max(0, $threshold - $completed)
+			];
+		}
+
+		$row['remaining_orders'] = max(0, (int)$row['reward_threshold'] - (int)$row['completed_orders']);
+		return $row;
+	} catch (Exception $e) {
+		return null;
+	}
+}
+
+/**
+ * Build WHERE clause + params for orders based on status filter, zone filter, and search
+ */
+function buildOrderFilterWhereClause($filter, $search, &$params, $zone_filter = 'all') {
 	$where_conditions = [];
 	$params = [];
 
@@ -40,11 +176,26 @@ function buildOrderFilterWhereClause($filter, $search, &$params) {
 		$params[':status'] = $filter;
 	}
 
+	if ($zone_filter !== 'all' && !empty($zone_filter)) {
+		if (is_numeric($zone_filter)) {
+			$where_conditions[] = "o.zone_id = :zone_id";
+			$params[':zone_id'] = (int)$zone_filter;
+		} else {
+			$where_conditions[] = "z.slug = :zone_slug";
+			$params[':zone_slug'] = $zone_filter;
+		}
+	}
+
 	if (!empty($search)) {
-		// Search across customer name, email, phone, and order ID
-		$where_conditions[] = "(u.name LIKE :search OR u.email LIKE :search OR sa.phone_number LIKE :search OR o.order_id = :order_id_search)";
+		$where_conditions[] = "(
+			o.shop_name LIKE :search 
+			OR o.customer_name LIKE :search 
+			OR o.phone LIKE :search 
+			OR o.location LIKE :search 
+			OR o.order_number LIKE :search 
+			OR o.order_id = :order_id_search
+		)";
 		$params[':search'] = "%$search%";
-		// Cast search term to int for direct order_id match, use -1 if not numeric to avoid matching 0
 		$params[':order_id_search'] = is_numeric($search) ? (int)$search : -1;
 	}
 
@@ -55,13 +206,12 @@ function buildOrderFilterWhereClause($filter, $search, &$params) {
 
 /**
  * Bind params to prepared statement
- * @param PDOStatement $stmt
- * @param array $params
  */
 function bindFilterParams(PDOStatement $stmt, array $params) {
 	foreach ($params as $key => $value) {
-		// Use special handling for order_id_search if it's an integer
 		if ($key === ':order_id_search' && is_int($value)) {
+			$stmt->bindValue($key, $value, PDO::PARAM_INT);
+		} elseif ($key === ':zone_id' && is_int($value)) {
 			$stmt->bindValue($key, $value, PDO::PARAM_INT);
 		} else {
 			$stmt->bindValue($key, $value);
@@ -70,15 +220,13 @@ function bindFilterParams(PDOStatement $stmt, array $params) {
 }
 
 /**
- * Build redirect URL preserving filter/search/page
- * @param string $filter
- * @param string $search
- * @param int $page
- * @param int|null $updated
- * @return string
+ * Build redirect URL preserving filter/zone/search/page
  */
-function buildOrderRedirectUrl($filter, $search, $page = 1, $updated = null) {
+function buildOrderRedirectUrl($filter, $search, $page = 1, $updated = null, $zone_filter = 'all') {
 	$redirect_url = "index.php?filter=" . urlencode($filter);
+	if (!empty($zone_filter) && $zone_filter !== 'all') {
+		$redirect_url .= "&zone=" . urlencode($zone_filter);
+	}
 	if (!empty($search)) {
 		$redirect_url .= "&search=" . urlencode($search);
 	}
@@ -90,14 +238,3 @@ function buildOrderRedirectUrl($filter, $search, $page = 1, $updated = null) {
 	}
 	return $redirect_url;
 }
-
-// Function for logging activities (if activity_logger.php is included later)
-// Example placeholder, actual implementation might vary based on activity_logger.php
-/*
-function logActivity(PDO $pdo, $admin_id, $username, $action_type, $target_type, $target_id, $description) {
-    // This function definition would typically come from activity_logger.php
-    // For now, it's just a placeholder to avoid undefined function errors
-}
-*/
-
-?>

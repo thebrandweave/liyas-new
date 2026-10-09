@@ -157,6 +157,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['place_order'])) {
             foreach ($cart_items as $item) {
                 $stmt_order_item->execute([$order_id, $item['product_id'], $item['quantity'], $item['price']]);
                 $stmt_delete_cart->execute([$user_id, $item['product_id']]);
+                // Deduct stock when order is placed
+                adjustProductStock($pdo, (int)$item['product_id'], -(int)$item['quantity'], "Customer order #{$order_id} placed");
+            }
+
+            // Sync single product/quantity to orders table if available
+            if (!empty($cart_items)) {
+                $firstItem = $cart_items[0];
+                $totalQty = array_sum(array_column($cart_items, 'quantity'));
+                $upOrd = $pdo->prepare("UPDATE orders SET product_id = ?, quantity = ? WHERE order_id = ? AND (product_id IS NULL OR product_id = 0)");
+                $upOrd->execute([(int)$firstItem['product_id'], (int)$totalQty, $order_id]);
             }
 
             $pdo->commit();
