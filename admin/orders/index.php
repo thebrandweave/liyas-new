@@ -25,6 +25,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_status'])) {
     $order_id   = (int)($_POST['order_id'] ?? 0);
     $new_status = $_POST['status'] ?? '';
     $allowed    = ['pending', 'processing', 'shipped', 'delivered', 'cancelled'];
+    $is_ajax    = (isset($_POST['ajax']) && $_POST['ajax'] === '1') || (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest');
 
     if ($order_id > 0 && in_array($new_status, $allowed)) {
         try {
@@ -50,8 +51,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_status'])) {
 
             quickLog($pdo, 'update_status', 'order', $order_id, "Updated order #{$order_id} status to {$new_status}");
             $success_message = "Order status updated to " . ucfirst($new_status);
+
+            if ($is_ajax) {
+                header('Content-Type: application/json; charset=utf-8');
+                echo json_encode(['success' => true, 'message' => $success_message]);
+                exit;
+            }
         } catch (PDOException $e) {
             $error_message = "Error updating status: " . $e->getMessage();
+            if ($is_ajax) {
+                header('Content-Type: application/json; charset=utf-8');
+                echo json_encode(['success' => false, 'message' => $error_message]);
+                exit;
+            }
+        }
+    } else {
+        if ($is_ajax) {
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode(['success' => false, 'message' => 'Invalid order ID or status']);
+            exit;
         }
     }
 }
@@ -171,6 +189,196 @@ $unchecked_count = (int)$pdo->query("
     FROM orders 
     WHERE zone_id IS NOT NULL AND zone_id > 0 AND is_zone_read = 0 AND status != 'cancelled'
 ")->fetchColumn();
+
+// Helper to render table body rows consistently for initial page load and AJAX refreshes
+function renderOrdersTbodyRows(array $orders, string $status_filter = 'all', string $zone_filter = 'all'): string {
+    ob_start();
+    if (empty($orders)) {
+        ?>
+        <tr>
+            <td colspan="9" style="text-align: center; padding: 3rem; color: #64748b;">
+                No orders matching your criteria. <a href="create.php" style="color: var(--blue);">Create an order</a>
+            </td>
+        </tr>
+        <?php
+    } else {
+        foreach ($orders as $order) {
+            $displayOrderNum = $order['order_number'] ?: ('#' . $order['order_id']);
+            $shopName = htmlspecialchars($order['shop_name'] ?: ($order['customer_name'] ?: ($order['web_user_name'] ?: 'Customer #' . $order['user_id'])));
+            $prodName = htmlspecialchars($order['product_name'] ?: ($order['fallback_product_name'] ?: 'Liyas Water'));
+            $zoneDisplay = htmlspecialchars($order['zone_name'] ?: 'Unassigned');
+            $zoneSlug = htmlspecialchars($order['zone_slug'] ?? '');
+            ?>
+            <tr data-order-id="<?= (int)$order['order_id'] ?>">
+                <td>
+                    <div style="display: flex; align-items: center; gap: 4px;">
+                        <a href="view.php?id=<?= (int)$order['order_id'] ?>" style="font-weight: 600; color: #2563eb; text-decoration: none;">
+                            <?= htmlspecialchars($displayOrderNum) ?>
+                        </a>
+                        <?php if (!empty($order['zone_name'])): ?>
+                            <?php if ((int)$order['is_zone_read'] === 1): ?>
+                                <i class='bx bx-check-double' id="zone-check-icon-<?= (int)$order['order_id'] ?>" style="color: #059669; font-size: 16px;" title="<?= !empty($order['zone_read_at']) ? 'Checked by ' . $zoneDisplay . ' on ' . date('d M, h:i A', strtotime($order['zone_read_at'])) : 'Checked by ' . $zoneDisplay ?>"></i>
+                            <?php else: ?>
+                                <span class="order-num-status-dot unread" id="zone-check-icon-<?= (int)$order['order_id'] ?>" title="Waiting for <?= $zoneDisplay ?> to check"></span>
+                            <?php endif; ?>
+                        <?php endif; ?>
+                    </div>
+                    <?php if (!empty($order['bill_number'])): ?>
+                        <div style="font-size: 11px; color: #059669; font-weight: 500;">
+                            <i class='bx bx-receipt'></i> <?= htmlspecialchars($order['bill_number']) ?>
+                        </div>
+                    <?php endif; ?>
+                </td>
+                <td>
+                    <div style="font-weight: 600; color: #1e293b;">
+                        <?= $shopName ?>
+                    </div>
+                    <?php if (!empty($order['location'])): ?>
+                        <div style="font-size: 12px; color: #64748b;">
+                            <i class='bx bx-map-pin' style="font-size: 11px;"></i> <?= htmlspecialchars($order['location']) ?>
+                        </div>
+                    <?php endif; ?>
+                    <?php if (!empty($order['phone'])): ?>
+                        <div style="font-size: 12px; color: #64748b;">
+                            <i class='bx bx-phone' style="font-size: 11px;"></i> <?= htmlspecialchars($order['phone']) ?>
+                        </div>
+                    <?php endif; ?>
+                </td>
+                <td>
+                    <?php if (!empty($order['zone_name'])): ?>
+                        <span class="order-zone-tag">
+                            <?= $zoneDisplay ?>
+                        </span>
+                        <div style="margin-top: 4px;">
+                            <?php if ((int)$order['is_zone_read'] === 1): ?>
+                                <span class="zone-seen-badge seen" id="zone-status-badge-<?= (int)$order['order_id'] ?>" title="<?= !empty($order['zone_read_at']) ? 'Checked by ' . $zoneDisplay . ' on ' . date('d M Y, h:i A', strtotime($order['zone_read_at'])) : 'Checked by ' . $zoneDisplay ?>">
+                                    <i class='bx bx-check-double'></i> Checked by Zone
+                                </span>
+                            <?php else: ?>
+                                <span class="zone-seen-badge unread" id="zone-status-badge-<?= (int)$order['order_id'] ?>" title="Waiting for <?= $zoneDisplay ?> to open / check">
+                                    <i class='bx bx-bell'></i> Unchecked
+                                </span>
+                            <?php endif; ?>
+                        </div>
+                    <?php else: ?>
+                        <span class="order-zone-tag none">Central</span>
+                    <?php endif; ?>
+                </td>
+                <td>
+                    <div style="font-weight: 600; color: #1e293b; display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                        <span><?= $prodName ?></span>
+                        <?php if ((int)($order['items_count'] ?? 0) > 1): ?>
+                            <span style="background: #eff6ff; color: #2563eb; border: 1px solid #bfdbfe; font-size: 11px; padding: 1px 6px; border-radius: 4px; font-weight: 700;" title="<?= htmlspecialchars($order['items_summary'] ?? '') ?>">
+                                +<?= ((int)$order['items_count'] - 1) ?> more
+                            </span>
+                        <?php endif; ?>
+                    </div>
+                    <?php if ((int)($order['items_count'] ?? 0) > 1 && !empty($order['items_summary'])): ?>
+                        <div style="font-size: 11px; color: #64748b; margin-top: 2px;" title="<?= htmlspecialchars($order['items_summary']) ?>">
+                            <?= htmlspecialchars($order['items_summary']) ?>
+                        </div>
+                    <?php elseif (!empty($order['net_content'])): ?>
+                        <div style="font-size: 11px; color: #64748b;">
+                            <?= (float)$order['net_content'] ?> <?= htmlspecialchars($order['net_content_unit'] ?? '') ?>
+                        </div>
+                    <?php endif; ?>
+                </td>
+                <td>
+                    <strong style="font-size: 14px;"><?= (int)$order['quantity'] ?></strong> <span style="font-size: 11px; color: #64748b;">Cases total</span>
+                </td>
+                <td>
+                    <div style="font-weight: 600; color: #0f172a; font-size: 14px;">
+                        <?= formatCurrency($order['total_amount']) ?>
+                    </div>
+                    <?php if ((float)$order['discount'] > 0): ?>
+                        <div style="font-size: 11px; color: #ef4444;">
+                            - <?= formatCurrency($order['discount']) ?> off
+                        </div>
+                    <?php endif; ?>
+                </td>
+                <td>
+                    <!-- Inline Quick Status Updater -->
+                    <form action="index.php?filter=<?= urlencode($status_filter) ?>&zone=<?= urlencode($zone_filter) ?>" method="POST" style="margin: 0;" class="status-update-form" data-order-id="<?= (int)$order['order_id'] ?>">
+                        <input type="hidden" name="update_status" value="1">
+                        <input type="hidden" name="order_id" value="<?= (int)$order['order_id'] ?>">
+                        <select name="status" class="status-select-input" onchange="handleOrderStatusChange(this, <?= (int)$order['order_id'] ?>)" style="padding: 4px 8px; border-radius: 6px; font-size: 12px; font-weight: 600; border: 1px solid #d1d5db; background: #fff; cursor: pointer; transition: border-color 0.2s;">
+                            <option value="pending" <?= ($order['status'] === 'pending') ? 'selected' : '' ?>>Pending</option>
+                            <option value="processing" <?= ($order['status'] === 'processing') ? 'selected' : '' ?>>Processing</option>
+                            <option value="shipped" <?= ($order['status'] === 'shipped') ? 'selected' : '' ?>>Shipped</option>
+                            <option value="delivered" <?= ($order['status'] === 'delivered') ? 'selected' : '' ?>>Delivered</option>
+                            <option value="cancelled" <?= ($order['status'] === 'cancelled') ? 'selected' : '' ?>>Cancelled</option>
+                        </select>
+                    </form>
+                </td>
+                <td>
+                    <div style="font-size: 13px; color: #475569;">
+                        <?= date('d M Y', strtotime($order['created_at'])) ?>
+                    </div>
+                    <div style="font-size: 11px; color: #94a3b8;">
+                        <?= date('H:i A', strtotime($order['created_at'])) ?>
+                    </div>
+                </td>
+                <td>
+                    <div style="display: flex; gap: 6px; align-items: center;">
+                        <a href="view.php?id=<?= (int)$order['order_id'] ?>" class="btn-action" style="padding: 5px 8px; background: #f1f5f9; color: #334155; border-radius: 6px; text-decoration: none; font-size: 12px; display: inline-flex; align-items: center; gap: 3px;" title="View Order">
+                            <i class='bx bx-show'></i> View
+                        </a>
+                        <a href="edit.php?id=<?= (int)$order['order_id'] ?>" class="btn-action" style="padding: 5px 8px; background: #e0f2fe; color: #0284c7; border-radius: 6px; text-decoration: none; font-size: 12px; display: inline-flex; align-items: center; gap: 3px;" title="Edit Order">
+                            <i class='bx bx-edit'></i> Edit
+                        </a>
+                        <a href="delete.php?id=<?= (int)$order['order_id'] ?>" onclick="return confirm('Are you sure you want to delete order <?= addslashes($displayOrderNum) ?>?');" class="btn-action" style="padding: 5px 8px; background: #fee2e2; color: #dc2626; border-radius: 6px; text-decoration: none; font-size: 12px; display: inline-flex; align-items: center; gap: 3px;" title="Delete Order">
+                            <i class='bx bx-trash'></i>
+                        </a>
+                    </div>
+                </td>
+            </tr>
+            <?php
+        }
+    }
+    return ob_get_clean();
+}
+
+// Helper to render pagination HTML
+function renderOrdersPagination(int $page, int $total_pages, string $status_filter = 'all', string $zone_filter = 'all', string $search = ''): string {
+    if ($total_pages <= 1) {
+        return '';
+    }
+    ob_start();
+    ?>
+    <div style="padding: 1.25rem; display: flex; justify-content: center; gap: 6px; border-top: 1px solid var(--border-light);">
+        <?php for ($i = 1; $i <= $total_pages; $i++): ?>
+            <a href="index.php?page=<?= $i ?>&filter=<?= urlencode($status_filter) ?>&zone=<?= urlencode($zone_filter) ?>&search=<?= urlencode($search) ?>" 
+               style="padding: 6px 12px; border-radius: 6px; text-decoration: none; font-size: 13px; font-weight: 500; <?= ($i === $page) ? 'background: #2563eb; color: #fff;' : 'background: #f1f5f9; color: #334155;' ?>">
+                <?= $i ?>
+            </a>
+        <?php endfor; ?>
+    </div>
+    <?php
+    return ob_get_clean();
+}
+
+// Handle AJAX Polling Request
+if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode([
+        'success'            => true,
+        'total_orders_count' => (int)$total_orders_count,
+        'total_formatted'    => number_format($total_orders_count),
+        'counts'             => [
+            'total'      => (int)($counts_data['total'] ?? 0),
+            'unchecked'  => (int)$unchecked_count,
+            'pending'    => (int)($counts_data['pending'] ?? 0),
+            'processing' => (int)($counts_data['processing'] ?? 0),
+            'shipped'    => (int)($counts_data['shipped'] ?? 0),
+            'delivered'  => (int)($counts_data['delivered'] ?? 0),
+            'cancelled'  => (int)($counts_data['cancelled'] ?? 0),
+        ],
+        'tbody_html'         => renderOrdersTbodyRows($orders, $status_filter, $zone_filter),
+        'pagination_html'    => renderOrdersPagination($page, $total_pages, $status_filter, $zone_filter, $search),
+        'max_order_id'       => !empty($orders) ? (int)$orders[0]['order_id'] : 0,
+    ]);
+    exit;
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -227,6 +435,7 @@ $unchecked_count = (int)$pdo->query("
             padding: 1px 6px;
             border-radius: 10px;
             font-size: 11px;
+            transition: all 0.2s;
         }
         .status-pill.active .badge-count-pill {
             background: rgba(255,255,255,0.25);
@@ -306,6 +515,42 @@ $unchecked_count = (int)$pdo->query("
             0% { background: #bbf7d0; transform: scale(1.1); }
             100% { background: #ecfdf5; transform: scale(1); }
         }
+
+        /* Live 3s Refresh Indicator */
+        .live-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 11px;
+            font-weight: 600;
+            color: #059669;
+            background: #ecfdf5;
+            border: 1px solid #a7f3d0;
+            padding: 3px 9px;
+            border-radius: 14px;
+            transition: all 0.25s ease;
+        }
+        .live-indicator.fetching {
+            background: #eff6ff;
+            color: #2563eb;
+            border-color: #bfdbfe;
+        }
+        .live-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: #10b981;
+            display: inline-block;
+            transition: background-color 0.25s;
+        }
+        .live-indicator.fetching .live-dot {
+            background: #3b82f6;
+            animation: live-pulse 0.5s infinite alternate;
+        }
+        @keyframes live-pulse {
+            0% { transform: scale(0.8); opacity: 0.7; }
+            100% { transform: scale(1.3); opacity: 1; }
+        }
     </style>
 </head>
 <body>
@@ -331,25 +576,25 @@ $unchecked_count = (int)$pdo->query("
                     <!-- Status Filter Pills -->
                     <div class="status-pill-group">
                         <a href="index.php?filter=all&zone=<?= urlencode($zone_filter) ?>&search=<?= urlencode($search) ?>" class="status-pill <?= ($status_filter === 'all') ? 'active' : '' ?>">
-                            All Orders <span class="badge-count-pill"><?= (int)($counts_data['total'] ?? 0) ?></span>
+                            All Orders <span class="badge-count-pill" id="badge-count-all"><?= (int)($counts_data['total'] ?? 0) ?></span>
                         </a>
-                        <a href="index.php?filter=unchecked&zone=<?= urlencode($zone_filter) ?>&search=<?= urlencode($search) ?>" class="status-pill <?= ($status_filter === 'unchecked') ? 'active' : '' ?>" style="<?= ($unchecked_count > 0 && $status_filter !== 'unchecked') ? 'border: 1px solid #fde68a; background: #fffbeb; color: #b45309;' : '' ?>" title="Orders assigned to zones that have not yet been checked by delivery staff">
-                            <i class='bx bx-bell' style="font-size: 14px;"></i> Unchecked <span class="badge-count-pill" style="<?= ($unchecked_count > 0 && $status_filter !== 'unchecked') ? 'background: #d97706; color: #fff;' : '' ?>"><?= $unchecked_count ?></span>
+                        <a href="index.php?filter=unchecked&zone=<?= urlencode($zone_filter) ?>&search=<?= urlencode($search) ?>" id="pill-unchecked" class="status-pill <?= ($status_filter === 'unchecked') ? 'active' : '' ?>" style="<?= ($unchecked_count > 0 && $status_filter !== 'unchecked') ? 'border: 1px solid #fde68a; background: #fffbeb; color: #b45309;' : '' ?>" title="Orders assigned to zones that have not yet been checked by delivery staff">
+                            <i class='bx bx-bell' style="font-size: 14px;"></i> Unchecked <span class="badge-count-pill" id="badge-count-unchecked" style="<?= ($unchecked_count > 0 && $status_filter !== 'unchecked') ? 'background: #d97706; color: #fff;' : '' ?>"><?= $unchecked_count ?></span>
                         </a>
                         <a href="index.php?filter=pending&zone=<?= urlencode($zone_filter) ?>&search=<?= urlencode($search) ?>" class="status-pill <?= ($status_filter === 'pending') ? 'active' : '' ?>">
-                            Pending <span class="badge-count-pill"><?= (int)($counts_data['pending'] ?? 0) ?></span>
+                            Pending <span class="badge-count-pill" id="badge-count-pending"><?= (int)($counts_data['pending'] ?? 0) ?></span>
                         </a>
                         <a href="index.php?filter=processing&zone=<?= urlencode($zone_filter) ?>&search=<?= urlencode($search) ?>" class="status-pill <?= ($status_filter === 'processing') ? 'active' : '' ?>">
-                            Processing <span class="badge-count-pill"><?= (int)($counts_data['processing'] ?? 0) ?></span>
+                            Processing <span class="badge-count-pill" id="badge-count-processing"><?= (int)($counts_data['processing'] ?? 0) ?></span>
                         </a>
                         <a href="index.php?filter=shipped&zone=<?= urlencode($zone_filter) ?>&search=<?= urlencode($search) ?>" class="status-pill <?= ($status_filter === 'shipped') ? 'active' : '' ?>">
-                            Shipped <span class="badge-count-pill"><?= (int)($counts_data['shipped'] ?? 0) ?></span>
+                            Shipped <span class="badge-count-pill" id="badge-count-shipped"><?= (int)($counts_data['shipped'] ?? 0) ?></span>
                         </a>
                         <a href="index.php?filter=delivered&zone=<?= urlencode($zone_filter) ?>&search=<?= urlencode($search) ?>" class="status-pill <?= ($status_filter === 'delivered') ? 'active' : '' ?>">
-                            Delivered <span class="badge-count-pill"><?= (int)($counts_data['delivered'] ?? 0) ?></span>
+                            Delivered <span class="badge-count-pill" id="badge-count-delivered"><?= (int)($counts_data['delivered'] ?? 0) ?></span>
                         </a>
                         <a href="index.php?filter=cancelled&zone=<?= urlencode($zone_filter) ?>&search=<?= urlencode($search) ?>" class="status-pill <?= ($status_filter === 'cancelled') ? 'active' : '' ?>">
-                            Cancelled <span class="badge-count-pill"><?= (int)($counts_data['cancelled'] ?? 0) ?></span>
+                            Cancelled <span class="badge-count-pill" id="badge-count-cancelled"><?= (int)($counts_data['cancelled'] ?? 0) ?></span>
                         </a>
                     </div>
 
@@ -373,12 +618,16 @@ $unchecked_count = (int)$pdo->query("
 
                 <!-- Orders Table Card -->
                 <div class="table-card">
-                    <div class="table-header" style="display: flex; justify-content: space-between; align-items: center; padding: 1.25rem 1.5rem;">
-                        <div class="table-title" style="font-size: 17px; font-weight: 600;">
-                            Orders (<?= number_format($total_orders_count) ?> total)
+                    <div class="table-header" style="display: flex; justify-content: space-between; align-items: center; padding: 1.25rem 1.5rem; flex-wrap: wrap; gap: 10px;">
+                        <div class="table-title" style="font-size: 17px; font-weight: 600; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                            <span>Orders (<span id="orders-total-count"><?= number_format($total_orders_count) ?></span> total)</span>
                             <?php if ($zone_filter !== 'all'): ?>
                                 <span style="font-size: 13px; font-weight: normal; color: #2563eb;">— Filtered by Zone</span>
                             <?php endif; ?>
+                            <span class="live-indicator" id="live-indicator" title="Auto-refreshing every 3 seconds">
+                                <span class="live-dot"></span>
+                                <span id="live-text">Live 3s</span>
+                            </span>
                         </div>
                         <div class="table-actions">
                             <a href="create.php" class="btn-action btn-add noselect" style="text-decoration: none;">
@@ -402,225 +651,209 @@ $unchecked_count = (int)$pdo->query("
                                     <th>Actions</th>
                                 </tr>
                             </thead>
-                            <tbody>
-                                <?php if (empty($orders)): ?>
-                                    <tr>
-                                        <td colspan="9" style="text-align: center; padding: 3rem; color: #64748b;">
-                                            No orders matching your criteria. <a href="create.php" style="color: var(--blue);">Create an order</a>
-                                        </td>
-                                    </tr>
-                                <?php else: ?>
-                                    <?php foreach ($orders as $order): 
-                                        $displayOrderNum = $order['order_number'] ?: ('#' . $order['order_id']);
-                                        $shopName = htmlspecialchars($order['shop_name'] ?: ($order['customer_name'] ?: ($order['web_user_name'] ?: 'Customer #' . $order['user_id'])));
-                                        $prodName = htmlspecialchars($order['product_name'] ?: ($order['fallback_product_name'] ?: 'Liyas Water'));
-                                        $zoneDisplay = htmlspecialchars($order['zone_name'] ?: 'Unassigned');
-                                        $zoneSlug = htmlspecialchars($order['zone_slug'] ?? '');
-                                    ?>
-                                    <tr data-order-id="<?= $order['order_id'] ?>">
-                                        <td>
-                                            <div style="display: flex; align-items: center; gap: 4px;">
-                                                <a href="view.php?id=<?= $order['order_id'] ?>" style="font-weight: 600; color: #2563eb; text-decoration: none;">
-                                                    <?= $displayOrderNum ?>
-                                                </a>
-                                                <?php if (!empty($order['zone_name'])): ?>
-                                                    <?php if ((int)$order['is_zone_read'] === 1): ?>
-                                                        <i class='bx bx-check-double' id="zone-check-icon-<?= $order['order_id'] ?>" style="color: #059669; font-size: 16px;" title="<?= !empty($order['zone_read_at']) ? 'Checked by ' . $zoneDisplay . ' on ' . date('d M, h:i A', strtotime($order['zone_read_at'])) : 'Checked by ' . $zoneDisplay ?>"></i>
-                                                    <?php else: ?>
-                                                        <span class="order-num-status-dot unread" id="zone-check-icon-<?= $order['order_id'] ?>" title="Waiting for <?= $zoneDisplay ?> to check"></span>
-                                                    <?php endif; ?>
-                                                <?php endif; ?>
-                                            </div>
-                                            <?php if (!empty($order['bill_number'])): ?>
-                                                <div style="font-size: 11px; color: #059669; font-weight: 500;">
-                                                    <i class='bx bx-receipt'></i> <?= htmlspecialchars($order['bill_number']) ?>
-                                                </div>
-                                            <?php endif; ?>
-                                        </td>
-                                        <td>
-                                            <div style="font-weight: 600; color: #1e293b;">
-                                                <?= $shopName ?>
-                                            </div>
-                                            <?php if (!empty($order['location'])): ?>
-                                                <div style="font-size: 12px; color: #64748b;">
-                                                    <i class='bx bx-map-pin' style="font-size: 11px;"></i> <?= htmlspecialchars($order['location']) ?>
-                                                </div>
-                                            <?php endif; ?>
-                                            <?php if (!empty($order['phone'])): ?>
-                                                <div style="font-size: 12px; color: #64748b;">
-                                                    <i class='bx bx-phone' style="font-size: 11px;"></i> <?= htmlspecialchars($order['phone']) ?>
-                                                </div>
-                                            <?php endif; ?>
-                                        </td>
-                                        <td>
-                                            <?php if (!empty($order['zone_name'])): ?>
-                                                <span class="order-zone-tag">
-                                                    <?= $zoneDisplay ?>
-                                                </span>
-                                                <div style="margin-top: 4px;">
-                                                    <?php if ((int)$order['is_zone_read'] === 1): ?>
-                                                        <span class="zone-seen-badge seen" id="zone-status-badge-<?= $order['order_id'] ?>" title="<?= !empty($order['zone_read_at']) ? 'Checked by ' . $zoneDisplay . ' on ' . date('d M Y, h:i A', strtotime($order['zone_read_at'])) : 'Checked by ' . $zoneDisplay ?>">
-                                                            <i class='bx bx-check-double'></i> Checked by Zone
-                                                        </span>
-                                                    <?php else: ?>
-                                                        <span class="zone-seen-badge unread" id="zone-status-badge-<?= $order['order_id'] ?>" title="Waiting for <?= $zoneDisplay ?> to open / check">
-                                                            <i class='bx bx-bell'></i> Unchecked
-                                                        </span>
-                                                    <?php endif; ?>
-                                                </div>
-                                            <?php else: ?>
-                                                <span class="order-zone-tag none">Central</span>
-                                            <?php endif; ?>
-                                        </td>
-                                        <td>
-                                            <div style="font-weight: 600; color: #1e293b; display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
-                                                <span><?= $prodName ?></span>
-                                                <?php if ((int)($order['items_count'] ?? 0) > 1): ?>
-                                                    <span style="background: #eff6ff; color: #2563eb; border: 1px solid #bfdbfe; font-size: 11px; padding: 1px 6px; border-radius: 4px; font-weight: 700;" title="<?= htmlspecialchars($order['items_summary'] ?? '') ?>">
-                                                        +<?= ((int)$order['items_count'] - 1) ?> more
-                                                    </span>
-                                                <?php endif; ?>
-                                            </div>
-                                            <?php if ((int)($order['items_count'] ?? 0) > 1 && !empty($order['items_summary'])): ?>
-                                                <div style="font-size: 11px; color: #64748b; margin-top: 2px;" title="<?= htmlspecialchars($order['items_summary']) ?>">
-                                                    <?= htmlspecialchars($order['items_summary']) ?>
-                                                </div>
-                                            <?php elseif (!empty($order['net_content'])): ?>
-                                                <div style="font-size: 11px; color: #64748b;">
-                                                    <?= (float)$order['net_content'] ?> <?= htmlspecialchars($order['net_content_unit'] ?? '') ?>
-                                                </div>
-                                            <?php endif; ?>
-                                        </td>
-                                        <td>
-                                            <strong style="font-size: 14px;"><?= (int)$order['quantity'] ?></strong> <span style="font-size: 11px; color: #64748b;">Cases total</span>
-                                        </td>
-                                        <td>
-                                            <div style="font-weight: 600; color: #0f172a; font-size: 14px;">
-                                                <?= formatCurrency($order['total_amount']) ?>
-                                            </div>
-                                            <?php if ((float)$order['discount'] > 0): ?>
-                                                <div style="font-size: 11px; color: #ef4444;">
-                                                    - <?= formatCurrency($order['discount']) ?> off
-                                                </div>
-                                            <?php endif; ?>
-                                        </td>
-                                        <td>
-                                            <!-- Inline Quick Status Updater -->
-                                            <form action="index.php?filter=<?= urlencode($status_filter) ?>&zone=<?= urlencode($zone_filter) ?>" method="POST" style="margin: 0;">
-                                                <input type="hidden" name="update_status" value="1">
-                                                <input type="hidden" name="order_id" value="<?= $order['order_id'] ?>">
-                                                <select name="status" onchange="this.form.submit()" style="padding: 4px 8px; border-radius: 6px; font-size: 12px; font-weight: 600; border: 1px solid #d1d5db; background: #fff; cursor: pointer;">
-                                                    <option value="pending" <?= ($order['status'] === 'pending') ? 'selected' : '' ?>>Pending</option>
-                                                    <option value="processing" <?= ($order['status'] === 'processing') ? 'selected' : '' ?>>Processing</option>
-                                                    <option value="shipped" <?= ($order['status'] === 'shipped') ? 'selected' : '' ?>>Shipped</option>
-                                                    <option value="delivered" <?= ($order['status'] === 'delivered') ? 'selected' : '' ?>>Delivered</option>
-                                                    <option value="cancelled" <?= ($order['status'] === 'cancelled') ? 'selected' : '' ?>>Cancelled</option>
-                                                </select>
-                                            </form>
-                                        </td>
-                                        <td>
-                                            <div style="font-size: 13px; color: #475569;">
-                                                <?= date('d M Y', strtotime($order['created_at'])) ?>
-                                            </div>
-                                            <div style="font-size: 11px; color: #94a3b8;">
-                                                <?= date('H:i A', strtotime($order['created_at'])) ?>
-                                            </div>
-                                        </td>
-                                        <td>
-                                            <div style="display: flex; gap: 6px; align-items: center;">
-                                                <a href="view.php?id=<?= $order['order_id'] ?>" class="btn-action" style="padding: 5px 8px; background: #f1f5f9; color: #334155; border-radius: 6px; text-decoration: none; font-size: 12px; display: inline-flex; align-items: center; gap: 3px;" title="View Order">
-                                                    <i class='bx bx-show'></i> View
-                                                </a>
-                                                <a href="edit.php?id=<?= $order['order_id'] ?>" class="btn-action" style="padding: 5px 8px; background: #e0f2fe; color: #0284c7; border-radius: 6px; text-decoration: none; font-size: 12px; display: inline-flex; align-items: center; gap: 3px;" title="Edit Order">
-                                                    <i class='bx bx-edit'></i> Edit
-                                                </a>
-                                                <a href="delete.php?id=<?= $order['order_id'] ?>" onclick="return confirm('Are you sure you want to delete order <?= addslashes($displayOrderNum) ?>?');" class="btn-action" style="padding: 5px 8px; background: #fee2e2; color: #dc2626; border-radius: 6px; text-decoration: none; font-size: 12px; display: inline-flex; align-items: center; gap: 3px;" title="Delete Order">
-                                                    <i class='bx bx-trash'></i>
-                                                </a>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                    <?php endforeach; ?>
-                                <?php endif; ?>
+                            <tbody id="orders-table-body">
+                                <?= renderOrdersTbodyRows($orders, $status_filter, $zone_filter) ?>
                             </tbody>
                         </table>
                     </div>
 
                     <!-- Pagination -->
-                    <?php if ($total_pages > 1): ?>
-                    <div style="padding: 1.25rem; display: flex; justify-content: center; gap: 6px; border-top: 1px solid var(--border-light);">
-                        <?php for ($i = 1; $i <= $total_pages; $i++): ?>
-                            <a href="index.php?page=<?= $i ?>&filter=<?= urlencode($status_filter) ?>&zone=<?= urlencode($zone_filter) ?>&search=<?= urlencode($search) ?>" 
-                               style="padding: 6px 12px; border-radius: 6px; text-decoration: none; font-size: 13px; font-weight: 500; <?= ($i === $page) ? 'background: #2563eb; color: #fff;' : 'background: #f1f5f9; color: #334155;' ?>">
-                                <?= $i ?>
-                            </a>
-                        <?php endfor; ?>
+                    <div id="orders-pagination-wrapper">
+                        <?= renderOrdersPagination($page, $total_pages, $status_filter, $zone_filter, $search) ?>
                     </div>
-                    <?php endif; ?>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Real-time Zone Check Status Poller -->
+    <!-- Notification Sound Element -->
+    <audio id="orderNotifyAudio" preload="auto">
+        <source src="<?= BASE_URL ?>/assets/videos/notify.wav" type="audio/wav">
+    </audio>
+
+    <!-- Real-time 3-Second AJAX Poller & Handlers -->
     <script>
         (function() {
-            const orderRows = document.querySelectorAll('tr[data-order-id]');
-            if (!orderRows.length) return;
+            const REFRESH_INTERVAL = 3000; // 3 seconds
+            let isPolling = false;
+            let autoRefreshPaused = false;
+            let lastKnownMaxOrderId = <?= !empty($orders) ? (int)$orders[0]['order_id'] : 0 ?>;
+            let lastKnownUncheckedCount = <?= (int)$unchecked_count ?>;
 
-            const orderIds = Array.from(orderRows).map(row => row.getAttribute('data-order-id')).filter(Boolean);
-            if (!orderIds.length) return;
+            // Unlock audio on first user click anywhere
+            document.addEventListener('click', function unlockAudio() {
+                const audio = document.getElementById('orderNotifyAudio');
+                if (audio) {
+                    audio.play().then(() => {
+                        audio.pause();
+                        audio.currentTime = 0;
+                    }).catch(() => {});
+                }
+                document.removeEventListener('click', unlockAudio);
+            }, { once: true });
 
-            function pollZoneStatus() {
-                fetch('check_zone_status.php?order_ids=' + orderIds.join(','))
-                    .then(res => res.json())
-                    .then(data => {
-                        if (!data.success || !data.statuses) return;
-
-                        for (const orderId in data.statuses) {
-                            const st = data.statuses[orderId];
-                            const badge = document.getElementById('zone-status-badge-' + orderId);
-                            const icon = document.getElementById('zone-check-icon-' + orderId);
-
-                            if (badge) {
-                                if (st.is_zone_read === 1) {
-                                    if (!badge.classList.contains('seen')) {
-                                        badge.className = 'zone-seen-badge seen';
-                                        badge.innerHTML = `<i class='bx bx-check-double'></i> Checked by Zone`;
-                                        badge.title = st.zone_read_text ? `Checked by ${st.zone_name} on ${st.zone_read_text}` : `Checked by ${st.zone_name}`;
-                                        
-                                        // Animate highlight
-                                        badge.style.animation = 'status-highlight 1.5s ease';
-                                        setTimeout(() => { badge.style.animation = ''; }, 1600);
-                                    }
-                                } else {
-                                    if (!badge.classList.contains('unread')) {
-                                        badge.className = 'zone-seen-badge unread';
-                                        badge.innerHTML = `<i class='bx bx-bell'></i> Unchecked`;
-                                        badge.title = `Waiting for ${st.zone_name} to check`;
-                                    }
-                                }
-                            }
-
-                            if (icon) {
-                                if (st.is_zone_read === 1) {
-                                    if (icon.tagName === 'SPAN') {
-                                        const newIcon = document.createElement('i');
-                                        newIcon.className = 'bx bx-check-double';
-                                        newIcon.id = 'zone-check-icon-' + orderId;
-                                        newIcon.style = 'color: #059669; font-size: 16px;';
-                                        newIcon.title = `Checked by ${st.zone_name}`;
-                                        icon.replaceWith(newIcon);
-                                    }
-                                }
-                            }
-                        }
-                    })
-                    .catch(err => console.debug('Zone check poll error:', err));
+            function playSound() {
+                const audio = document.getElementById('orderNotifyAudio');
+                if (audio) {
+                    audio.currentTime = 0;
+                    audio.play().catch(e => console.debug('Audio deferred until user interacts:', e));
+                }
             }
 
-            // Poll every 8 seconds
-            setInterval(pollZoneStatus, 8000);
+            function setLiveState(isFetching) {
+                const ind = document.getElementById('live-indicator');
+                if (!ind) return;
+                if (isFetching) {
+                    ind.classList.add('fetching');
+                } else {
+                    ind.classList.remove('fetching');
+                }
+            }
+
+            function updateBadge(id, count) {
+                const el = document.getElementById(id);
+                if (el) el.textContent = count;
+            }
+
+            function updateBadgesAndCounts(data) {
+                if (!data || !data.counts) return;
+                const c = data.counts;
+                updateBadge('badge-count-all', c.total);
+                updateBadge('badge-count-unchecked', c.unchecked);
+                updateBadge('badge-count-pending', c.pending);
+                updateBadge('badge-count-processing', c.processing);
+                updateBadge('badge-count-shipped', c.shipped);
+                updateBadge('badge-count-delivered', c.delivered);
+                updateBadge('badge-count-cancelled', c.cancelled);
+
+                const totalEl = document.getElementById('orders-total-count');
+                if (totalEl && data.total_formatted) totalEl.textContent = data.total_formatted;
+
+                // Unchecked pill highlight styling
+                const unchPill = document.getElementById('pill-unchecked');
+                const unchBadge = document.getElementById('badge-count-unchecked');
+                if (unchPill && !unchPill.classList.contains('active')) {
+                    if (c.unchecked > 0) {
+                        unchPill.style.border = '1px solid #fde68a';
+                        unchPill.style.background = '#fffbeb';
+                        unchPill.style.color = '#b45309';
+                        if (unchBadge) {
+                            unchBadge.style.background = '#d97706';
+                            unchBadge.style.color = '#fff';
+                        }
+                    } else {
+                        unchPill.style.border = '';
+                        unchPill.style.background = '';
+                        unchPill.style.color = '';
+                        if (unchBadge) {
+                            unchBadge.style.background = '';
+                            unchBadge.style.color = '';
+                        }
+                    }
+                }
+            }
+
+            window.handleOrderStatusChange = function(selectEl, orderId) {
+                const form = selectEl.closest('form');
+                if (!form) return;
+
+                autoRefreshPaused = true;
+                selectEl.disabled = true;
+                const origBorder = selectEl.style.borderColor;
+                selectEl.style.borderColor = '#3b82f6';
+
+                const fd = new FormData(form);
+                fd.append('ajax', '1');
+
+                fetch('index.php', {
+                    method: 'POST',
+                    body: fd,
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                })
+                .then(r => r.json())
+                .then(res => {
+                    if (res.success) {
+                        selectEl.style.borderColor = '#10b981';
+                        setTimeout(() => { selectEl.style.borderColor = origBorder; }, 1200);
+                        // Trigger immediate refresh after status change
+                        pollOrders();
+                    } else {
+                        alert(res.message || 'Error updating status');
+                        selectEl.style.borderColor = '#ef4444';
+                    }
+                })
+                .catch(err => {
+                    console.error('AJAX status update error, submitting form normally:', err);
+                    form.submit();
+                })
+                .finally(() => {
+                    selectEl.disabled = false;
+                    autoRefreshPaused = false;
+                });
+            };
+
+            function pollOrders() {
+                if (autoRefreshPaused || isPolling) return;
+
+                // Do not overwrite table while user is interacting with an input or select
+                const activeEl = document.activeElement;
+                if (activeEl && (activeEl.tagName === 'SELECT' || activeEl.tagName === 'INPUT')) {
+                    return;
+                }
+
+                isPolling = true;
+                setLiveState(true);
+
+                const currentUrl = new URL(window.location.href);
+                currentUrl.searchParams.set('ajax', '1');
+
+                fetch(currentUrl.toString(), {
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                })
+                .then(res => res.json())
+                .then(data => {
+                    if (!data || !data.success) return;
+
+                    // Detect new incoming orders or new unchecked alerts to play notification
+                    if (lastKnownMaxOrderId > 0 && data.max_order_id > lastKnownMaxOrderId) {
+                        playSound();
+                    } else if (data.counts && data.counts.unchecked > lastKnownUncheckedCount) {
+                        playSound();
+                    }
+
+                    if (data.max_order_id) {
+                        lastKnownMaxOrderId = Math.max(lastKnownMaxOrderId, data.max_order_id);
+                    }
+                    if (data.counts) {
+                        lastKnownUncheckedCount = data.counts.unchecked;
+                    }
+
+                    // Update badge counts and pill styles
+                    updateBadgesAndCounts(data);
+
+                    // Update table body
+                    const tbody = document.getElementById('orders-table-body');
+                    if (tbody && data.tbody_html !== undefined) {
+                        tbody.innerHTML = data.tbody_html;
+                    }
+
+                    // Update pagination
+                    const pagWrap = document.getElementById('orders-pagination-wrapper');
+                    if (pagWrap && data.pagination_html !== undefined) {
+                        pagWrap.innerHTML = data.pagination_html;
+                    }
+                })
+                .catch(err => {
+                    console.debug('Orders auto-refresh poll error:', err);
+                })
+                .finally(() => {
+                    isPolling = false;
+                    setLiveState(false);
+                });
+            }
+
+            // Schedule 3-second auto-refresh
+            setInterval(pollOrders, REFRESH_INTERVAL);
         })();
     </script>
 </body>
