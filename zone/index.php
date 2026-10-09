@@ -651,17 +651,30 @@ function buildWhatsAppLink($phone, $shop, $orderNum, $amount, $itemsText = '') {
             margin-bottom: 20px;
         }
 
-        @media (min-width: 640px) {
+        @media (max-width: 640px) {
             .metrics-grid {
-                grid-template-columns: repeat(3, 1fr);
+                grid-template-columns: repeat(1, 1fr);
             }
+
+           
+           
         }
+ 
+        @media (min-width: 640px) {
+             .metric-card{
+                /* display:block; */
+                 flex-direction:row;
+            }
+}
+
 
         @media (min-width: 1024px) {
             .metrics-grid {
                 grid-template-columns: repeat(5, 1fr);
                 gap: 14px;
             }
+
+
         }
 
         .metric-card {
@@ -1229,7 +1242,93 @@ function buildWhatsAppLink($phone, $shop, $orderNum, $amount, $itemsText = '') {
             color: #2563eb;
             border: 1px solid #bfdbfe;
         }
+/* Metrics Container & Toggle Button */
+.metrics-dropdown-wrapper {
+    margin-bottom: 20px;
+}
 
+.btn-metrics-toggle {
+    display: none; /* Hidden on tablets & desktop */
+    width: 100%;
+    align-items: center;
+    justify-content: space-between;
+    background: #ffffff;
+    border: 1.5px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: 12px 16px;
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text-main);
+    cursor: pointer;
+    font-family: inherit;
+    box-shadow: var(--shadow-subtle);
+    transition: all 0.2s ease;
+}
+
+.toggle-btn-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.toggle-hamburger-icon {
+    font-size: 20px;
+    color: var(--primary);
+}
+
+.toggle-chevron {
+    font-size: 20px;
+    color: var(--text-muted);
+    transition: transform 0.25s ease;
+}
+
+.btn-metrics-toggle.is-open .toggle-chevron {
+    transform: rotate(180deg);
+}
+
+/* Default Desktop Grid Layout */
+.metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+}
+
+@media (min-width: 1024px) {
+    .metrics-grid {
+        grid-template-columns: repeat(5, 1fr);
+        gap: 14px;
+    }
+}
+
+/* Mobile Dropdown Behavior (< 768px) */
+@media (max-width: 767px) {
+    .btn-metrics-toggle {
+        display: flex;
+    }
+
+    .metrics-grid {
+        display: none; /* Initially collapsed */
+        grid-template-columns: 1fr;
+        gap: 10px;
+        margin-top: 10px;
+        animation: drop-down 0.25s ease forwards;
+    }
+
+    .metrics-grid.show-mobile {
+        display: grid;
+    }
+}
+
+@keyframes drop-down {
+    from {
+        opacity: 0;
+        transform: translateY(-8px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
         .btn-discount-tag:hover {
             background: #dbeafe;
         }
@@ -1287,7 +1386,11 @@ function buildWhatsAppLink($phone, $shop, $orderNum, $amount, $itemsText = '') {
         .mobile-bottom-bar {
             display: none;
         }
-
+@media (max-width: 768px) {
+    .filter-pill.hide-mobile {
+        display: none !important;
+    }
+}
         @media (max-width: 640px) {
             .mobile-bottom-bar {
                 display: flex;
@@ -1353,13 +1456,11 @@ function buildWhatsAppLink($phone, $shop, $orderNum, $amount, $itemsText = '') {
     <header class="portal-header">
         <div class="header-inner">
             <a href="<?= zone_url($zone_slug) ?>" class="brand-cluster">
-                <div class="brand-icon">
-                    <i class='bx bx-water'></i>
-                </div>
+             
                 <div>
                     <div class="brand-title">Liyas Delivery</div>
                     <div class="brand-subtitle">
-                        <span>Zone Portal</span>
+                        <span>Zone </span>
                         <span>&bull;</span>
                         <span style="color: #2563eb;"><?= htmlspecialchars($zone_name) ?></span>
                     </div>
@@ -1367,11 +1468,7 @@ function buildWhatsAppLink($phone, $shop, $orderNum, $amount, $itemsText = '') {
             </a>
 
             <div class="header-actions">
-                <!-- Sound Alerts Toggle / Test Button -->
-                <button type="button" id="btnSoundToggle" class="btn-sound-toggle" title="Sound alerts enabled. Click to test notify.wav sound">
-                    <i class='bx bxs-volume-full' id="soundIcon"></i>
-                    <span id="soundLabel">Sound Active</span>
-                </button>
+               
 
                 <span class="zone-badge">
                     <span class="pulse-dot"></span>
@@ -1381,15 +1478,10 @@ function buildWhatsAppLink($phone, $shop, $orderNum, $amount, $itemsText = '') {
                 <!-- Quick New Delivery/Receipt -->
                 <a href="<?= zone_url($zone_slug, 'generate-receipt') ?>" class="btn-header-action btn-new-bill-header" title="Create Direct Bill / Spot Delivery">
                     <i class='bx bx-plus-circle' style="font-size: 16px;"></i>
-                    <span style="display: none; @media(min-width: 480px){display: inline;}">+ New Delivery</span>
+                    <span style=" @media(min-width: 480px){display: inline;}">Add Order</span>
                 </a>
 
-                <?php if (isset($_SESSION['admin_id'])): ?>
-                    <a href="<?= BASE_URL ?>/admin/dashboard/index.php" class="btn-header-action btn-admin-back" title="Return to Admin Panel">
-                        <i class='bx bx-arrow-back'></i>
-                        <span style="display: none; @media(min-width: 540px){display: inline;}">Admin</span>
-                    </a>
-                <?php endif; ?>
+          
             </div>
         </div>
     </header>
@@ -1472,126 +1564,155 @@ function buildWhatsAppLink($phone, $shop, $orderNum, $amount, $itemsText = '') {
 
         <!-- KEY METRICS OVERVIEW (Clickable Quick Filters) -->
         <!-- Added Total Credited next to Cash Collected + Instant Click-to-Filter -->
-        <section class="metrics-grid">
-            <a href="<?= zone_url($zone_slug, '', ['filter' => 'pending']) ?>" class="metric-card metric-pending <?= ($filter === 'pending') ? 'active-card' : '' ?>" title="Click to show pending deliveries">
-                <div class="metric-card-top">
-                    <span class="metric-label">Pending</span>
-                    <div class="metric-icon-box">
-                        <i class='bx bx-time-five'></i>
-                    </div>
-                </div>
-                <div>
-                    <div class="metric-val"><?= (int)$metrics['pending_count'] ?></div>
-                    <div class="metric-hint">
-                        <span>Orders to deliver</span>
-                        <i class='bx bx-chevron-right'></i>
-                    </div>
-                </div>
-            </a>
+       <!-- METRICS WRAPPER WITH HAMBURGER TOGGLE FOR MOBILE -->
+<div class="metrics-dropdown-wrapper">
+    <!-- Toggle Button visible only on mobile/small screens -->
+    <button type="button" class="btn-metrics-toggle" id="toggleMetricsBtn" aria-expanded="false" aria-controls="metricsGrid">
+        <div class="toggle-btn-left">
+            <i class='bx bx-menu-alt-left toggle-hamburger-icon'></i>
+            <span>Dashboard</span>
+        </div>
+        <i class='bx bx-chevron-down toggle-chevron' id="toggleMetricsChevron"></i>
+    </button>
 
-            <a href="<?= zone_url($zone_slug, '', ['filter' => 'delivered']) ?>" class="metric-card metric-delivered <?= ($filter === 'delivered') ? 'active-card' : '' ?>" title="Click to show delivered orders">
-                <div class="metric-card-top">
-                    <span class="metric-label">Delivered</span>
-                    <div class="metric-icon-box">
-                        <i class='bx bx-check-circle'></i>
-                    </div>
+    <!-- KEY METRICS OVERVIEW (Collapsed by default on mobile) -->
+    <section class="metrics-grid" id="metricsGrid">
+        <a href="<?= zone_url($zone_slug, '', ['filter' => 'pending']) ?>" class="metric-card metric-pending <?= ($filter === 'pending') ? 'active-card' : '' ?>" title="Click to show pending deliveries">
+            <div class="metric-card-top">
+                <span class="metric-label">Pending</span>
+                <div class="metric-icon-box">
+                    <i class='bx bx-time-five'></i>
                 </div>
-                <div>
-                    <div class="metric-val"><?= (int)$metrics['delivered_count'] ?></div>
-                    <div class="metric-hint">
-                        <span>Delivered orders</span>
-                        <i class='bx bx-chevron-right'></i>
-                    </div>
+            </div>
+            <div>
+                <div class="metric-val"><?= (int)$metrics['pending_count'] ?></div>
+                <div class="metric-hint">
+                    <span>Orders to deliver</span>
+                    <i class='bx bx-chevron-right'></i>
                 </div>
-            </a>
+            </div>
+        </a>
 
-            <!-- In-Hand Cash Collected -->
-            <a href="<?= zone_url($zone_slug, '', ['filter' => 'cash']) ?>" class="metric-card metric-cash <?= ($filter === 'cash') ? 'active-card' : '' ?>" title="Click to show orders with cash collected">
-                <div class="metric-card-top">
-                    <span class="metric-label">In-Hand Cash</span>
-                    <div class="metric-icon-box">
-                        <i class='bx bx-money'></i>
-                    </div>
+        <a href="<?= zone_url($zone_slug, '', ['filter' => 'delivered']) ?>" class="metric-card metric-delivered <?= ($filter === 'delivered') ? 'active-card' : '' ?>" title="Click to show delivered orders">
+            <div class="metric-card-top">
+                <span class="metric-label">Delivered</span>
+                <div class="metric-icon-box">
+                    <i class='bx bx-check-circle'></i>
                 </div>
-                <div>
-                    <div class="metric-val"><?= formatCurrency($metrics['total_cash_collected']) ?></div>
-                    <div class="metric-hint">
-                        <span>Cash collected</span>
-                        <i class='bx bx-chevron-right'></i>
-                    </div>
+            </div>
+            <div>
+                <div class="metric-val"><?= (int)$metrics['delivered_count'] ?></div>
+                <div class="metric-hint">
+                    <span>Delivered orders</span>
+                    <i class='bx bx-chevron-right'></i>
                 </div>
-            </a>
+            </div>
+        </a>
 
-            <!-- Total Credited Amount (Next to In-Hand Cash) -->
-            <a href="<?= zone_url($zone_slug, '', ['filter' => 'credit']) ?>" class="metric-card metric-credit <?= ($filter === 'credit') ? 'active-card' : '' ?>" title="Click to show orders with credit">
-                <div class="metric-card-top">
-                    <span class="metric-label">Total Credited</span>
-                    <div class="metric-icon-box">
-                        <i class='bx bx-credit-card'></i>
-                    </div>
+        <!-- In-Hand Cash Collected -->
+        <a href="<?= zone_url($zone_slug, '', ['filter' => 'cash']) ?>" class="metric-card metric-cash <?= ($filter === 'cash') ? 'active-card' : '' ?>" title="Click to show orders with cash collected">
+            <div class="metric-card-top">
+                <span class="metric-label">In-Hand Cash</span>
+                <div class="metric-icon-box">
+                    <i class='bx bx-money'></i>
                 </div>
-                <div>
-                    <div class="metric-val"><?= formatCurrency($metrics['total_credit']) ?></div>
-                    <div class="metric-hint">
-                        <span>Credit amount</span>
-                        <i class='bx bx-chevron-right'></i>
-                    </div>
+            </div>
+            <div>
+                <div class="metric-val"><?= formatCurrency($metrics['total_cash_collected']) ?></div>
+                <div class="metric-hint">
+                    <span>Cash collected</span>
+                    <i class='bx bx-chevron-right'></i>
                 </div>
-            </a>
+            </div>
+        </a>
 
-            <!-- Outstanding Due (Clickable: shows orders with due) -->
-            <a href="<?= zone_url($zone_slug, '', ['filter' => 'due']) ?>" class="metric-card metric-due <?= ($filter === 'due') ? 'active-card' : '' ?>" title="Click to show orders with pending due balance">
-                <div class="metric-card-top">
-                    <span class="metric-label">Outstanding Due</span>
-                    <div class="metric-icon-box">
-                        <i class='bx bx-error-circle'></i>
-                    </div>
+        <!-- Total Credited Amount -->
+        <a href="<?= zone_url($zone_slug, '', ['filter' => 'credit']) ?>" class="metric-card metric-credit <?= ($filter === 'credit') ? 'active-card' : '' ?>" title="Click to show orders with credit">
+            <div class="metric-card-top">
+                <span class="metric-label">Total Credited</span>
+                <div class="metric-icon-box">
+                    <i class='bx bx-credit-card'></i>
                 </div>
-                <div>
-                    <div class="metric-val" style="color: <?= ((float)$metrics['total_due'] > 0) ? '#dc2626' : '#64748b' ?>;">
-                        <?= formatCurrency($metrics['total_due']) ?>
-                    </div>
-                    <div class="metric-hint" style="color: <?= ((float)$metrics['total_due'] > 0) ? '#dc2626' : '#64748b' ?>;">
-                        <span>Pending due balance</span>
-                        <i class='bx bx-chevron-right'></i>
-                    </div>
+            </div>
+            <div>
+                <div class="metric-val"><?= formatCurrency($metrics['total_credit']) ?></div>
+                <div class="metric-hint">
+                    <span>Credit amount</span>
+                    <i class='bx bx-chevron-right'></i>
                 </div>
-            </a>
-        </section>
+            </div>
+        </a>
 
+        <!-- Outstanding Due -->
+        <a href="<?= zone_url($zone_slug, '', ['filter' => 'due']) ?>" class="metric-card metric-due <?= ($filter === 'due') ? 'active-card' : '' ?>" title="Click to show orders with pending due balance">
+            <div class="metric-card-top">
+                <span class="metric-label">Outstanding Due</span>
+                <div class="metric-icon-box">
+                    <i class='bx bx-error-circle'></i>
+                </div>
+            </div>
+            <div>
+                <div class="metric-val" style="color: <?= ((float)$metrics['total_due'] > 0) ? '#dc2626' : '#64748b' ?>;">
+                    <?= formatCurrency($metrics['total_due']) ?>
+                </div>
+                <div class="metric-hint" style="color: <?= ((float)$metrics['total_due'] > 0) ? '#dc2626' : '#64748b' ?>;">
+                    <span>Pending due balance</span>
+                    <i class='bx bx-chevron-right'></i>
+                </div>
+            </div>
+        </a>
+    </section>
+</div>
+
+        <!-- CONTROLS: FILTER CHIPS & LIVE SEARCH -->
         <!-- CONTROLS: FILTER CHIPS & LIVE SEARCH -->
         <section class="controls-panel">
             <div class="filter-scroll-container">
+                <!-- Keep on Mobile: All Orders -->
                 <a href="<?= zone_url($zone_slug, '', ['filter' => 'all']) ?>" class="filter-pill <?= ($filter === 'all') ? 'active' : '' ?>">
                     <span>All Orders</span>
                     <span class="filter-counter"><?= (int)$status_counts['total'] ?></span>
                 </a>
-                <a href="<?= zone_url($zone_slug, '', ['filter' => 'due']) ?>" class="filter-pill <?= ($filter === 'due') ? 'active' : '' ?>" style="color: #dc2626; border-color: #fecaca; background: <?= ($filter === 'due') ? '#dc2626' : '#fef2f2' ?>; color: <?= ($filter === 'due') ? '#fff' : '#dc2626' ?>;">
+
+                <!-- Keep on Mobile: Due -->
+                <a href="<?= zone_url($zone_slug, '', ['filter' => 'due']) ?>" class="filter-pill <?= ($filter === 'due') ? 'active' : '' ?>" style="border-color: #fecaca; background: <?= ($filter === 'due') ? '#dc2626' : '#fef2f2' ?>; color: <?= ($filter === 'due') ? '#fff' : '#dc2626' ?>;">
                     <i class='bx bx-error-circle'></i>
-                    <span>Has Due</span>
+                    <span>Due</span>
                     <span class="filter-counter"><?= (int)$status_counts['due_count'] ?></span>
                 </a>
-                <a href="<?= zone_url($zone_slug, '', ['filter' => 'pending']) ?>" class="filter-pill <?= ($filter === 'pending') ? 'active' : '' ?>">
+
+                <!-- Hide on Mobile: Pending -->
+                <a href="<?= zone_url($zone_slug, '', ['filter' => 'pending']) ?>" class="filter-pill hide-mobile <?= ($filter === 'pending') ? 'active' : '' ?>">
                     <span>Pending</span>
                     <span class="filter-counter"><?= (int)$status_counts['pending'] ?></span>
                 </a>
-                <a href="<?= zone_url($zone_slug, '', ['filter' => 'delivered']) ?>" class="filter-pill <?= ($filter === 'delivered') ? 'active' : '' ?>">
+
+                <!-- Hide on Mobile: Delivered -->
+                <a href="<?= zone_url($zone_slug, '', ['filter' => 'delivered']) ?>" class="filter-pill hide-mobile <?= ($filter === 'delivered') ? 'active' : '' ?>">
                     <span>Delivered</span>
                     <span class="filter-counter"><?= (int)$status_counts['delivered'] ?></span>
                 </a>
+
+                <!-- Keep on Mobile: Cash Paid -->
                 <a href="<?= zone_url($zone_slug, '', ['filter' => 'cash']) ?>" class="filter-pill <?= ($filter === 'cash') ? 'active' : '' ?>">
                     <span>Cash Paid</span>
                     <span class="filter-counter"><?= (int)$status_counts['cash_count'] ?></span>
                 </a>
-                <a href="<?= zone_url($zone_slug, '', ['filter' => 'credit']) ?>" class="filter-pill <?= ($filter === 'credit') ? 'active' : '' ?>">
+
+                <!-- Hide on Mobile: Credited -->
+                <a href="<?= zone_url($zone_slug, '', ['filter' => 'credit']) ?>" class="filter-pill hide-mobile <?= ($filter === 'credit') ? 'active' : '' ?>">
                     <span>Credited</span>
                     <span class="filter-counter"><?= (int)$status_counts['credit_count'] ?></span>
                 </a>
-                <a href="<?= zone_url($zone_slug, '', ['filter' => 'processing']) ?>" class="filter-pill <?= ($filter === 'processing') ? 'active' : '' ?>">
+
+                <!-- Hide on Mobile: Processing -->
+                <a href="<?= zone_url($zone_slug, '', ['filter' => 'processing']) ?>" class="filter-pill hide-mobile <?= ($filter === 'processing') ? 'active' : '' ?>">
                     <span>Processing</span>
                     <span class="filter-counter"><?= (int)$status_counts['processing'] ?></span>
                 </a>
-                <a href="<?= zone_url($zone_slug, '', ['filter' => 'shipped']) ?>" class="filter-pill <?= ($filter === 'shipped') ? 'active' : '' ?>">
+
+                <!-- Hide on Mobile: Shipped -->
+                <a href="<?= zone_url($zone_slug, '', ['filter' => 'shipped']) ?>" class="filter-pill hide-mobile <?= ($filter === 'shipped') ? 'active' : '' ?>">
                     <span>Shipped</span>
                     <span class="filter-counter"><?= (int)$status_counts['shipped'] ?></span>
                 </a>
@@ -1699,12 +1820,12 @@ function buildWhatsAppLink($phone, $shop, $orderNum, $amount, $itemsText = '') {
 
                                 <?php if (!empty($phone)): ?>
                                     <a href="tel:<?= htmlspecialchars($phone) ?>" class="action-chip-link chip-call" title="Call Customer">
-                                        <i class='bx bx-phone'></i> Call
+                                        <i class='bx bx-phone'></i>
                                     </a>
 
                                     <?php if (!empty($waLink)): ?>
                                         <a href="<?= $waLink ?>" target="_blank" class="action-chip-link chip-whatsapp" title="Send WhatsApp">
-                                            <i class='bx bxl-whatsapp'></i> WhatsApp
+                                            <i class='bx bxl-whatsapp'></i>
                                         </a>
                                     <?php endif; ?>
                                 <?php endif; ?>
@@ -2086,6 +2207,18 @@ function buildWhatsAppLink($phone, $shop, $orderNum, $amount, $itemsText = '') {
                 });
             };
         })();
+         document.addEventListener('DOMContentLoaded', function() {
+    const toggleBtn = document.getElementById('toggleMetricsBtn');
+    const metricsGrid = document.getElementById('metricsGrid');
+
+    if (toggleBtn && metricsGrid) {
+        toggleBtn.addEventListener('click', function() {
+            const isOpen = metricsGrid.classList.toggle('show-mobile');
+            toggleBtn.classList.toggle('is-open', isOpen);
+            toggleBtn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+        });
+    }
+});
     </script>
 </body>
 </html>

@@ -429,7 +429,7 @@ try {
                                     <th style="text-align: right;">Credited Amount</th>
                                     <th style="text-align: right;">Outstanding Due</th>
                                     <th style="text-align: right;">Delivered Revenue</th>
-                                    <th style="text-align: center;">Orders (Pending)</th>
+                                    <th style="text-align: center;">Orders</th>
                                     <th style="text-align: center;">Delivery Portal</th>
                                 </tr>
                             </thead>
