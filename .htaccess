@@ -1,34 +1,45 @@
-# Root .htaccess - Liyas International Multi-Zone System
+# Root .htaccess - Security and Redirects
 <IfModule mod_rewrite.c>
     RewriteEngine On
+    
+     # Redirect direct access to index-temp.php → /
+    RewriteCond %{THE_REQUEST} \s/index-temp\.php [NC]
+    RewriteRule ^index-temp\.php$ / [R=301,L]
 
-    # Exclude direct physical files and directories from all rewrites
-    RewriteCond %{REQUEST_FILENAME} -f [OR]
-    RewriteCond %{REQUEST_FILENAME} -d
-    RewriteRule ^ - [L]
-
-    # Special handler for root index
+    # Load index-temp.php when accessing root
     RewriteRule ^$ index-temp.php [L]
 
-    # Dynamic Zone Delivery Portal Routes:
-    # 1. Matches /{zone_slug}/{action} -> zone/{action}.php?zone={zone_slug}
-    RewriteCond %{REQUEST_URI} !/(admin|assets|uploads|config|vendor|public|join|redeem|error-pages|cart|scripts|sql|zone) [NC]
-    RewriteRule ^([a-zA-Z0-9_-]+)/([a-zA-Z0-9_-]+)/?$ zone/$2.php?zone=$1 [L,QSA]
-
-    # 2. Matches /{zone_slug} -> zone/index.php?zone={zone_slug}
-    RewriteCond %{REQUEST_URI} !/(admin|assets|uploads|config|vendor|public|join|redeem|error-pages|cart|scripts|sql|zone) [NC]
-    RewriteRule ^([a-zA-Z0-9_-]+)/?$ zone/index.php?zone=$1 [L,QSA]
-
-    # Clean URL support: automatically maps /admin/dashboard/index to /admin/dashboard/index.php
-    RewriteCond %{REQUEST_FILENAME}.php -f
-    RewriteRule ^(.*)$ $1.php [L,QSA]
-
-    # Handle /redeem route
-    RewriteCond %{REQUEST_URI} ^.*/redeem/?$ [NC]
+    # Exclude cart API files from all rewrite rules
+    RewriteRule ^(add_to_cart|get_cart|update_cart_quantity|remove_from_cart|submit_review|get_product_details)\.php$ - [L]
+    
+    # Special redirect for /redeem.php to /redeem (301 permanent)
+    RewriteCond %{THE_REQUEST} /redeem\.php[\s?] [NC]
+    RewriteRule ^redeem\.php$ /redeem? [NC,L,R=301]
+    
+    # Handle /redeem and /redeem/ (with or without trailing slash) - internal rewrite
+    RewriteCond %{REQUEST_URI} ^/redeem/?$ [NC]
     RewriteRule ^redeem/?$ redeem/index.php [L]
-
-    # Redirect other unmatched non-file requests to public/
-    RewriteCond %{REQUEST_URI} !/(admin|zone|public|join|assets|uploads)/ [NC]
+    
+    # Redirect other old .php URLs to clean URLs (301 permanent redirect)
+    # BUT preserve query strings - exclude admin directory and cart API from this rule
+    # Do not redirect POST requests to prevent losing POST payload
+    RewriteCond %{REQUEST_METHOD} !POST
+    RewriteCond %{THE_REQUEST} /([^.]+)\.php[\s?] [NC]
+    RewriteCond %{REQUEST_URI} !^/redeem\.php$ [NC]
+    RewriteCond %{REQUEST_URI} !^/admin/ [NC]
+    RewriteRule ^ /%1 [NC,L,R=301,QSA]
+    
+    # Remove .php extension from URLs (internal rewrite for other files)
+    # Preserve query strings - exclude admin directory from this rule
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteCond %{REQUEST_FILENAME}\.php -f
+    RewriteCond %{REQUEST_URI} !^/redeem [NC]
+    RewriteCond %{REQUEST_URI} !^/admin/ [NC]
+    RewriteRule ^(.*)$ $1.php [L,QSA]
+    
+    # Redirect root to public directory
+    RewriteCond %{REQUEST_URI} !^/public/
+    RewriteCond %{REQUEST_URI} !^/join/
     RewriteCond %{REQUEST_FILENAME} !-f
     RewriteCond %{REQUEST_FILENAME} !-d
     RewriteRule ^(.*)$ public/$1 [L]
