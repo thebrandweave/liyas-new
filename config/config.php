@@ -102,7 +102,7 @@ $JWT_SECRET = "super_secure_secret_987654321";
 $JWT_EXPIRE = 3600;
 
 if ($is_live) {
-    define('BASE_URL', 'https://liyasinternational.com/index-temp');
+    define('BASE_URL', 'https://liyasinternational.com/');
 } else {
     define('BASE_URL', 'http://localhost/liyas-new');
 }
