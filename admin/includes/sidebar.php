@@ -60,6 +60,13 @@ try {
 } catch (PDOException $e) {
     // silent fail
 }
+
+// Check if any sub-item in the "More" dropdown is currently active
+$more_dirs = ['advertisements', 'reviews', 'social-links', 'subscriptions', 'notifications', 'users', 'qr-rewards', 'activity-logs'];
+$is_more_active = in_array($current_dir, $more_dirs) || in_array($current_page, $more_dirs);
+
+// Total alert badges inside the dropdown
+$more_badge_total = $ads_count + $reviews_pending_count + $social_count + $subs_count + $notifications_count + $users_count;
 ?>
 
 <button id="sidebarToggle" class="sidebar-toggle" aria-label="Toggle sidebar">
@@ -152,71 +159,92 @@ try {
                 <?php endif; ?>
             </a>
 
-            <a href="<?= $base_path ?>advertisements/index.php"
-               class="nav-item <?= ($current_dir=='advertisements'||$current_page==='advertisements')?'active':'' ?>">
-                <i class='bx bx-image'></i>
-                <span>Advertisements</span>
-                <?php if ($ads_count > 0): ?>
-                    <span class="nav-badge"><?= $ads_count ?></span>
-                <?php endif; ?>
-            </a>
+            <!-- Dropdown Toggle Button for Utilities / Extra Modules -->
+            <button type="button" 
+                    id="moreOptionsToggle" 
+                    class="nav-item <?= $is_more_active ? 'active' : '' ?>" 
+                    style="width: 100%; border: none; background: transparent; cursor: pointer; text-align: left; display: flex; align-items: center; justify-content: space-between;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <i class='bx bx-grid-alt'></i>
+                    <span>More Options</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 6px;">
+                    <?php if (!$is_more_active && $more_badge_total > 0): ?>
+                        <span class="badge-count" style="font-size: 10px;"><?= $more_badge_total ?></span>
+                    <?php endif; ?>
+                    <i class='bx bx-chevron-down' id="moreDropdownArrow" style="transition: transform 0.2s; <?= $is_more_active ? 'transform: rotate(180deg);' : '' ?>"></i>
+                </div>
+            </button>
 
-            <a href="<?= $base_path ?>reviews/index.php"
-               class="nav-item <?= ($current_dir=='reviews'||$current_page==='reviews')?'active':'' ?>">
-                <i class='bx bx-star'></i>
-                <span>Reviews</span>
-                <?php if ($reviews_pending_count > 0): ?>
-                    <span class="badge-count"><?= $reviews_pending_count ?></span>
-                <?php endif; ?>
-            </a>
+            <!-- Collapsible Sub-menu -->
+            <div id="moreOptionsSubmenu" style="display: <?= $is_more_active ? 'block' : 'none' ?>; padding-left: 12px; border-left: 2px solid rgba(0,0,0,0.06); ">
+                <a href="<?= $base_path ?>advertisements/index.php"
+                   class="nav-item <?= ($current_dir=='advertisements'||$current_page==='advertisements')?'active':'' ?>">
+                    <i class='bx bx-image'></i>
+                    <span>Advertisements</span>
+                    <?php if ($ads_count > 0): ?>
+                        <span class="nav-badge"><?= $ads_count ?></span>
+                    <?php endif; ?>
+                </a>
 
-            <a href="<?= $base_path ?>social-links/index.php"
-               class="nav-item <?= ($current_dir=='social-links'||$current_page==='social-links')?'active':'' ?>">
-                <i class='bx bx-share-alt'></i>
-                <span>Social Media</span>
-                <?php if ($social_count > 0): ?>
-                    <span class="nav-badge"><?= $social_count ?></span>
-                <?php endif; ?>
-            </a>
+                <a href="<?= $base_path ?>reviews/index.php"
+                   class="nav-item <?= ($current_dir=='reviews'||$current_page==='reviews')?'active':'' ?>">
+                    <i class='bx bx-star'></i>
+                    <span>Reviews</span>
+                    <?php if ($reviews_pending_count > 0): ?>
+                        <span class="badge-count"><?= $reviews_pending_count ?></span>
+                    <?php endif; ?>
+                </a>
 
-            <a href="<?= $base_path ?>subscriptions/index.php"
-               class="nav-item <?= ($current_dir=='subscriptions'||$current_page==='subscriptions')?'active':'' ?>">
-                <i class='bx bx-envelope'></i>
-                <span>Newsletter</span>
-                <?php if ($subs_count > 0): ?>
-                    <span class="nav-badge"><?= $subs_count ?></span>
-                <?php endif; ?>
-            </a>
+                <a href="<?= $base_path ?>social-links/index.php"
+                   class="nav-item <?= ($current_dir=='social-links'||$current_page==='social-links')?'active':'' ?>">
+                    <i class='bx bx-share-alt'></i>
+                    <span>Social Media</span>
+                    <?php if ($social_count > 0): ?>
+                        <span class="nav-badge"><?= $social_count ?></span>
+                    <?php endif; ?>
+                </a>
 
-            <a href="<?= $base_path ?>notifications/index.php"
-               class="nav-item <?= ($current_dir=='notifications'||$current_page==='notifications')?'active':'' ?>">
-                <i class='bx bx-bell'></i>
-                <span>Notifications</span>
-                <?php if ($notifications_count > 0): ?>
-                    <span class="badge-count"><?= $notifications_count ?></span>
-                <?php endif; ?>
-            </a>
+                <a href="<?= $base_path ?>subscriptions/index.php"
+                   class="nav-item <?= ($current_dir=='subscriptions'||$current_page==='subscriptions')?'active':'' ?>">
+                    <i class='bx bx-envelope'></i>
+                    <span>Newsletter</span>
+                    <?php if ($subs_count > 0): ?>
+                        <span class="nav-badge"><?= $subs_count ?></span>
+                    <?php endif; ?>
+                </a>
 
-            <a href="<?= $base_path ?>users/index.php"
-               class="nav-item <?= ($current_dir=='users'||$current_page==='users')?'active':'' ?>">
-                <i class='bx bx-group'></i>
-                <span>Users</span>
-                <?php if ($users_count > 0): ?>
-                    <span class="nav-badge"><?= $users_count ?></span>
-                <?php endif; ?>
-            </a>
+                <a href="<?= $base_path ?>notifications/index.php"
+                   class="nav-item <?= ($current_dir=='notifications'||$current_page==='notifications')?'active':'' ?>">
+                    <i class='bx bx-bell'></i>
+                    <span>Notifications</span>
+                    <?php if ($notifications_count > 0): ?>
+                        <span class="badge-count"><?= $notifications_count ?></span>
+                    <?php endif; ?>
+                </a>
 
-            <a href="<?= $base_path ?>qr-rewards/index.php"
-               class="nav-item <?= ($current_dir=='qr-rewards'||$current_page==='qr-rewards')?'active':'' ?>">
-                <i class='bx bx-qr'></i>
-                <span>QR Rewards</span>
-            </a>
+                <a href="<?= $base_path ?>users/index.php"
+                   class="nav-item <?= ($current_dir=='users'||$current_page==='users')?'active':'' ?>">
+                    <i class='bx bx-group'></i>
+                    <span>Users</span>
+                    <?php if ($users_count > 0): ?>
+                        <span class="nav-badge"><?= $users_count ?></span>
+                    <?php endif; ?>
+                </a>
 
-            <a href="<?= $base_path ?>activity-logs/index.php"
-               class="nav-item <?= ($current_dir=='activity-logs'||$current_page==='activity-logs')?'active':'' ?>">
-                <i class='bx bx-history'></i>
-                <span>Activity Logs</span>
-            </a>
+                <a href="<?= $base_path ?>qr-rewards/index.php"
+                   class="nav-item <?= ($current_dir=='qr-rewards'||$current_page==='qr-rewards')?'active':'' ?>">
+                    <i class='bx bx-qr'></i>
+                    <span>QR Rewards</span>
+                </a>
+
+                <a href="<?= $base_path ?>activity-logs/index.php"
+                   class="nav-item <?= ($current_dir=='activity-logs'||$current_page==='activity-logs')?'active':'' ?>">
+                    <i class='bx bx-history'></i>
+                    <span>Activity Logs</span>
+                </a>
+            </div>
+
         <?php endif; ?>
 
     </nav>
@@ -231,10 +259,28 @@ try {
 
 <script>
 (function () {
+    // Sidebar open/collapse toggle
     const toggle = document.getElementById('sidebarToggle');
-    if (!toggle) return;
-    toggle.addEventListener('click', function () {
-        document.body.classList.toggle('sidebar-open');
-    });
+    if (toggle) {
+        toggle.addEventListener('click', function () {
+            document.body.classList.toggle('sidebar-open');
+        });
+    }
+
+    // More Options collapsible menu toggle
+    const moreBtn = document.getElementById('moreOptionsToggle');
+    const submenu = document.getElementById('moreOptionsSubmenu');
+    const arrow = document.getElementById('moreDropdownArrow');
+
+    if (moreBtn && submenu) {
+        moreBtn.addEventListener('click', function (e) {
+            e.preventDefault();
+            const isOpen = submenu.style.display === 'block';
+            submenu.style.display = isOpen ? 'none' : 'block';
+            if (arrow) {
+                arrow.style.transform = isOpen ? 'rotate(0deg)' : 'rotate(180deg)';
+            }
+        });
+    }
 })();
 </script>

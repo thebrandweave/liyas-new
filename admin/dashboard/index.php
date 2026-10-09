@@ -561,36 +561,13 @@ try {
                         </div>
                     </div>
 
-                    <!-- Warehouse Stock Breakdown Card -->
-                    <div class="table-card">
-                        <div class="table-header" style="display: flex; justify-content: space-between; align-items: center; padding: 1.25rem 1.5rem;">
-                            <div class="table-title" style="font-size: 16px; font-weight: 600;">Stock Breakdown</div>
-                            <a href="../products/index.php" style="font-size: 13px; color: #2563eb; text-decoration: none;">Manage &rarr;</a>
-                        </div>
-                        <div style="padding: 1rem 1.5rem;">
-                            <?php foreach ($prod_stocks as $ps): 
-                                $pName = htmlspecialchars(!empty($ps['product_name']) ? $ps['product_name'] : (!empty($ps['name']) ? $ps['name'] : 'Product'));
-                                $cStock = (int)($ps['case_stock'] ?? 0);
-                                $inZones = (int)($ps['in_zones'] ?? 0);
-                                $rem = max(0, $cStock - $inZones);
-                                $pct = ($cStock > 0) ? min(100, round(($rem / $cStock) * 100)) : 0;
-                            ?>
-                            <div style="margin-bottom: 1.25rem;">
-                                <div style="display: flex; justify-content: space-between; font-size: 13px; font-weight: 500; margin-bottom: 4px;">
-                                    <span style="color: #1e293b;"><?= $pName ?></span>
-                                    <span style="color: #2563eb; font-weight: 600;"><?= $rem ?> / <?= $cStock ?> Cases</span>
-                                </div>
-                                <div style="width: 100%; height: 8px; background: #e2e8f0; border-radius: 4px; overflow: hidden;">
-                                    <div style="width: <?= $pct ?>%; height: 100%; background: <?= ($pct < 25) ? '#ef4444' : '#22c55e' ?>; border-radius: 4px;"></div>
-                                </div>
-                                <div style="display: flex; justify-content: space-between; font-size: 11px; color: #64748b; margin-top: 3px;">
-                                    <span><?= $inZones ?> cases in zones</span>
-                                    <span>₹<?= number_format($ps['case_price'], 2) ?>/case</span>
-                                </div>
-                            </div>
-                            <?php endforeach; ?>
-                        </div>
-                    </div>
+               <!-- Warehouse Stock Breakdown Card -->
+<div class="table-card">
+    <div class="table-header" style="display: flex; justify-content: space-between; align-items: center; padding: 1.25rem 1.5rem;">
+        <div class="table-title" style="font-size: 16px; font-weight: 600;">Stock Breakdown</div>
+        <a href="../products/index.php" style="font-size: 13px; color: #2563eb; text-decoration: none;">Manage &rarr;</a>
+    </div>
+</div>
                 </div>
 
             </div>
