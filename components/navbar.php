@@ -4,7 +4,7 @@ if (!defined('BASE_URL')) {
 }
 $navBase = rtrim(BASE_URL, '/');
 $home_link = $navBase . '/index-temp.php';
-$about_link = $navBase . 'about/';
+$about_link = $navBase . '/about/';
 $products_link = $navBase . '/products/';
 $contact_link = $navBase . '/contact/';
 $login_link = $navBase . '/login/';
