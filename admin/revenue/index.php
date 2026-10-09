@@ -147,6 +147,9 @@ if ($payment_filter === 'paid') {
     $where_clauses[] = "r.due_amount > 0";
 } elseif ($payment_filter === 'cash') {
     $where_clauses[] = "r.cash_amount > 0";
+    if ($status_filter === 'all') {
+        $where_clauses[] = "o.status = 'delivered'";
+    }
 } elseif ($payment_filter === 'credit') {
     $where_clauses[] = "r.credited_amount > 0";
 } elseif ($payment_filter === 'unbilled') {
@@ -173,10 +176,10 @@ $kpi_stmt = $pdo->prepare("
     SELECT 
         COUNT(DISTINCT o.order_id) as total_orders_count,
         SUM(CASE WHEN o.status = 'delivered' THEN 1 ELSE 0 END) as delivered_orders_count,
-        COALESCE(SUM(CASE WHEN o.status = 'delivered' THEN (COALESCE(r.cash_amount, 0) + COALESCE(r.credited_amount, 0)) ELSE 0 END), 0) as total_delivered_sales,
-        COALESCE(SUM(r.cash_amount), 0) as total_cash_collected,
-        COALESCE(SUM(r.credited_amount), 0) as total_credited_amount,
-        COALESCE(SUM(r.due_amount), 0) as total_outstanding_due
+        COALESCE(SUM(CASE WHEN o.status = 'delivered' THEN COALESCE(r.total_amount, o.total_amount, 0) ELSE 0 END), 0) as total_delivered_sales,
+        COALESCE(SUM(CASE WHEN o.status = 'delivered' THEN r.cash_amount ELSE 0 END), 0) as total_cash_collected,
+        COALESCE(SUM(CASE WHEN o.status = 'delivered' THEN r.credited_amount ELSE 0 END), 0) as total_credited_amount,
+        COALESCE(SUM(CASE WHEN o.status != 'cancelled' THEN r.due_amount ELSE 0 END), 0) as total_outstanding_due
     FROM orders o
     LEFT JOIN zones z ON o.zone_id = z.id
     LEFT JOIN receipts r ON o.order_id = r.order_id
@@ -195,10 +198,10 @@ $zone_breakdown_sql = "
         z.status as zone_status,
         COUNT(o.order_id) as total_orders,
         SUM(CASE WHEN o.status = 'delivered' THEN 1 ELSE 0 END) as delivered_orders,
-        COALESCE(SUM(CASE WHEN o.status = 'delivered' THEN (COALESCE(r.cash_amount, 0) + COALESCE(r.credited_amount, 0)) ELSE 0 END), 0) as total_sales,
-        COALESCE(SUM(r.cash_amount), 0) as total_cash,
-        COALESCE(SUM(r.credited_amount), 0) as total_credit,
-        COALESCE(SUM(r.due_amount), 0) as total_due
+        COALESCE(SUM(CASE WHEN o.status = 'delivered' THEN COALESCE(r.total_amount, o.total_amount, 0) ELSE 0 END), 0) as total_sales,
+        COALESCE(SUM(CASE WHEN o.status = 'delivered' THEN r.cash_amount ELSE 0 END), 0) as total_cash,
+        COALESCE(SUM(CASE WHEN o.status = 'delivered' THEN r.credited_amount ELSE 0 END), 0) as total_credit,
+        COALESCE(SUM(CASE WHEN o.status != 'cancelled' THEN r.due_amount ELSE 0 END), 0) as total_due
     FROM zones z
     LEFT JOIN orders o ON z.id = o.zone_id {$zone_date_clause}
     LEFT JOIN receipts r ON o.order_id = r.order_id
@@ -1130,7 +1133,7 @@ $cleanBaseUrl = rtrim(BASE_URL, '/');
                         <div>
                             <div class="kpi-val"><?= formatCurrency($kpis['total_delivered_sales']) ?></div>
                             <div class="kpi-subtext" style="color: #2563eb;">
-                                <span><?= (int)$kpis['delivered_orders_count'] ?> orders delivered</span>
+                                <span><?= (int)$kpis['delivered_orders_count'] ?> orders delivered (0 cancelled)</span>
                             </div>
                             <div class="kpi-filter-hint">
                                 <i class='bx bx-filter-alt'></i> <?= $isSalesActive ? 'Active Filter: Delivered' : 'Click to filter delivered' ?>
@@ -1142,9 +1145,9 @@ $cleanBaseUrl = rtrim(BASE_URL, '/');
                     <div class="kpi-card kpi-cash <?= $isCashActive ? 'is-kpi-active' : '' ?>"
                          tabindex="0"
                          role="button"
-                         onclick="window.location.href='<?= htmlspecialchars(buildFilterUrl(['payment_status' => 'cash'])) ?>'"
-                         onkeydown="if(event.key==='Enter'||event.key===' '){ window.location.href='<?= htmlspecialchars(buildFilterUrl(['payment_status' => 'cash'])) ?>'; }"
-                         title="Click to view all cash collected orders">
+                         onclick="window.location.href='<?= htmlspecialchars(buildFilterUrl(['payment_status' => 'cash', 'status' => 'delivered'])) ?>'"
+                         onkeydown="if(event.key==='Enter'||event.key===' '){ window.location.href='<?= htmlspecialchars(buildFilterUrl(['payment_status' => 'cash', 'status' => 'delivered'])) ?>'; }"
+                         title="Click to view all delivered cash collected orders">
                         <div class="kpi-card-header">
                             <span class="kpi-label">In-Hand Cash</span>
                             <div class="kpi-icon-box">
@@ -1154,10 +1157,10 @@ $cleanBaseUrl = rtrim(BASE_URL, '/');
                         <div>
                             <div class="kpi-val"><?= formatCurrency($kpis['total_cash_collected']) ?></div>
                             <div class="kpi-subtext" style="color: #059669;">
-                                <span>Total cash realized</span>
+                                <span>Delivered cash only (0 cancelled)</span>
                             </div>
                             <div class="kpi-filter-hint">
-                                <i class='bx bx-filter-alt'></i> <?= $isCashActive ? 'Active Filter: Cash Paid' : 'Click to filter cash paid' ?>
+                                <i class='bx bx-filter-alt'></i> <?= $isCashActive ? 'Active Filter: Delivered Cash' : 'Click to filter delivered cash' ?>
                             </div>
                         </div>
                     </div>
@@ -1505,18 +1508,34 @@ $cleanBaseUrl = rtrim(BASE_URL, '/');
 
                                         <!-- Total Amount -->
                                         <td style="text-align: right;">
-                                            <div style="font-size: 15px; font-weight: 700; color: #0f172a;">
-                                                <?= formatCurrency($totAmt) ?>
-                                            </div>
-                                            <?php if ((float)$o['discount'] > 0): ?>
-                                                <div style="font-size: 11px; color: #dc2626;">-<?= formatCurrency($o['discount']) ?> disc</div>
+                                            <?php if ($status === 'cancelled'): ?>
+                                                <div style="font-size: 15px; font-weight: 700; color: #94a3b8; text-decoration: line-through;">
+                                                    <?= formatCurrency($totAmt) ?>
+                                                </div>
+                                                <div style="font-size: 11px; color: #ef4444; font-weight: 600;">Cancelled</div>
+                                            <?php else: ?>
+                                                <div style="font-size: 15px; font-weight: 700; color: #0f172a;">
+                                                    <?= formatCurrency($totAmt) ?>
+                                                </div>
+                                                <?php if ((float)$o['discount'] > 0): ?>
+                                                    <div style="font-size: 11px; color: #dc2626;">-<?= formatCurrency($o['discount']) ?> disc</div>
+                                                <?php endif; ?>
                                             <?php endif; ?>
                                         </td>
 
                                         <!-- Cash Paid -->
                                         <td style="text-align: right;">
-                                            <?php if ($cash > 0): ?>
-                                                <a href="<?= htmlspecialchars(buildFilterUrl(['payment_status' => 'cash'])) ?>" style="text-decoration: none; font-weight: 700; color: #047857;" title="Filter cash orders">
+                                            <?php if ($status === 'cancelled'): ?>
+                                                <?php if ($cash > 0): ?>
+                                                    <span style="color: #94a3b8; text-decoration: line-through; font-size: 12px;" title="Cancelled order — cash voided">
+                                                        <?= formatCurrency($cash) ?>
+                                                    </span>
+                                                    <div style="font-size: 10px; color: #ef4444; font-weight: 600;">Voided</div>
+                                                <?php else: ?>
+                                                    <span style="color: #cbd5e1;">&mdash;</span>
+                                                <?php endif; ?>
+                                            <?php elseif ($cash > 0): ?>
+                                                <a href="<?= htmlspecialchars(buildFilterUrl(['payment_status' => 'cash', 'status' => 'delivered'])) ?>" style="text-decoration: none; font-weight: 700; color: #047857;" title="Filter delivered cash orders">
                                                     <?= formatCurrency($cash) ?>
                                                 </a>
                                             <?php else: ?>
@@ -1526,8 +1545,17 @@ $cleanBaseUrl = rtrim(BASE_URL, '/');
 
                                         <!-- Credited -->
                                         <td style="text-align: right;">
-                                            <?php if ($credit > 0): ?>
-                                                <a href="<?= htmlspecialchars(buildFilterUrl(['payment_status' => 'credit'])) ?>" style="text-decoration: none; font-weight: 700; color: #6d28d9;" title="Filter credited orders">
+                                            <?php if ($status === 'cancelled'): ?>
+                                                <?php if ($credit > 0): ?>
+                                                    <span style="color: #94a3b8; text-decoration: line-through; font-size: 12px;" title="Cancelled order — credit voided">
+                                                        <?= formatCurrency($credit) ?>
+                                                    </span>
+                                                    <div style="font-size: 10px; color: #ef4444; font-weight: 600;">Voided</div>
+                                                <?php else: ?>
+                                                    <span style="color: #cbd5e1;">&mdash;</span>
+                                                <?php endif; ?>
+                                            <?php elseif ($credit > 0): ?>
+                                                <a href="<?= htmlspecialchars(buildFilterUrl(['payment_status' => 'credit', 'status' => 'delivered'])) ?>" style="text-decoration: none; font-weight: 700; color: #6d28d9;" title="Filter delivered credited orders">
                                                     <?= formatCurrency($credit) ?>
                                                 </a>
                                             <?php else: ?>
@@ -1537,7 +1565,9 @@ $cleanBaseUrl = rtrim(BASE_URL, '/');
 
                                         <!-- Due Balance -->
                                         <td style="text-align: right;">
-                                            <?php if ($due > 0): ?>
+                                            <?php if ($status === 'cancelled'): ?>
+                                                <span style="color: #94a3b8; font-size: 11px;">Voided</span>
+                                            <?php elseif ($due > 0): ?>
                                                 <div>
                                                     <a href="<?= htmlspecialchars(buildFilterUrl(['payment_status' => 'due'])) ?>" class="badge-due-danger" style="text-decoration: none;" title="Filter orders with due balance">
                                                         <?= formatCurrency($due) ?>
