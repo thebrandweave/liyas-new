@@ -24,7 +24,7 @@ if (isset($_GET['updated'])) { $success_message = "Order updated successfully!";
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_status'])) {
     $order_id   = (int)($_POST['order_id'] ?? 0);
     $new_status = $_POST['status'] ?? '';
-    $allowed    = ['pending', 'processing', 'shipped', 'delivered', 'cancelled'];
+    $allowed    = ['pending', 'processing', 'shipped', 'delivered', 'cancelled', 'returned'];
     $is_ajax    = (isset($_POST['ajax']) && $_POST['ajax'] === '1') || (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest');
 
     if ($order_id > 0 && in_array($new_status, $allowed)) {
@@ -86,7 +86,7 @@ $where_clauses = [];
 
 if ($status_filter === 'unchecked') {
     $where_clauses[] = "o.zone_id IS NOT NULL AND o.zone_id > 0 AND o.is_zone_read = 0 AND o.status != 'cancelled'";
-} elseif ($status_filter !== 'all' && in_array($status_filter, ['pending', 'processing', 'shipped', 'delivered', 'cancelled'])) {
+} elseif ($status_filter !== 'all' && in_array($status_filter, ['pending', 'processing', 'shipped', 'delivered', 'cancelled', 'returned'])) {
     $where_clauses[] = "o.status = :status";
     $where_params[':status'] = $status_filter;
 }
@@ -301,18 +301,32 @@ function renderOrdersTbodyRows(array $orders, string $status_filter = 'all', str
                 </td>
                 <td>
                     <!-- Inline Quick Status Updater -->
+                    <?php
+                        $st = strtolower(trim((string)$order['status']));
+                        $statusClasses = [
+                            'pending'    => 'status-pending',
+                            'processing' => 'status-processing',
+                            'shipped'    => 'status-shipped',
+                            'delivered'  => 'status-delivered',
+                            'cancelled'  => 'status-cancelled',
+                            'returned'   => 'status-returned'
+                        ];
+                        $currentStatusClass = $statusClasses[$st] ?? 'status-pending';
+                    ?>
                     <form action="index.php?filter=<?= urlencode($status_filter) ?>&zone=<?= urlencode($zone_filter) ?>" method="POST" style="margin: 0;" class="status-update-form" data-order-id="<?= (int)$order['order_id'] ?>">
                         <input type="hidden" name="update_status" value="1">
                         <input type="hidden" name="order_id" value="<?= (int)$order['order_id'] ?>">
-                        <select name="status" class="status-select-input" onchange="handleOrderStatusChange(this, <?= (int)$order['order_id'] ?>)" style="padding: 4px 8px; border-radius: 6px; font-size: 12px; font-weight: 600; border: 1px solid #d1d5db; background: #fff; cursor: pointer; transition: border-color 0.2s;">
-                            <option value="pending" <?= ($order['status'] === 'pending') ? 'selected' : '' ?>>Pending</option>
-                            <option value="processing" <?= ($order['status'] === 'processing') ? 'selected' : '' ?>>Processing</option>
-                            <option value="shipped" <?= ($order['status'] === 'shipped') ? 'selected' : '' ?>>Shipped</option>
-                            <option value="delivered" <?= ($order['status'] === 'delivered') ? 'selected' : '' ?>>Delivered</option>
-                            <option value="cancelled" <?= ($order['status'] === 'cancelled') ? 'selected' : '' ?>>Cancelled</option>
+                        <select name="status" class="status-select-input <?= $currentStatusClass ?>" onchange="handleOrderStatusChange(this, <?= (int)$order['order_id'] ?>)">
+                            <option value="pending" <?= ($st === 'pending') ? 'selected' : '' ?>>Pending</option>
+                            <option value="processing" <?= ($st === 'processing') ? 'selected' : '' ?>>Processing</option>
+                            <option value="shipped" <?= ($st === 'shipped') ? 'selected' : '' ?>>Shipped</option>
+                            <option value="delivered" <?= ($st === 'delivered') ? 'selected' : '' ?>>Delivered</option>
+                            <option value="cancelled" <?= ($st === 'cancelled') ? 'selected' : '' ?>>Cancelled</option>
+                            <option value="returned" <?= ($st === 'returned') ? 'selected' : '' ?>>Returned</option>
                         </select>
                     </form>
                 </td>
+
                 <td>
                     <div style="font-size: 13px; color: #475569;">
                         <?= date('d M Y', strtotime($order['created_at'])) ?>
@@ -452,13 +466,82 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
             font-family: inherit;
             background: #fff;
         }
-        .status-badge-select {
-            padding: 4px 8px;
-            border-radius: 6px;
+        /* Inline Status Dropdown Select */
+        .status-select-input {
+            padding: 5px 24px 5px 11px;
+            border-radius: 20px;
             font-size: 12px;
-            font-weight: 600;
-            border: 1px solid transparent;
+            font-weight: 700;
+            border: 1.5px solid transparent;
             cursor: pointer;
+            outline: none;
+            transition: all 0.2s ease;
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            appearance: none;
+            background-repeat: no-repeat;
+            background-position: right 8px center;
+            background-size: 11px;
+            display: inline-block;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            line-height: 1.3;
+        }
+
+        .status-select-input:hover {
+            filter: brightness(0.96);
+            transform: translateY(-0.5px);
+        }
+
+        .status-select-input:focus {
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.18);
+        }
+
+        .status-select-input.status-pending {
+            background-color: #fef3c7 !important;
+            color: #92400e !important;
+            border-color: #fcd34d !important;
+            background-image: url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2392400e'%3E%3Cpath d='M7 10l5 5 5-5z'/%3E%3C/svg%3E");
+        }
+
+        .status-select-input.status-processing {
+            background-color: #dbeafe !important;
+            color: #1d4ed8 !important;
+            border-color: #93c5fd !important;
+            background-image: url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%231d4ed8'%3E%3Cpath d='M7 10l5 5 5-5z'/%3E%3C/svg%3E");
+        }
+
+        .status-select-input.status-shipped {
+            background-color: #f3e8ff !important;
+            color: #7e22ce !important;
+            border-color: #d8b4fe !important;
+            background-image: url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%237e22ce'%3E%3Cpath d='M7 10l5 5 5-5z'/%3E%3C/svg%3E");
+        }
+
+        .status-select-input.status-delivered {
+            background-color: #dcfce7 !important;
+            color: #15803d !important;
+            border-color: #86efac !important;
+            background-image: url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2315803d'%3E%3Cpath d='M7 10l5 5 5-5z'/%3E%3C/svg%3E");
+        }
+
+        .status-select-input.status-cancelled {
+            background-color: #fee2e2 !important;
+            color: #b91c1c !important;
+            border-color: #fca5a5 !important;
+            background-image: url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23b91c1c'%3E%3Cpath d='M7 10l5 5 5-5z'/%3E%3C/svg%3E");
+        }
+
+        .status-select-input.status-returned {
+            background-color: #ede9fe !important;
+            color: #6d28d9 !important;
+            border-color: #c4b5fd !important;
+            background-image: url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%236d28d9'%3E%3Cpath d='M7 10l5 5 5-5z'/%3E%3C/svg%3E");
+        }
+
+        .status-select-input option {
+            background: #ffffff;
+            color: #1e293b;
+            font-weight: 500;
         }
         .order-zone-tag {
             background: #f0fdf4;
@@ -756,17 +839,42 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
                 }
             }
 
+            // Helper to style status select element based on selected status
+            window.updateStatusSelectStyle = function(selectEl, status) {
+                if (!selectEl) return;
+                const s = (status || selectEl.value || '').toLowerCase().trim();
+                selectEl.classList.remove(
+                    'status-pending',
+                    'status-processing',
+                    'status-shipped',
+                    'status-delivered',
+                    'status-cancelled',
+                    'status-returned'
+                );
+                if (s) {
+                    selectEl.classList.add('status-' + s);
+                }
+            };
+
             window.handleOrderStatusChange = function(selectEl, orderId) {
                 const form = selectEl.closest('form');
                 if (!form) return;
 
+                const newStatus = selectEl.value;
+
+                // 1. Immediately update visual background/colors
+                updateStatusSelectStyle(selectEl, newStatus);
+
+                // 2. Prepare FormData explicitly (never rely on disabled form elements)
+                const fd = new FormData();
+                fd.append('update_status', '1');
+                fd.append('order_id', orderId);
+                fd.append('status', newStatus);
+                fd.append('ajax', '1');
+
                 autoRefreshPaused = true;
                 selectEl.disabled = true;
-                const origBorder = selectEl.style.borderColor;
-                selectEl.style.borderColor = '#3b82f6';
-
-                const fd = new FormData(form);
-                fd.append('ajax', '1');
+                selectEl.style.opacity = '0.7';
 
                 fetch('index.php', {
                     method: 'POST',
@@ -776,13 +884,15 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
                 .then(r => r.json())
                 .then(res => {
                     if (res.success) {
-                        selectEl.style.borderColor = '#10b981';
-                        setTimeout(() => { selectEl.style.borderColor = origBorder; }, 1200);
+                        selectEl.style.opacity = '1';
+                        updateStatusSelectStyle(selectEl, newStatus);
+                        // Blur select so pollOrders activeElement check doesn't block the refresh
+                        selectEl.blur();
                         // Trigger immediate refresh after status change
                         pollOrders();
                     } else {
                         alert(res.message || 'Error updating status');
-                        selectEl.style.borderColor = '#ef4444';
+                        pollOrders();
                     }
                 })
                 .catch(err => {
@@ -791,6 +901,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
                 })
                 .finally(() => {
                     selectEl.disabled = false;
+                    selectEl.style.opacity = '1';
                     autoRefreshPaused = false;
                 });
             };
@@ -838,6 +949,10 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
                     const tbody = document.getElementById('orders-table-body');
                     if (tbody && data.tbody_html !== undefined) {
                         tbody.innerHTML = data.tbody_html;
+                        // Ensure all rendered status selects have matching background colors
+                        tbody.querySelectorAll('.status-select-input').forEach(function(sel) {
+                            updateStatusSelectStyle(sel, sel.value);
+                        });
                     }
 
                     // Update pagination
@@ -854,6 +969,11 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
                     setLiveState(false);
                 });
             }
+
+            // Initial style pass on load
+            document.querySelectorAll('.status-select-input').forEach(function(sel) {
+                updateStatusSelectStyle(sel, sel.value);
+            });
 
             // Schedule 3-second auto-refresh
             setInterval(pollOrders, REFRESH_INTERVAL);
