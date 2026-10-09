@@ -48,6 +48,20 @@ try {
     $current_zone = $stmt->fetch(PDO::FETCH_ASSOC);
 
     if (!$current_zone) {
+        // Fallback 1: check if a root script exists (e.g. /logout -> logout.php, /checkout -> checkout.php)
+        $rootScript = dirname(__DIR__) . '/' . $zone_slug . '.php';
+        if (file_exists($rootScript)) {
+            include $rootScript;
+            exit;
+        }
+
+        // Fallback 2: check if a folder index exists (e.g. /orders -> orders/index.php, /about -> about/index.php)
+        $folderIndex = dirname(__DIR__) . '/' . $zone_slug . '/index.php';
+        if (file_exists($folderIndex)) {
+            include $folderIndex;
+            exit;
+        }
+
         http_response_code(404);
         echo renderZoneNotFound("Delivery Zone '/{$zone_slug}' does not exist.");
         exit;

@@ -44,33 +44,38 @@
     RewriteRule ^ - [L]
 
     # --------------------------------------------------
-    # 7. Multi-zone routes
-    #    /{zone_slug}/{action}
-    #    → zone/{action}.php?zone={zone_slug}
-    # --------------------------------------------------
-    RewriteCond %{REQUEST_URI} !^/(admin|assets|uploads|config|vendor|public|join|redeem|error-pages|cart|scripts|sql|zone|index-temp)(/|$) [NC]
-    RewriteRule ^([a-zA-Z0-9_-]+)/([a-zA-Z0-9_-]+)/?$ zone/$2.php?zone=$1 [L,QSA]
-
-    # --------------------------------------------------
-    # 8. Multi-zone homepage
-    #    /{zone_slug}
-    #    → zone/index.php?zone={zone_slug}
-    # --------------------------------------------------
-    RewriteCond %{REQUEST_URI} !^/(admin|assets|uploads|config|vendor|public|join|redeem|error-pages|cart|scripts|sql|zone|index-temp)(/|$) [NC]
-    RewriteRule ^([a-zA-Z0-9_-]+)/?$ zone/index.php?zone=$1 [L,QSA]
-
-    # --------------------------------------------------
-    # 9. Clean URLs for existing PHP files
-    #     Example: /admin/dashboard/index → index.php
+    # 7. Clean URLs for existing PHP files (PRIORITY BEFORE ZONE ROUTES)
+    #    Resolves: /logout → logout.php
+    #              /checkout → checkout.php
+    #              /terms → terms.php
+    #              /orders/index → orders/index.php
+    #              /orders/view-details → orders/view-details.php
+    #              /orders/cancel-order → orders/cancel-order.php
+    #              /products/index → products/index.php
+    #              /admin/dashboard/index → admin/dashboard/index.php
     # --------------------------------------------------
     RewriteCond %{REQUEST_FILENAME} !-d
     RewriteCond %{REQUEST_FILENAME}.php -f
     RewriteRule ^(.+?)/?$ $1.php [L,QSA]
 
     # --------------------------------------------------
+    # 8. Multi-zone routes (Actions inside zones)
+    #    /{zone_slug}/{action} → zone/{action}.php?zone={zone_slug}
+    # --------------------------------------------------
+    RewriteCond %{REQUEST_URI} !^/(about|admin|assets|cart|checkout|components|config|contact|demo|error-pages|index-temp|join|login|login1|logout|order_confirmation|orders|products|public|redeem|scripts|signup|signup1|social-media|sql|terms|uploads|vendor|zone)(/|$) [NC]
+    RewriteRule ^([a-zA-Z0-9_-]+)/([a-zA-Z0-9_-]+)/?$ zone/$2.php?zone=$1 [L,QSA]
+
+    # --------------------------------------------------
+    # 9. Multi-zone homepage
+    #    /{zone_slug} → zone/index.php?zone={zone_slug}
+    # --------------------------------------------------
+    RewriteCond %{REQUEST_URI} !^/(about|admin|assets|cart|checkout|components|config|contact|demo|error-pages|index-temp|join|login|login1|logout|order_confirmation|orders|products|public|redeem|scripts|signup|signup1|social-media|sql|terms|uploads|vendor|zone)(/|$) [NC]
+    RewriteRule ^([a-zA-Z0-9_-]+)/?$ zone/index.php?zone=$1 [L,QSA]
+
+    # --------------------------------------------------
     # 10. Fallback to public/ for unmatched requests
     # --------------------------------------------------
-    RewriteCond %{REQUEST_URI} !^/(admin|zone|public|join|assets|uploads|config|scripts|sql|vendor|redeem|cart|error-pages|index-temp)(/|$) [NC]
+    RewriteCond %{REQUEST_URI} !^/(about|admin|assets|cart|checkout|components|config|contact|demo|error-pages|index-temp|join|login|login1|logout|order_confirmation|orders|products|public|redeem|scripts|signup|signup1|social-media|sql|terms|uploads|vendor|zone)(/|$) [NC]
     RewriteCond %{REQUEST_FILENAME} !-f
     RewriteCond %{REQUEST_FILENAME} !-d
     RewriteRule ^(.*)$ public/$1 [L]
