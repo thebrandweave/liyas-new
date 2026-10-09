@@ -915,8 +915,10 @@ function buildWhatsAppLink($phone, $shop, $orderNum, $amount, $itemsText = '') {
 
         .order-card {
             background: var(--card-bg);
-            border: 1px solid var(--border-color);
-            border-radius: var(--radius-lg);
+            /* border: 1px solid #e2e8f0; */
+            /* border-bottom: 3px solid #0f1215; */
+            border: 2px solid #0f1215;
+            border-radius: 16px;
             padding: 16px;
             box-shadow: var(--shadow-subtle);
             transition: all 0.2s ease;
@@ -924,7 +926,7 @@ function buildWhatsAppLink($phone, $shop, $orderNum, $amount, $itemsText = '') {
         }
 
         .order-card:hover {
-            border-color: #cbd5e1;
+            /* border-color: #cbd5e1; */
             box-shadow: var(--shadow-hover);
             transform: translateY(-1px);
         }
@@ -1062,7 +1064,7 @@ function buildWhatsAppLink($phone, $shop, $orderNum, $amount, $itemsText = '') {
             gap: 5px;
             padding: 5px 10px;
             border-radius: 8px;
-            font-size: 18px;
+            font-size: 15px;
             font-weight: 600;
             text-decoration: none;
             transition: all 0.15s ease;
@@ -1077,6 +1079,7 @@ function buildWhatsAppLink($phone, $shop, $orderNum, $amount, $itemsText = '') {
         .chip-map:hover { background: #fee2e2; }
 
         .chip-call {
+            font-size:22px;
             background: #eff6ff;
             color: #2563eb;
             border: 1px solid #bfdbfe;
@@ -1085,6 +1088,7 @@ function buildWhatsAppLink($phone, $shop, $orderNum, $amount, $itemsText = '') {
         .chip-call:hover { background: #dbeafe; }
 
         .chip-whatsapp {
+            font-size:22px;
             background: #ecfdf5;
             color: #059669;
             border: 1px solid #a7f3d0;
@@ -1386,6 +1390,45 @@ function buildWhatsAppLink($phone, $shop, $orderNum, $amount, $itemsText = '') {
         .mobile-bottom-bar {
             display: none;
         }
+        @media (max-width: 768px) {
+    .order-actions-bar {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        width: 100%;
+    }
+
+    /* Keep the 3 buttons in one line */
+    .action-btn-group {
+        display: flex;
+        flex-direction: row;
+        gap: 6px;
+        width: 100%;
+    }
+
+    /* Distribute space evenly across the 3 buttons */
+    .action-btn-group .btn-card-action {
+        flex: 1 1 0;
+        min-width: 0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 8px 4px;
+        font-size: 13px;
+        white-space: nowrap;
+        text-align: center;
+    }
+
+    .action-btn-group .btn-card-action i {
+        margin-right: 4px;
+    }
+
+    /* Make the dropdown take full width underneath */
+    .status-select-form,
+    .status-picker {
+        width: 100%;
+    }
+}
 @media (max-width: 768px) {
     .filter-pill.hide-mobile {
         display: none !important;
@@ -1865,44 +1908,51 @@ function buildWhatsAppLink($phone, $shop, $orderNum, $amount, $itemsText = '') {
                     </div>
 
                     <!-- Touch Actions Bar -->
-                    <div class="order-actions-bar">
-                        <?php if (!$hasReceipt): ?>
-                            <a href="<?= zone_url($zone_slug, 'generate-receipt', ['order_id' => $ordId]) ?>" class="btn-card-action btn-deliver-primary">
-                                <i class='bx bx-receipt' style="font-size: 18px;"></i> Deliver &amp; Bill
-                            </a>
-                        <?php else: ?>
-                            <a href="<?= zone_url($zone_slug, 'receipt', ['id' => $ordId]) ?>" target="_blank" class="btn-card-action btn-receipt-view">
-                                <i class='bx bx-printer' style="font-size: 17px;"></i> View Receipt
-                            </a>
-                        <?php endif; ?>
+                 <div class="order-actions-bar">
+    <!-- Row of 3 buttons: (Bill/Receipt), Details, and Discount -->
+    <div class="action-btn-group">
+        <?php if (!$hasReceipt): ?>
+            <a href="<?= zone_url($zone_slug, 'generate-receipt', ['order_id' => $ordId]) ?>" class="btn-card-action btn-deliver-primary">
+                <i class='bx bx-receipt' style="font-size: 18px;"></i> 
+                <span><?= $hasReceipt ? 'View' : 'Bill' ?></span>
+            </a>
+        <?php else: ?>
+            <a href="<?= zone_url($zone_slug, 'receipt', ['id' => $ordId]) ?>" target="_blank" class="btn-card-action btn-receipt-view">
+                <i class='bx bx-printer' style="font-size: 17px;"></i> 
+                <span>Receipt</span>
+            </a>
+        <?php endif; ?>
 
-                        <?php if ((int)$order['is_zone_read'] === 0): ?>
-                            <button type="button" class="btn-card-action btn-ack-check" onclick="acknowledgeOrder(<?= $ordId ?>, this)" title="Mark as checked by zone staff">
-                                <i class='bx bx-check-double'></i> Check
-                            </button>
-                        <?php endif; ?>
+        <a href="<?= zone_url($zone_slug, 'order', ['id' => $ordId]) ?>" class="btn-card-action btn-card-secondary">
+            <i class='bx bx-show'></i> 
+            <span>Details</span>
+        </a>
 
-                        <a href="<?= zone_url($zone_slug, 'order', ['id' => $ordId]) ?>" class="btn-card-action btn-card-secondary">
-                            <i class='bx bx-show'></i> Details
-                        </a>
+        <a href="<?= zone_url($zone_slug, 'edit-order', ['id' => $ordId]) ?>" class="btn-card-action btn-discount-tag" title="Edit Discount">
+            <i class='bx bx-purchase-tag'></i> 
+            <span>Discount</span>
+        </a>
+    </div>
 
-                        <a href="<?= zone_url($zone_slug, 'edit-order', ['id' => $ordId]) ?>" class="btn-card-action btn-discount-tag" title="Edit Discount">
-                            <i class='bx bx-purchase-tag'></i> Discount
-                        </a>
+    <?php if ((int)$order['is_zone_read'] === 0): ?>
+        <button type="button" class="btn-card-action btn-ack-check" onclick="acknowledgeOrder(<?= $ordId ?>, this)" title="Mark as checked by zone staff">
+            <i class='bx bx-check-double'></i> Check
+        </button>
+    <?php endif; ?>
 
-                        <!-- Quick status updater dropdown -->
-                        <form action="<?= zone_url($zone_slug) ?>" method="POST" class="status-select-form">
-                            <input type="hidden" name="update_status" value="1">
-                            <input type="hidden" name="order_id" value="<?= $ordId ?>">
-                            <select name="status" onchange="this.form.submit()" class="status-picker" aria-label="Change status">
-                                <option value="pending" <?= ($status === 'pending') ? 'selected' : '' ?>>⏳ Pending</option>
-                                <option value="processing" <?= ($status === 'processing') ? 'selected' : '' ?>>⚙️ Processing</option>
-                                <option value="shipped" <?= ($status === 'shipped') ? 'selected' : '' ?>>🚚 Shipped</option>
-                                <option value="delivered" <?= ($status === 'delivered') ? 'selected' : '' ?>>✅ Delivered</option>
-                                <option value="cancelled" <?= ($status === 'cancelled') ? 'selected' : '' ?>>❌ Cancelled</option>
-                            </select>
-                        </form>
-                    </div>
+    <!-- Quick status updater dropdown -->
+    <form action="<?= zone_url($zone_slug) ?>" method="POST" class="status-select-form">
+        <input type="hidden" name="update_status" value="1">
+        <input type="hidden" name="order_id" value="<?= $ordId ?>">
+        <select name="status" onchange="this.form.submit()" class="status-picker" aria-label="Change status">
+            <option value="pending" <?= ($status === 'pending') ? 'selected' : '' ?>>⏳ Pending</option>
+            <option value="processing" <?= ($status === 'processing') ? 'selected' : '' ?>>⚙️ Processing</option>
+            <option value="shipped" <?= ($status === 'shipped') ? 'selected' : '' ?>>🚚 Shipped</option>
+            <option value="delivered" <?= ($status === 'delivered') ? 'selected' : '' ?>>✅ Delivered</option>
+            <option value="cancelled" <?= ($status === 'cancelled') ? 'selected' : '' ?>>❌ Cancelled</option>
+        </select>
+    </form>
+</div>
                 </article>
                 <?php endforeach; ?>
             <?php endif; ?>
