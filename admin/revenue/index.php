@@ -171,6 +171,180 @@ if (!empty($search)) {
 
 $where_sql = implode(" AND ", $where_clauses);
 
+// ============================================
+// EXPORT DATASET (CSV & EXCEL FORMATS)
+// Exactly 10 clean columns:
+// 1) Order Number, 2) Bill No, 3) Date, 4) Zone, 5) Customer/Shopname,
+// 6) Product/Qty, 7) Total Amount, 8) Cash Paid, 9) Credited, 10) Due Balance
+// ============================================
+if (isset($_GET['export']) && in_array($_GET['export'], ['csv', 'excel'])) {
+    $exp_format = $_GET['export'];
+    $export_sql = "
+        SELECT 
+            o.*,
+            z.name as zone_name,
+            z.slug as zone_slug,
+            p.product_name,
+            p.name as fallback_product_name,
+            r.id as receipt_id,
+            r.bill_number,
+            r.delivered_quantity,
+            r.cash_amount as receipt_cash,
+            r.credited_amount as receipt_credit,
+            r.due_amount as receipt_due,
+            r.payment_type as receipt_pay_type,
+            (SELECT COUNT(*) FROM order_items oi WHERE oi.order_id = o.order_id) AS items_count,
+            (SELECT GROUP_CONCAT(CONCAT(COALESCE(p2.product_name, p2.name), ' (', oi2.quantity, 'cs)') SEPARATOR ', ') 
+             FROM order_items oi2 
+             JOIN products p2 ON oi2.product_id = p2.product_id 
+             WHERE oi2.order_id = o.order_id) AS items_summary
+        FROM orders o
+        LEFT JOIN zones z ON o.zone_id = z.id
+        LEFT JOIN products p ON o.product_id = p.product_id
+        LEFT JOIN receipts r ON o.order_id = r.order_id
+        WHERE $where_sql
+        ORDER BY o.created_at DESC
+    ";
+    $exp_stmt = $pdo->prepare($export_sql);
+    foreach ($params as $k => $v) {
+        if ($k === ':zone_id') {
+            $exp_stmt->bindValue($k, $v, PDO::PARAM_INT);
+        } else {
+            $exp_stmt->bindValue($k, $v, PDO::PARAM_STR);
+        }
+    }
+    $exp_stmt->execute();
+    $export_rows = $exp_stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    $filename_base = "Liyas_Revenue_Report_" . date('Y-m-d_His');
+
+    if ($exp_format === 'csv') {
+        header('Content-Type: text/csv; charset=utf-8');
+        header('Content-Disposition: attachment; filename="' . $filename_base . '.csv"');
+        header('Pragma: no-cache');
+        header('Expires: 0');
+
+        $out = fopen('php://output', 'w');
+        // Output UTF-8 Byte Order Mark (BOM) so Excel opens UTF-8 properly
+        fprintf($out, chr(0xEF).chr(0xBB).chr(0xBF));
+
+        $headers = [
+            'Order Number',
+            'Bill No',
+            'Date',
+            'Zone',
+            'Customer/Shopname',
+            'Product/Qty',
+            'Total Amount',
+            'Cash Paid',
+            'Credited',
+            'Due Balance'
+        ];
+        fputcsv($out, $headers);
+
+        foreach ($export_rows as $row) {
+            $ordNum = $row['order_number'] ?: ('#' . $row['order_id']);
+            $billNum = $row['bill_number'] ?: 'Unbilled';
+            $date = date('d M Y, h:i A', strtotime($row['created_at']));
+            $zone = $row['zone_name'] ?: 'Zone';
+            $cust = $row['shop_name'] ?: ($row['customer_name'] ?: 'Customer');
+
+            if ((int)($row['items_count'] ?? 0) > 1 && !empty($row['items_summary'])) {
+                $prodQty = $row['items_summary'];
+            } else {
+                $pName = $row['product_name'] ?: ($row['fallback_product_name'] ?: 'Water');
+                $prodQty = $pName . ' (' . (int)$row['quantity'] . ' cs)';
+            }
+
+            $status = strtolower($row['status'] ?? '');
+            $totAmt = ($status === 'cancelled') ? 0.00 : (float)$row['total_amount'];
+            $cash = ($status === 'cancelled') ? 0.00 : (float)($row['receipt_cash'] ?? 0);
+            $credit = ($status === 'cancelled') ? 0.00 : (float)($row['receipt_credit'] ?? 0);
+            $due = ($status === 'cancelled') ? 0.00 : (float)($row['receipt_due'] ?? 0);
+
+            fputcsv($out, [
+                $ordNum,
+                $billNum,
+                $date,
+                $zone,
+                $cust,
+                $prodQty,
+                number_format($totAmt, 2, '.', ''),
+                number_format($cash, 2, '.', ''),
+                number_format($credit, 2, '.', ''),
+                number_format($due, 2, '.', '')
+            ]);
+        }
+        fclose($out);
+        exit;
+    } elseif ($exp_format === 'excel') {
+        header('Content-Type: application/vnd.ms-excel; charset=utf-8');
+        header('Content-Disposition: attachment; filename="' . $filename_base . '.xls"');
+        header('Pragma: no-cache');
+        header('Expires: 0');
+
+        echo '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">';
+        echo '<head><meta http-equiv="Content-Type" content="text/html; charset=utf-8">';
+        echo '<style>
+            table { border-collapse: collapse; width: 100%; font-family: Calibri, Arial, sans-serif; font-size: 11pt; }
+            th { background-color: #f1f5f9; color: #1e293b; font-weight: bold; border: 1px solid #cbd5e1; padding: 8px 12px; }
+            td { border: 1px solid #e2e8f0; padding: 6px 10px; }
+            .col-due-hdr { background-color: #fee2e2 !important; color: #991b1b !important; font-weight: bold; }
+            .col-due-cell { background-color: #fef2f2 !important; color: #b91c1c !important; font-weight: bold; }
+            .num { text-align: right; }
+        </style></head><body>';
+        echo '<table border="1">';
+        echo '<thead><tr>';
+        echo '<th>Order Number</th>';
+        echo '<th>Bill No</th>';
+        echo '<th>Date</th>';
+        echo '<th>Zone</th>';
+        echo '<th>Customer/Shopname</th>';
+        echo '<th>Product/Qty</th>';
+        echo '<th class="num">Total Amount</th>';
+        echo '<th class="num">Cash Paid</th>';
+        echo '<th class="num">Credited</th>';
+        echo '<th class="num col-due-hdr" style="background-color: #fee2e2; color: #991b1b;">Due Balance</th>';
+        echo '</tr></thead><tbody>';
+
+        foreach ($export_rows as $row) {
+            $ordNum = htmlspecialchars($row['order_number'] ?: ('#' . $row['order_id']));
+            $billNum = htmlspecialchars($row['bill_number'] ?: 'Unbilled');
+            $date = date('d M Y, h:i A', strtotime($row['created_at']));
+            $zone = htmlspecialchars($row['zone_name'] ?: 'Zone');
+            $cust = htmlspecialchars($row['shop_name'] ?: ($row['customer_name'] ?: 'Customer'));
+
+            if ((int)($row['items_count'] ?? 0) > 1 && !empty($row['items_summary'])) {
+                $prodQty = htmlspecialchars($row['items_summary']);
+            } else {
+                $pName = $row['product_name'] ?: ($row['fallback_product_name'] ?: 'Water');
+                $prodQty = htmlspecialchars($pName . ' (' . (int)$row['quantity'] . ' cs)');
+            }
+
+            $status = strtolower($row['status'] ?? '');
+            $totAmt = ($status === 'cancelled') ? 0.00 : (float)$row['total_amount'];
+            $cash = ($status === 'cancelled') ? 0.00 : (float)($row['receipt_cash'] ?? 0);
+            $credit = ($status === 'cancelled') ? 0.00 : (float)($row['receipt_credit'] ?? 0);
+            $due = ($status === 'cancelled') ? 0.00 : (float)($row['receipt_due'] ?? 0);
+
+            echo '<tr>';
+            echo '<td>' . $ordNum . '</td>';
+            echo '<td>' . $billNum . '</td>';
+            echo '<td>' . $date . '</td>';
+            echo '<td>' . $zone . '</td>';
+            echo '<td>' . $cust . '</td>';
+            echo '<td>' . $prodQty . '</td>';
+            echo '<td class="num">' . number_format($totAmt, 2) . '</td>';
+            echo '<td class="num">' . number_format($cash, 2) . '</td>';
+            echo '<td class="num">' . number_format($credit, 2) . '</td>';
+            echo '<td class="num col-due-cell" style="background-color: #fef2f2; color: #b91c1c;">' . number_format($due, 2) . '</td>';
+            echo '</tr>';
+        }
+        echo '</tbody></table></body></html>';
+        exit;
+    }
+}
+
 // 1. Overall Revenue KPIs
 $kpi_stmt = $pdo->prepare("
     SELECT 
@@ -976,6 +1150,25 @@ $cleanBaseUrl = rtrim(BASE_URL, '/');
 
         .rev-table tr:hover { background: #f8fafc; }
 
+        /* Due Balance Column Light Red Highlighting */
+        .rev-table th.col-due {
+            background: #fee2e2 !important;
+            color: #991b1b !important;
+            border-left: 1.5px solid #fecaca;
+            border-right: 1.5px solid #fecaca;
+            font-weight: 800;
+        }
+
+        .rev-table td.col-due {
+            background: #fff5f5 !important;
+            border-left: 1.5px solid #fecaca !important;
+            border-right: 1.5px solid #fecaca !important;
+        }
+
+        .rev-table tr:hover td.col-due {
+            background: #fee2e2 !important;
+        }
+
         .badge-zone-pill {
             display: inline-flex;
             align-items: center;
@@ -1093,9 +1286,12 @@ $cleanBaseUrl = rtrim(BASE_URL, '/');
                     <button onclick="window.print()" class="btn-filter-reset" title="Print report">
                         <i class='bx bx-printer'></i> Print
                     </button>
-                    <button id="exportCsvBtn" class="btn-filter-submit" style="background: #059669;">
+                    <!-- <a href="<?= htmlspecialchars(buildFilterUrl(['export' => 'csv'], '')) ?>" id="exportCsvBtn" class="btn-filter-submit" style="background: #059669; text-decoration: none;" title="Export 10 clean columns as CSV">
                         <i class='bx bx-download'></i> Export CSV
-                    </button>
+                    </a> -->
+                    <a href="<?= htmlspecialchars(buildFilterUrl(['export' => 'excel'], '')) ?>" id="exportExcelBtn" class="btn-filter-submit" style="background: #0284c7; text-decoration: none;" title="Export Excel (with light red Due Balance column)">
+                        <i class='bx bxs-file-export'></i> Export Excel
+                    </a>
                 </div>
             </div>
             
@@ -1181,7 +1377,7 @@ $cleanBaseUrl = rtrim(BASE_URL, '/');
                         <div>
                             <div class="kpi-val"><?= formatCurrency($kpis['total_credited_amount']) ?></div>
                             <div class="kpi-subtext" style="color: #7c3aed;">
-                                <span>Formal credit ledger</span>
+                                <!-- <span>Formal credit ledger</span> -->
                             </div>
                             <div class="kpi-filter-hint">
                                 <i class='bx bx-filter-alt'></i> <?= $isCreditActive ? 'Active Filter: Credited' : 'Click to filter credited' ?>
@@ -1405,7 +1601,7 @@ $cleanBaseUrl = rtrim(BASE_URL, '/');
                                     <th style="text-align: right;">Total Amount</th>
                                     <th style="text-align: right;">Cash Paid</th>
                                     <th style="text-align: right;">Credited</th>
-                                    <th style="text-align: right;">Due Balance</th>
+                                    <th class="col-due" style="text-align: right;">Due Balance</th>
                                     <th>Delivery Status</th>
                                     <th>Actions</th>
                                 </tr>
@@ -1564,7 +1760,7 @@ $cleanBaseUrl = rtrim(BASE_URL, '/');
                                         </td>
 
                                         <!-- Due Balance -->
-                                        <td style="text-align: right;">
+                                        <td class="col-due" style="text-align: right;">
                                             <?php if ($status === 'cancelled'): ?>
                                                 <span style="color: #94a3b8; font-size: 11px;">Voided</span>
                                             <?php elseif ($due > 0): ?>
@@ -1700,29 +1896,7 @@ $cleanBaseUrl = rtrim(BASE_URL, '/');
         }
     });
 
-    document.getElementById('exportCsvBtn').addEventListener('click', function() {
-        const table = document.getElementById('revenueDataTable');
-        let csv = [];
-        const rows = table.querySelectorAll('tr');
 
-        for (let i = 0; i < rows.length; i++) {
-            let row = [], cols = rows[i].querySelectorAll('td, th');
-            for (let j = 0; j < cols.length - 1; j++) {
-                let text = cols[j].innerText.replace(/(\r\n|\n|\r)/gm, ' ').replace(/"/g, '""').trim();
-                row.push('"' + text + '"');
-            }
-            if (row.length > 0) csv.push(row.join(','));
-        }
-
-        const csvFile = new Blob([csv.join('\n')], { type: 'text/csv;charset=utf-8;' });
-        const downloadLink = document.createElement('a');
-        downloadLink.download = 'Liyas_Revenue_Report_' + new Date().toISOString().slice(0, 10) + '.csv';
-        downloadLink.href = window.URL.createObjectURL(csvFile);
-        downloadLink.style.display = 'none';
-        document.body.appendChild(downloadLink);
-        downloadLink.click();
-        document.body.removeChild(downloadLink);
-    });
     </script>
 </body>
 </html>
