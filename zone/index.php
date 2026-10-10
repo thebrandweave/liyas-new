@@ -1088,7 +1088,7 @@ function buildWhatsAppLink($phone, $shop, $orderNum, $amount, $itemsText = '') {
         .chip-call:hover { background: #dbeafe; }
 
         .chip-whatsapp {
-            font-size:22px;
+            font-size:12px;
             background: #ecfdf5;
             color: #059669;
             border: 1px solid #a7f3d0;
@@ -1483,6 +1483,47 @@ function buildWhatsAppLink($phone, $shop, $orderNum, $amount, $itemsText = '') {
                 flex-shrink: 0;
             }
         }
+
+        @media (max-width: 640px) {
+    /* Stack the whole notification item */
+    .notif-item {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 12px;
+    }
+
+    /* Force the meta info to utilize space better */
+    .notif-meta {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 6px;
+    }
+
+    /* Restructure the action buttons */
+    .notif-actions {
+        flex-wrap: wrap;
+        justify-content: space-between;
+        gap: 8px;
+        width: 100%;
+    }
+
+    /* Make secondary buttons share the row (50/50 split minus the gap) */
+    .notif-actions .action-chip-link,
+    .notif-actions .btn-ack-check,
+    .notif-actions .btn-card-secondary {
+        flex: 1 1 calc(50% - 8px);
+        justify-content: center;
+        text-align: center;
+        padding: 8px 12px; /* Bigger touch target */
+    }
+
+    /* Force the primary action to command the full bottom row */
+    .notif-actions .btn-deliver-primary {
+        flex: 1 1 100%;
+        padding: 12px;
+        font-size: 14px;
+    }
+}
     </style>
 </head>
 <body>
