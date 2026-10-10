@@ -87,14 +87,14 @@ try {
     // 4. Warehouse Stocks overview
     $stock_data = $pdo->query("
         SELECT 
-            COALESCE(SUM(case_stock), 0) as total_central_stock,
+            COALESCE(SUM(CASE WHEN case_stock > 0 THEN case_stock ELSE stock END), 0) as total_central_stock,
             (SELECT COALESCE(SUM(quantity), 0) FROM orders WHERE status != 'cancelled') as total_dispatched_cases
         FROM products
-        WHERE status = 'active'
+        WHERE status = 'active' OR status IS NULL
     ")->fetch(PDO::FETCH_ASSOC);
     $total_central_cases = (int)($stock_data['total_central_stock'] ?? 0);
     $total_dispatched_cases = (int)($stock_data['total_dispatched_cases'] ?? 0);
-    $total_remaining_cases = max(0, $total_central_cases - $total_dispatched_cases);
+    $total_remaining_cases = $total_central_cases;
 
     // 5. Zone Financial Summary Grid
     $zone_financial_query = "
@@ -148,22 +148,28 @@ try {
     ");
     $recent_orders = $recent_stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    // 7. Product Inventory Stock distribution
+    // 7. Product Inventory Stock Breakdown (Directly from products table)
     $prod_stocks = $pdo->query("
         SELECT 
             p.product_id,
             p.product_name,
             p.name,
             p.case_stock,
+            p.stock,
             p.case_price,
+            p.price,
             p.net_content,
-            p.net_content_unit,
-            COALESCE(SUM(CASE WHEN o.status != 'cancelled' THEN o.quantity ELSE 0 END), 0) as in_zones
+            p.net_content_unit
         FROM products p
-        LEFT JOIN orders o ON p.product_id = o.product_id
-        WHERE p.status = 'active'
-        GROUP BY p.product_id, p.product_name, p.name, p.case_stock, p.case_price, p.net_content, p.net_content_unit
-        ORDER BY p.case_price ASC
+        WHERE p.status = 'active' OR p.status IS NULL
+        ORDER BY 
+            CASE 
+                WHEN p.net_content IS NOT NULL AND p.net_content > 0 THEN 
+                    CASE WHEN p.net_content_unit = 'L' THEN p.net_content * 1000 ELSE p.net_content END
+                ELSE p.case_price 
+            END ASC,
+            p.case_price ASC,
+            p.product_id ASC
     ")->fetchAll(PDO::FETCH_ASSOC);
 
 } catch (PDOException $e) {
@@ -393,10 +399,10 @@ try {
                         <div class="stat-icon icon-purple">
                             <i class='bx bx-box'></i>
                         </div>
-                        <div class="stat-card-val"><?= number_format($total_remaining_cases) ?> <span style="font-size: 14px; font-weight: 500; color: #64748b;">Cases</span></div>
-                        <div class="stat-card-lbl">Remaining Available Stock</div>
+                        <div class="stat-card-val"><?= number_format($total_central_cases) ?> <span style="font-size: 14px; font-weight: 500; color: #64748b;">Cases</span></div>
+                        <div class="stat-card-lbl">Available Warehouse Stock</div>
                         <div style="margin-top: 0.75rem; font-size: 12px; color: #64748b;">
-                            <?= number_format($total_dispatched_cases) ?> cases in zones / in transit
+                            <?= number_format($total_dispatched_cases) ?> total ordered / dispatched cases
                         </div>
                     </div>
                 </div>
@@ -561,13 +567,72 @@ try {
                         </div>
                     </div>
 
-               <!-- Warehouse Stock Breakdown Card -->
-<div class="table-card">
-    <div class="table-header" style="display: flex; justify-content: space-between; align-items: center; padding: 1.25rem 1.5rem;">
-        <div class="table-title" style="font-size: 16px; font-weight: 600;">Stock Breakdown</div>
-        <a href="../products/index.php" style="font-size: 13px; color: #2563eb; text-decoration: none;">Manage &rarr;</a>
-    </div>
-</div>
+                    <!-- Warehouse Stock Breakdown Card -->
+                    <div class="table-card">
+                        <div class="table-header" style="display: flex; justify-content: space-between; align-items: center; padding: 1.25rem 1.5rem;">
+                            <div class="table-title" style="font-size: 16px; font-weight: 600; display: flex; align-items: center; gap: 8px;">
+                                <i class='bx bx-box' style="color: #2563eb;"></i> Stock Breakdown
+                            </div>
+                            <a href="../products/index.php" style="font-size: 13px; color: #2563eb; text-decoration: none; font-weight: 500;">Manage &rarr;</a>
+                        </div>
+                        <div style="padding: 1.25rem 1.5rem;">
+                            <?php if (empty($prod_stocks)): ?>
+                                <div style="text-align: center; padding: 2rem 1rem; color: #64748b; font-size: 13px;">
+                                    <i class='bx bx-box' style="font-size: 32px; color: #94a3b8; display: block; margin-bottom: 6px;"></i>
+                                    No active products found. <a href="../products/add.php" style="color: #2563eb; font-weight: 500;">Add product</a>
+                                </div>
+                            <?php else: ?>
+                                <div style="display: flex; flex-direction: column; gap: 10px;">
+                                    <?php 
+                                    $totalStockSum = 0;
+                                    foreach ($prod_stocks as $ps): 
+                                        $rawName = trim(!empty($ps['product_name']) ? $ps['product_name'] : (!empty($ps['name']) ? $ps['name'] : 'Product'));
+                                        
+                                        // Normalize standard sizes to clean format (e.g., 1L, 2L, 500ml, 250ml)
+                                        if (preg_match('/^(\d+(?:\.\d+)?)\s*(?:litre|liter|litres|liters|l)$/i', $rawName, $m)) {
+                                            $displayLabel = $m[1] . 'L';
+                                        } elseif (preg_match('/^(\d+(?:\.\d+)?)\s*(?:ml|millilitre|milliliter|millilitres)$/i', $rawName, $m)) {
+                                            $displayLabel = $m[1] . 'ml';
+                                        } elseif (!empty($ps['net_content']) && !empty($ps['net_content_unit'])) {
+                                            $unit = strtoupper(trim($ps['net_content_unit']));
+                                            $val = (float)$ps['net_content'];
+                                            $valStr = ($val == (int)$val) ? (string)(int)$val : (string)$val;
+                                            $displayLabel = ($unit === 'L') ? ($valStr . 'L') : ($valStr . 'ml');
+                                        } else {
+                                            $displayLabel = $rawName;
+                                        }
+
+                                        $stock = (int)(isset($ps['case_stock']) && $ps['case_stock'] !== '' ? $ps['case_stock'] : ($ps['stock'] ?? 0));
+                                        $totalStockSum += $stock;
+                                    ?>
+                                    <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;">
+                                        <div style="display: flex; align-items: center; gap: 10px;">
+                                            <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: <?= ($stock >= 20 ? '#10b981' : ($stock > 0 ? '#f59e0b' : '#ef4444')) ?>;"></span>
+                                            <span style="font-size: 15px; font-weight: 600; color: #0f172a;">
+                                                <?= htmlspecialchars($displayLabel) ?> - <?= number_format($stock) ?> cases
+                                            </span>
+                                        </div>
+                                        <div>
+                                            <?php if ($stock >= 20): ?>
+                                                <span style="font-size: 12px; font-weight: 600; color: #059669; background: #d1fae5; padding: 3px 8px; border-radius: 12px;">In Stock</span>
+                                            <?php elseif ($stock > 0): ?>
+                                                <span style="font-size: 12px; font-weight: 600; color: #d97706; background: #fef3c7; padding: 3px 8px; border-radius: 12px;">Low Stock</span>
+                                            <?php else: ?>
+                                                <span style="font-size: 12px; font-weight: 600; color: #dc2626; background: #fee2e2; padding: 3px 8px; border-radius: 12px;">Out of Stock</span>
+                                            <?php endif; ?>
+                                        </div>
+                                    </div>
+                                    <?php endforeach; ?>
+                                </div>
+
+                                <!-- Total Summary Footer -->
+                                <div style="margin-top: 14px; padding-top: 12px; border-top: 1px dashed #cbd5e1; display: flex; justify-content: space-between; align-items: center; font-size: 13px;">
+                                    <span style="color: #64748b; font-weight: 500;">Total Available Stock:</span>
+                                    <span style="font-weight: 700; color: #1e293b; font-size: 14px;"><?= number_format($totalStockSum) ?> cases</span>
+                                </div>
+                            <?php endif; ?>
+                        </div>
+                    </div>
                 </div>
 
             </div>

@@ -2188,12 +2188,7 @@ function buildWhatsAppLink($phone, $shop, $orderNum, $amount, $itemsText = '') {
             // Start polling every 6 seconds
             setInterval(pollForNewOrders, 6000);
 
-            // If there were already unread orders waiting when this page opened, play sound on load
-            <?php if (!empty($unread_notifications)): ?>
-                setTimeout(() => {
-                    playNotificationSound();
-                }, 600);
-            <?php endif; ?>
+           
 
             // Acknowledge order handler via AJAX
             window.acknowledgeOrder = function(orderId, btn) {
