@@ -1626,150 +1626,124 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
                 }, 8000);
             }
 
-            // Real-time polling function (runs every 5 seconds)
+            // Real-time AJAX refresh function (runs every 3 seconds)
+            let isRefreshing = false;
             function pollOrders() {
-                fetch(pollApiUrl)
-                    .then(r => r.json())
-                    .then(data => {
-                        if (!data.success) return;
+                if (isRefreshing) return;
 
-                        // 1. Update Metrics counters
-                        if (data.metrics) {
-                            const m = data.metrics;
-                            const elTot = document.getElementById('valTotalOrders');
-                            const elPen = document.getElementById('valPending');
-                            const elProc = document.getElementById('valProcessing');
-                            const elDel = document.getElementById('valDelivered');
-                            const elCash = document.getElementById('valCash');
-                            const elDue = document.getElementById('valDue');
+                // Check if order details modal is currently open
+                const modalBackdrop = document.getElementById('orderModalBackdrop');
+                const isModalOpen = modalBackdrop && modalBackdrop.classList.contains('open');
 
-                            if (elTot) elTot.textContent = m.total_orders;
-                            if (elPen) elPen.textContent = m.pending_count;
-                            if (elProc) elProc.textContent = m.processing_count + m.shipped_count;
-                            if (elDel) elDel.textContent = m.delivered_count;
-                            if (elCash) elCash.textContent = '₹' + parseFloat(m.total_cash).toFixed(2);
-                            if (elDue) elDue.textContent = '₹' + parseFloat(m.total_due + m.total_credit).toFixed(2);
-                        }
+                // Check if user is actively interacting with an input or select
+                const activeEl = document.activeElement;
+                const isFormActive = activeEl && (activeEl.tagName === 'SELECT' || activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA');
 
-                        // 2. Check for newly incoming orders
-                        if (Array.isArray(data.orders)) {
-                            let newIncoming = false;
+                isRefreshing = true;
+                fetch(window.location.href, {
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                })
+                .then(r => {
+                    if (!r.ok) throw new Error('Network error: ' + r.status);
+                    return r.text();
+                })
+                .then(html => {
+                    const parser = new DOMParser();
+                    const doc = parser.parseFromString(html, 'text/html');
 
-                            data.orders.forEach(ord => {
-                                const ordId = parseInt(ord.order_id);
-                                if (!knownOrderIds.has(ordId)) {
-                                    // NEW ORDER DETECTED!
-                                    knownOrderIds.add(ordId);
-                                    newIncoming = true;
+                    // 1. Detect any newly arrived incoming orders
+                    const newCards = doc.querySelectorAll('#ordersFeed .order-card');
+                    let newIncoming = false;
 
-                                    const shop = ord.shop_name || ord.customer_name || 'Customer';
-                                    const zName = ord.zone_name || 'Zone Delivery';
-                                    const amt = '₹' + parseFloat(ord.total_amount).toFixed(2);
-                                    const ordNum = ord.order_number || ('#' + ordId);
-
-                                    // Display alert toast
-                                    showToast(
-                                        `🔔 New Order Received: #${ordNum}`,
-                                        `<strong>${shop}</strong> in <em>${zName}</em> • ${amt}`
-                                    );
-
-                                    // Prepend new card into the live feed
-                                    prependOrderCard(ord);
-                                }
-                            });
-
-                            if (newIncoming) {
-                                playChime();
-                                if (navigator.vibrate) {
-                                    navigator.vibrate([200, 100, 200]);
-                                }
-                                document.title = `(${data.unread_count}) 🔔 New Order! - Zone Orders Hub`;
+                    newCards.forEach(card => {
+                        const ordId = parseInt(card.getAttribute('data-order-id'));
+                        if (ordId && !knownOrderIds.has(ordId)) {
+                            knownOrderIds.add(ordId);
+                            if (card.classList.contains('unread') || card.querySelector('.badge-unread')) {
+                                newIncoming = true;
+                                const shop = card.querySelector('.shop-name span')?.innerText?.trim() || 'Customer';
+                                const ordNum = card.querySelector('.order-num')?.innerText?.trim() || ('#' + ordId);
+                                const amt = card.querySelector('.order-total-amount')?.innerText?.trim() || '';
+                                showToast(`🔔 New Order Received: ${ordNum}`, `<strong>${shop}</strong> • ${amt}`);
                             }
                         }
-                    })
-                    .catch(e => console.debug('Polling check:', e));
+                    });
+
+                    if (newIncoming) {
+                        playChime();
+                        if (navigator.vibrate) {
+                            navigator.vibrate([200, 100, 200]);
+                        }
+                    }
+
+                    // 2. Update window title
+                    if (doc.title) {
+                        document.title = doc.title;
+                    }
+
+                    // 3. Update Unread Notification Banner
+                    const currentBanner = document.getElementById('unreadNotifBanner');
+                    const newBanner = doc.getElementById('unreadNotifBanner');
+                    const mainContainer = document.querySelector('.portal-container');
+
+                    if (newBanner) {
+                        if (currentBanner) {
+                            currentBanner.innerHTML = newBanner.innerHTML;
+                        } else if (mainContainer) {
+                            const accordion = mainContainer.querySelector('.metrics-accordion');
+                            if (accordion) {
+                                mainContainer.insertBefore(newBanner, accordion);
+                            } else {
+                                mainContainer.prepend(newBanner);
+                            }
+                        }
+                    } else if (currentBanner) {
+                        currentBanner.remove();
+                    }
+
+                    // 4. Update Metrics Grid
+                    const currentMetrics = document.getElementById('metricsGrid');
+                    const newMetrics = doc.getElementById('metricsGrid');
+                    if (currentMetrics && newMetrics) {
+                        const isOpen = currentMetrics.classList.contains('is-open');
+                        currentMetrics.innerHTML = newMetrics.innerHTML;
+                        if (isOpen) {
+                            currentMetrics.classList.add('is-open');
+                        }
+                    }
+
+                    // 5. Update Zone Pills & Filter Chips
+                    const currentZonePills = document.querySelector('.zone-pills-row');
+                    const newZonePills = doc.querySelector('.zone-pills-row');
+                    if (currentZonePills && newZonePills) {
+                        currentZonePills.innerHTML = newZonePills.innerHTML;
+                    }
+
+                    const currentStatusChips = document.querySelector('.status-chips-wrap');
+                    const newStatusChips = doc.querySelector('.status-chips-wrap');
+                    if (currentStatusChips && newStatusChips) {
+                        currentStatusChips.innerHTML = newStatusChips.innerHTML;
+                    }
+
+                    // 6. Update Orders Feed (if modal is not open and no active select inside feed)
+                    const currentFeed = document.getElementById('ordersFeed');
+                    const newFeed = doc.getElementById('ordersFeed');
+                    if (currentFeed && newFeed && !isModalOpen) {
+                        const isFeedFocused = isFormActive && currentFeed.contains(activeEl);
+                        if (!isFeedFocused) {
+                            currentFeed.innerHTML = newFeed.innerHTML;
+                        }
+                    }
+                })
+                .catch(err => console.debug('Dashboard AJAX refresh error:', err))
+                .finally(() => {
+                    isRefreshing = false;
+                });
             }
 
-            // Dynamic card insertion
-            function prependOrderCard(ord) {
-                const feed = document.getElementById('ordersFeed');
-                if (!feed) return;
-
-                const emptyState = feed.querySelector('.empty-state');
-                if (emptyState) emptyState.remove();
-
-                const ordId = ord.order_id;
-                const ordNum = ord.order_number || ('#' + ordId);
-                const shop = ord.shop_name || ord.customer_name || 'Customer';
-                const zName = ord.zone_name || 'Central Warehouse';
-                const zColor = ord.color_config || { bg: '#eff6ff', text: '#1d4ed8', border: '#bfdbfe', dot: '#3b82f6' };
-                const amt = '₹' + parseFloat(ord.total_amount).toFixed(2);
-                const itemsText = ord.items_summary || ord.product_name || 'Drinking Water';
-
-                const card = document.createElement('article');
-                card.className = 'order-card unread newly-arrived';
-                card.id = 'orderCard_' + ordId;
-                card.setAttribute('data-order-id', ordId);
-                card.innerHTML = `
-                    <div class="card-top">
-                        <div>
-                            <div class="order-num-block">
-                                <span class="order-num">#${ordNum}</span>
-                                <span class="zone-badge-tag" style="background:${zColor.bg}; color:${zColor.text}; border-color:${zColor.border};">
-                                    <span class="zone-dot" style="background:${zColor.dot};"></span>
-                                    ${zName}
-                                </span>
-                                <span class="badge-unread" id="unreadBadge_${ordId}">NEW</span>
-                            </div>
-                            <div class="order-date-text">
-                                <i class='bx bx-time'></i> ${ord.formatted_date || 'Just now'}
-                            </div>
-                        </div>
-                        <span class="status-badge ${ord.badge_class || 'badge-pending'}" id="statusBadge_${ordId}">
-                            ${(ord.status || 'pending').toUpperCase()}
-                        </span>
-                    </div>
-
-                    <div class="customer-block">
-                        <div class="shop-name">
-                            <i class='bx bx-store-alt' style="color: #2563eb;"></i>
-                            <span>${shop}</span>
-                        </div>
-                        ${ord.location ? `<div class="location-text"><i class='bx bx-map-pin'></i> <span>${ord.location}</span></div>` : ''}
-                        ${ord.phone ? `<div class="phone-links"><a href="tel:${ord.phone}" class="btn-phone"><i class='bx bx-phone'></i> ${ord.phone}</a></div>` : ''}
-                    </div>
-
-                    <div class="items-summary-box">
-                        <div>
-                            <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: #64748b; font-weight: 700;">Items</div>
-                            <div class="items-desc">${itemsText}</div>
-                        </div>
-                        <div style="text-align: right;">
-                            <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: #64748b; font-weight: 700;">Total</div>
-                            <div class="order-total-amount">${amt}</div>
-                        </div>
-                    </div>
-
-                    <div class="card-actions-row">
-                        <select class="status-select" onchange="updateOrderStatus(${ordId}, this.value, this)">
-                            <option value="pending" selected>Pending</option>
-                            <option value="processing">Processing</option>
-                            <option value="shipped">Shipped</option>
-                            <option value="delivered">Delivered</option>
-                            <option value="cancelled">Cancelled</option>
-                        </select>
-                        <div style="display: flex; gap: 6px;">
-                            <button type="button" class="btn-card-action" onclick="viewOrderModal(${ordId})"><i class='bx bx-show'></i> Details</button>
-                            <button type="button" class="btn-card-action" id="btnAck_${ordId}" onclick="acknowledgeOrder(${ordId})"><i class='bx bx-check'></i></button>
-                        </div>
-                    </div>
-                `;
-
-                feed.insertBefore(card, feed.firstChild);
-            }
-
-            // Start polling timer every 5000 ms
+            // Start polling timer every 3 seconds
             setInterval(pollOrders, 3000);
+            window.pollOrders = pollOrders;
 
             // Unlock audio on first user touch / click
             document.addEventListener('click', unlockAudioContext, { once: true });
@@ -1801,6 +1775,7 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
                             if (unread) unread.remove();
 
                             showToast('Status Updated', res.message);
+                            setTimeout(pollOrders, 300);
                         } else {
                             alert(res.error || 'Failed to update status.');
                         }
@@ -1830,6 +1805,7 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
                             if (unread) unread.remove();
                             if (btn) btn.remove();
                             showToast('Order Checked', res.message);
+                            setTimeout(pollOrders, 300);
                         }
                     });
             };
@@ -1848,6 +1824,7 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
                             document.querySelectorAll('.badge-unread').forEach(b => b.remove());
                             document.querySelectorAll('.order-card.unread').forEach(c => c.classList.remove('unread'));
                             showToast('Orders Checked', 'All pending orders marked as checked.');
+                            setTimeout(pollOrders, 300);
                         }
                     });
             };

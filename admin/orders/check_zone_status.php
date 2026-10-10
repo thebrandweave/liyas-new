@@ -67,7 +67,7 @@ if (!empty($order_ids)) {
 // Global total unchecked by zones (active orders)
 $totalUncheckedStmt = $pdo->query("
     SELECT COUNT(*) 
-    FROM orders 
+    FROM orders
     WHERE zone_id IS NOT NULL AND zone_id > 0 AND is_zone_read = 0 AND status != 'cancelled'
 ");
 $totalUnchecked = (int)$totalUncheckedStmt->fetchColumn();

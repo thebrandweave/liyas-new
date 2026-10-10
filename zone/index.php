@@ -2016,7 +2016,6 @@ function buildWhatsAppLink($phone, $shop, $orderNum, $amount, $itemsText = '') {
         (function() {
             const searchInput = document.getElementById('liveSearchInput');
             const clearBtn = document.getElementById('clearSearchBtn');
-            const cards = document.querySelectorAll('.order-card');
 
             if (!searchInput) return;
 
@@ -2028,6 +2027,7 @@ function buildWhatsAppLink($phone, $shop, $orderNum, $amount, $itemsText = '') {
                     clearBtn.classList.remove('visible');
                 }
 
+                const cards = document.querySelectorAll('.order-card');
                 cards.forEach(card => {
                     const data = card.getAttribute('data-search') || '';
                     if (!term || data.includes(term)) {
@@ -2037,6 +2037,8 @@ function buildWhatsAppLink($phone, $shop, $orderNum, $amount, $itemsText = '') {
                     }
                 });
             }
+
+            window.doFilter = doFilter;
 
             searchInput.addEventListener('input', doFilter);
 
@@ -2172,64 +2174,127 @@ function buildWhatsAppLink($phone, $shop, $orderNum, $amount, $itemsText = '') {
                 }, 9000);
             }
 
-            // Real-time polling function
-            function pollForNewOrders() {
-                fetch(pollUrl)
-                    .then(res => res.json())
-                    .then(data => {
-                        if (!data.success || !Array.isArray(data.orders)) return;
+            // Real-time AJAX refresh function (runs every 3 seconds)
+            let isRefreshing = false;
+            function refreshZonePage() {
+                if (isRefreshing) return;
 
-                        let hasNewIncoming = false;
+                // If user is actively typing in an input or selecting a dropdown inside orders, defer replacing that block
+                const activeEl = document.activeElement;
+                const isFormActive = activeEl && (activeEl.tagName === 'SELECT' || activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA');
 
-                        data.orders.forEach(ord => {
-                            const ordId = parseInt(ord.order_id);
+                isRefreshing = true;
+                fetch(window.location.href, {
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                })
+                .then(r => {
+                    if (!r.ok) throw new Error('Network error: ' + r.status);
+                    return r.text();
+                })
+                .then(html => {
+                    const parser = new DOMParser();
+                    const doc = parser.parseFromString(html, 'text/html');
+
+                    // 1. Detect any newly arrived unread orders
+                    let hasNewIncoming = false;
+                    doc.querySelectorAll('.notif-item').forEach(item => {
+                        const idMatch = item.id && item.id.match(/notif-card-(\d+)/);
+                        if (idMatch) {
+                            const ordId = parseInt(idMatch[1]);
                             if (!knownUnreadIds.has(ordId)) {
-                                // NEW ORDER DETECTED!
                                 knownUnreadIds.add(ordId);
                                 hasNewIncoming = true;
-
-                                const shopName = ord.shop_name || ord.customer_name || 'Customer';
-                                const qty = ord.quantity || 1;
-                                const amt = '₹' + parseFloat(ord.total_amount).toFixed(2);
-                                const ordNum = ord.order_number || ('#' + ordId);
-                                const orderUrl = '<?= zone_url($zone_slug, 'order') ?>?id=' + ordId;
-
-                                showToast(
-                                    `🔔 New Order from Admin: ${ordNum}`,
-                                    `<strong>${shopName}</strong> • ${ord.product_name} &times; ${qty} Cases (${amt})`,
-                                    orderUrl
-                                );
-                            }
-                        });
-
-                        if (hasNewIncoming) {
-                            playNotificationSound();
-                            if (navigator.vibrate) {
-                                navigator.vibrate([250, 100, 250]);
-                            }
-
-                            // Update window title
-                            document.title = `(${data.unread_count}) 🔔 New Order! - Liyas Delivery`;
-
-                            // Refresh page after a brief delay if banner was empty so full UI updates
-                            const existingBanner = document.querySelector('.notif-banner');
-                            if (!existingBanner && data.unread_count > 0) {
-                                setTimeout(() => window.location.reload(), 2000);
-                            } else {
-                                const pill = document.querySelector('.notif-count-pill');
-                                if (pill) {
-                                    pill.textContent = data.unread_count + ' ACTION REQUIRED';
-                                }
+                                const shop = item.querySelector('.notif-shop')?.innerText?.trim() || 'New Order';
+                                const meta = item.querySelector('.notif-meta')?.innerText?.trim() || '';
+                                showToast('🔔 New Order Alert', `<strong>${shop}</strong><br><small>${meta}</small>`);
                             }
                         }
-                    })
-                    .catch(err => console.debug('Order poll error:', err));
+                    });
+
+                    // Check newly marked unread cards in orders listing
+                    doc.querySelectorAll('#ordersContainer .badge-unread-chip').forEach(badge => {
+                        const idMatch = badge.id && badge.id.match(/unread-tag-(\d+)/);
+                        if (idMatch) {
+                            const ordId = parseInt(idMatch[1]);
+                            if (!knownUnreadIds.has(ordId)) {
+                                knownUnreadIds.add(ordId);
+                                hasNewIncoming = true;
+                            }
+                        }
+                    });
+
+                    if (hasNewIncoming) {
+                        playNotificationSound();
+                        if (navigator.vibrate) {
+                            navigator.vibrate([250, 100, 250]);
+                        }
+                    }
+
+                    // 2. Update window title
+                    if (doc.title) {
+                        document.title = doc.title;
+                    }
+
+                    // 3. Update Notification Banner
+                    const currentBanner = document.querySelector('.notif-banner');
+                    const newBanner = doc.querySelector('.notif-banner');
+                    const mainContainer = document.querySelector('.portal-container');
+
+                    if (newBanner) {
+                        if (currentBanner) {
+                            currentBanner.innerHTML = newBanner.innerHTML;
+                        } else if (mainContainer) {
+                            const dropdownWrapper = mainContainer.querySelector('.metrics-dropdown-wrapper');
+                            if (dropdownWrapper) {
+                                mainContainer.insertBefore(newBanner, dropdownWrapper);
+                            } else {
+                                mainContainer.prepend(newBanner);
+                            }
+                        }
+                    } else if (currentBanner) {
+                        currentBanner.remove();
+                    }
+
+                    // 4. Update Metrics Grid while preserving mobile accordion open state
+                    const currentMetrics = document.getElementById('metricsGrid');
+                    const newMetrics = doc.getElementById('metricsGrid');
+                    if (currentMetrics && newMetrics) {
+                        const isMobileOpen = currentMetrics.classList.contains('show-mobile');
+                        currentMetrics.innerHTML = newMetrics.innerHTML;
+                        if (isMobileOpen) {
+                            currentMetrics.classList.add('show-mobile');
+                        }
+                    }
+
+                    // 5. Update Status Filter Pills & Counters
+                    const currentFilterScroll = document.querySelector('.filter-scroll-container');
+                    const newFilterScroll = doc.querySelector('.filter-scroll-container');
+                    if (currentFilterScroll && newFilterScroll) {
+                        currentFilterScroll.innerHTML = newFilterScroll.innerHTML;
+                    }
+
+                    // 6. Update Orders Listing Container
+                    const currentOrders = document.getElementById('ordersContainer');
+                    const newOrders = doc.getElementById('ordersContainer');
+                    if (currentOrders && newOrders) {
+                        const isOrdersFocused = isFormActive && currentOrders.contains(activeEl);
+                        if (!isOrdersFocused) {
+                            currentOrders.innerHTML = newOrders.innerHTML;
+                            if (typeof window.doFilter === 'function') {
+                                window.doFilter();
+                            }
+                        }
+                    }
+                })
+                .catch(err => console.debug('Zone page AJAX refresh error:', err))
+                .finally(() => {
+                    isRefreshing = false;
+                });
             }
 
-            // Start polling every 3 seconds
-            setInterval(pollForNewOrders, 3000);
-
-           
+            // Start real-time AJAX refresh every 3 seconds
+            setInterval(refreshZonePage, 3000);
+            window.refreshZonePage = refreshZonePage;
 
             // Acknowledge order handler via AJAX
             window.acknowledgeOrder = function(orderId, btn) {
@@ -2282,6 +2347,9 @@ function buildWhatsAppLink($phone, $shop, $orderNum, $amount, $itemsText = '') {
                         }
 
                         showToast('Order Checked', `Order #${orderId} marked as checked. Admin panel notified!`, null, 'bx-check-double');
+
+                        // Immediately trigger page refresh to synchronize server state
+                        setTimeout(refreshZonePage, 400);
                     }
                 })
                 .catch(e => {
@@ -2293,7 +2361,7 @@ function buildWhatsAppLink($phone, $shop, $orderNum, $amount, $itemsText = '') {
                 });
             };
         })();
-         document.addEventListener('DOMContentLoaded', function() {
+        document.addEventListener('DOMContentLoaded', function() {
     const toggleBtn = document.getElementById('toggleMetricsBtn');
     const metricsGrid = document.getElementById('metricsGrid');
 
