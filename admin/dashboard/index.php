@@ -308,7 +308,7 @@ try {
             <div class="header">
                 <div class="breadcrumb">
                     <i class='bx bx-home'></i>
-                    <span>Central Warehouse Dashboard</span>
+                    <span>Website Dashboard</span>
                 </div>
                 <div class="header-actions">
                     <!-- Period Filter Tabs -->

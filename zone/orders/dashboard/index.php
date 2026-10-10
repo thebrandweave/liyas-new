@@ -1205,6 +1205,10 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
 
                
 
+                <a href="<?= BASE_URL ?>/zone/orders/dashboard/products/" class="btn-header" title="Products & Inventory Management">
+                    <i class='bx bx-cube'></i>
+                    <span>Products</span>
+                </a>
                 <a href="<?= BASE_URL ?>/zone/orders/logout.php" class="btn-header btn-logout" title="Lock and logout">
                     <i class='bx bx-lock-alt'></i>
                     <span>Lock / Logout</span>
@@ -1393,7 +1397,7 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
                     $shopName = $order['shop_name'] ?: ($order['customer_name'] ?: 'Customer');
                     $isUnread = ((int)$order['is_zone_read'] === 0 && $order['status'] !== 'cancelled');
                     $zoneSlug = $order['zone_slug'] ?: 'central';
-                    $zoneName = $order['zone_name'] ?: 'Central Warehouse';
+                    $zoneName = $order['zone_name'] ?: 'Website';
                     $zColor = getZoneColorConfig($zoneSlug);
                     $totalAmt = (float)$order['total_amount'];
                     $badgeClass = getStatusBadgeClass($order['status']);

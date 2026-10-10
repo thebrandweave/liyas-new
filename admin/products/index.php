@@ -102,7 +102,7 @@ foreach ($products as $p) {
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&display=swap" rel="stylesheet">
     <link href='https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css' rel='stylesheet'>
     <link rel="stylesheet" href="../assets/css/prody-admin.css">
-    <title>Products Inventory - Liyas Central Warehouse</title>
+    <title>Products Inventory - Liyas Website</title>
     <style>
         body { font-family: 'Poppins', sans-serif; }
         .table-card table tbody td { font-size: 14px; color: #334155; }

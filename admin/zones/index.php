@@ -146,7 +146,7 @@ try {
                         <div>
                             <div class="table-title" style="font-size: 18px; font-weight: 600;">All Delivery Zones</div>
                             <div style="font-size: 13px; color: var(--text-secondary); margin-top: 2px;">
-                                Central warehouse distributes orders to these dynamic zones.
+                                Website distributes orders to these dynamic zones.
                             </div>
                         </div>
                         <div class="table-actions" style="display: flex; gap: 8px;">

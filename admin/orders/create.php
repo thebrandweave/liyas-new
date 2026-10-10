@@ -43,7 +43,7 @@ if (isset($_GET['action']) && $_GET['action'] === 'get_live_stock') {
 $zones_stmt = $pdo->query("SELECT id, name, slug FROM zones WHERE status = 'active' ORDER BY name ASC");
 $zones = $zones_stmt->fetchAll(PDO::FETCH_ASSOC);
 
-// Load products matching Central Warehouse Product Inventory (admin/products/index.php)
+// Load products matching Website Product Inventory (admin/products/index.php)
 $products_stmt = $pdo->query("SELECT product_id, name, product_name, case_price, price, case_stock, stock, net_content, net_content_unit FROM products WHERE status != 'inactive' OR status IS NULL ORDER BY case_price ASC, name ASC");
 $products = $products_stmt->fetchAll(PDO::FETCH_ASSOC);
 
@@ -252,7 +252,7 @@ if (empty($form_items)) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Create Order - Liyas Central Warehouse</title>
+    <title>Create Order - Liyas Website</title>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link href='https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css' rel='stylesheet'>
     <link rel="stylesheet" href="../assets/css/prody-admin.css">
@@ -523,7 +523,7 @@ if (empty($form_items)) {
                                 <button type="button" onclick="refreshLiveStocks(true)" class="btn-refresh-stock" style="background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 6px; padding: 4px 10px; font-size: 12px; color: #334155; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; font-weight: 500;" title="Refresh available stock from Warehouse Inventory">
                                     <i class='bx bx-refresh' id="refreshStockIcon"></i> Refresh Stock
                                 </button>
-                                <a href="../products/index.php" target="_blank" style="font-size: 12px; color: #2563eb; text-decoration: none; font-weight: 500; display: inline-flex; align-items: center; gap: 3px;" title="View Central Warehouse Product Inventory">
+                                <a href="../products/index.php" target="_blank" style="font-size: 12px; color: #2563eb; text-decoration: none; font-weight: 500; display: inline-flex; align-items: center; gap: 3px;" title="View Website Product Inventory">
                                     <i class='bx bx-link-external'></i> View Inventory
                                 </a>
                             </div>
@@ -898,7 +898,7 @@ if (empty($form_items)) {
             displayTotalAmount.textContent = '₹' + grandTotal.toFixed(2);
         }
 
-        // Live Stock Fetching from Central Warehouse Inventory
+        // Live Stock Fetching from Website Inventory
         async function refreshLiveStocks(manual = false) {
             const icon = document.getElementById('refreshStockIcon');
             const indicator = document.getElementById('stockSyncIndicator');

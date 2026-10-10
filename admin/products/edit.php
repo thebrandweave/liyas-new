@@ -165,7 +165,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_product'])) {
                 <div class="form-card">
                     <h2 style="font-size: 20px; font-weight: 600; margin-bottom: 0.5rem; color: #111827;">Edit Warehouse Product</h2>
                     <p style="font-size: 13px; color: #6b7280; margin-bottom: 1.75rem;">
-                        Update product specifications, case pricing, and central warehouse stock levels.
+                        Update product specifications, case pricing, and Website stock levels.
                     </p>
 
                     <form action="edit.php?id=<?= $product_id ?>" method="POST" enctype="multipart/form-data">

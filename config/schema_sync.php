@@ -253,7 +253,7 @@ function ensureWarehouseSchema(PDO $pdo): bool {
                 ('company_gstin', '29ABCDE1234F1Z5'),
                 ('company_phone', '+91 63663 78967'),
                 ('company_website', 'liyasinternational.com'),
-                ('company_address', 'Central Warehouse, Mangalore, Karnataka'),
+                ('company_address', 'Website, Mangalore, Karnataka'),
                 ('zone_orders_access_code', 'ZONE2026');
         ");
 

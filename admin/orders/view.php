@@ -380,7 +380,7 @@ $baseAmount = $itemsBaseTotal;
                                             <?= htmlspecialchars($order['zone_name']) ?> <i class='bx bx-external-link'></i>
                                         </a>
                                     <?php else: ?>
-                                        Central Warehouse
+                                        Website
                                     <?php endif; ?>
                                 </span>
                             </div>

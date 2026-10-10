@@ -53,7 +53,7 @@ if (!$order) {
 // Load active zones
 $zones = $pdo->query("SELECT id, name, slug FROM zones ORDER BY name ASC")->fetchAll(PDO::FETCH_ASSOC);
 
-// Load products matching Central Warehouse Product Inventory (admin/products/index.php)
+// Load products matching Website Product Inventory (admin/products/index.php)
 $products = $pdo->query("SELECT product_id, name, product_name, case_price, price, case_stock, stock, net_content, net_content_unit FROM products WHERE status != 'inactive' OR status IS NULL ORDER BY case_price ASC, name ASC")->fetchAll(PDO::FETCH_ASSOC);
 
 // Build structured products map for JS lookup
@@ -581,7 +581,7 @@ $displayOrderNum = $order['order_number'] ?: ('#' . $order['order_id']);
                                 <button type="button" onclick="refreshLiveStocks(true)" class="btn-refresh-stock" style="background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 6px; padding: 4px 10px; font-size: 12px; color: #334155; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; font-weight: 500;" title="Refresh available stock from Warehouse Inventory">
                                     <i class='bx bx-refresh' id="refreshStockIcon"></i> Refresh Stock
                                 </button>
-                                <a href="../products/index.php" target="_blank" style="font-size: 12px; color: #2563eb; text-decoration: none; font-weight: 500; display: inline-flex; align-items: center; gap: 3px;" title="View Central Warehouse Product Inventory">
+                                <a href="../products/index.php" target="_blank" style="font-size: 12px; color: #2563eb; text-decoration: none; font-weight: 500; display: inline-flex; align-items: center; gap: 3px;" title="View Website Product Inventory">
                                     <i class='bx bx-link-external'></i> View Inventory
                                 </a>
                             </div>
@@ -956,7 +956,7 @@ $displayOrderNum = $order['order_number'] ?: ('#' . $order['order_id']);
             displayTotalAmount.textContent = '₹' + grandTotal.toFixed(2);
         }
 
-        // Live Stock Fetching from Central Warehouse Inventory
+        // Live Stock Fetching from Website Inventory
         async function refreshLiveStocks(manual = false) {
             const icon = document.getElementById('refreshStockIcon');
             const indicator = document.getElementById('stockSyncIndicator');
