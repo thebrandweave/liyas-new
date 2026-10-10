@@ -144,6 +144,8 @@ $more_badge_total = $ads_count + $reviews_pending_count + $social_count + $subs_
                 <?php endif; ?>
             </a>
 
+     
+
             <a href="<?= $base_path ?>revenue/index.php"
                class="nav-item <?= ($current_dir=='revenue'||$current_page==='revenue')?'active':'' ?>">
                 <i class='bx bx-line-chart'></i>

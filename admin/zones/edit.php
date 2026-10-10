@@ -24,6 +24,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_zone'])) {
     $custom_slug = trim($_POST['slug'] ?? '');
     $status = in_array($_POST['status'] ?? '', ['active', 'inactive']) ? $_POST['status'] : 'active';
 
+    $access_code = trim($_POST['access_code'] ?? 'ZONE2026');
+    if (empty($access_code)) $access_code = 'ZONE2026';
+
     if (empty($name)) {
         $error = "Zone name is required.";
     } else {
@@ -40,8 +43,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_zone'])) {
                 $error = "Another zone already uses the route '/{$slug}'. Please choose a different slug.";
             } else {
                 try {
-                    $updateStmt = $pdo->prepare("UPDATE zones SET name = ?, slug = ?, status = ?, updated_at = NOW() WHERE id = ?");
-                    $updateStmt->execute([$name, $slug, $status, $id]);
+                    $updateStmt = $pdo->prepare("UPDATE zones SET name = ?, slug = ?, access_code = ?, status = ?, updated_at = NOW() WHERE id = ?");
+                    $updateStmt->execute([$name, $slug, $access_code, $status, $id]);
 
                     quickLog($pdo, 'update', 'zone', $id, "Updated zone: {$name} (/{$slug})");
 
@@ -159,6 +162,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_zone'])) {
                                 <i class='bx bx-link'></i>
                                 Portal URL: <span id="previewUrl"><strong><?= BASE_URL ?>/<?= htmlspecialchars($zone['slug']) ?></strong></span>
                             </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label" for="access_code">Authorization Access Code</label>
+                            <input type="text" name="access_code" id="access_code" class="form-control" placeholder="e.g. ZONE2026" value="<?= htmlspecialchars($_POST['access_code'] ?? ($zone['access_code'] ?: 'ZONE2026')) ?>">
+                            <small style="color: #94a3b8; font-size: 12px;">Delivery drivers and staff can enter this code at <code>/zone/orders</code> to access orders for this zone.</small>
                         </div>
 
                         <div class="form-group">

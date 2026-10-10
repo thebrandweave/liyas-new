@@ -13,6 +13,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_zone'])) {
     $custom_slug = trim($_POST['slug'] ?? '');
     $status = in_array($_POST['status'] ?? '', ['active', 'inactive']) ? $_POST['status'] : 'active';
 
+    $access_code = trim($_POST['access_code'] ?? 'ZONE2026');
+    if (empty($access_code)) $access_code = 'ZONE2026';
+
     if (empty($name)) {
         $error = "Zone name is required.";
     } else {
@@ -31,8 +34,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_zone'])) {
                 $error = "A zone with portal route '/{$slug}' already exists. Please choose a different name.";
             } else {
                 try {
-                    $stmt = $pdo->prepare("INSERT INTO zones (name, slug, status) VALUES (?, ?, ?)");
-                    $stmt->execute([$name, $slug, $status]);
+                    $stmt = $pdo->prepare("INSERT INTO zones (name, slug, access_code, status) VALUES (?, ?, ?, ?)");
+                    $stmt->execute([$name, $slug, $access_code, $status]);
                     $new_id = $pdo->lastInsertId();
 
                     quickLog($pdo, 'create', 'zone', $new_id, "Created new zone: {$name} (/{$slug})");
@@ -152,6 +155,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_zone'])) {
                                 <i class='bx bx-link'></i>
                                 Portal URL: <span id="previewUrl"><strong><?= BASE_URL ?>/<span>...</span></strong></span>
                             </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label" for="access_code">Authorization Access Code</label>
+                            <input type="text" name="access_code" id="access_code" class="form-control" placeholder="e.g. ZONE2026" value="<?= htmlspecialchars($_POST['access_code'] ?? 'ZONE2026') ?>">
+                            <small style="color: #94a3b8; font-size: 12px;">Delivery drivers and staff can enter this code at <code>/zone/orders</code> to access orders.</small>
                         </div>
 
                         <div class="form-group">

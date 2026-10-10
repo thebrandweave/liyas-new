@@ -2226,8 +2226,8 @@ function buildWhatsAppLink($phone, $shop, $orderNum, $amount, $itemsText = '') {
                     .catch(err => console.debug('Order poll error:', err));
             }
 
-            // Start polling every 6 seconds
-            setInterval(pollForNewOrders, 6000);
+            // Start polling every 3 seconds
+            setInterval(pollForNewOrders, 3000);
 
            
 

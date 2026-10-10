@@ -25,6 +25,12 @@
     RewriteRule ^redeem/?$ redeem/index.php [L]
 
     # --------------------------------------------------
+    # 4b. Handle /zone/orders and /zone/orders/dashboard
+    # --------------------------------------------------
+    RewriteRule ^zone/orders/?$ zone/orders/index.php [L,QSA]
+    RewriteRule ^zone/orders/dashboard/?$ zone/orders/dashboard/index.php [L,QSA]
+
+    # --------------------------------------------------
     # 5. Redirect direct .php URLs to clean URLs
     #    Preserve query strings; exclude admin, index-temp, and APIs
     # --------------------------------------------------
@@ -34,6 +40,7 @@
     RewriteCond %1 !^redeem$ [NC]
     RewriteCond %1 !^(add_to_cart|get_cart|update_cart_quantity|remove_from_cart|submit_review|get_product_details)$ [NC]
     RewriteCond %{REQUEST_URI} !^/admin/ [NC]
+    RewriteCond %{REQUEST_URI} !/zone/ [NC]
     RewriteRule ^(.+)\.php$ /%1 [R=301,L,NE]
 
     # --------------------------------------------------

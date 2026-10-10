@@ -63,14 +63,20 @@ function ensureWarehouseSchema(PDO $pdo): bool {
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
         ");
 
+        // Ensure access_code column exists in zones
+        $zoneCols = $pdo->query("SHOW COLUMNS FROM `zones`")->fetchAll(PDO::FETCH_COLUMN);
+        if (!in_array('access_code', $zoneCols)) {
+            $pdo->exec("ALTER TABLE `zones` ADD COLUMN `access_code` VARCHAR(50) NULL AFTER `slug`");
+        }
+
         // Seed initial zones if none exist
         $zoneCount = (int)$pdo->query("SELECT COUNT(*) FROM zones")->fetchColumn();
         if ($zoneCount === 0) {
             $pdo->exec("
-                INSERT IGNORE INTO `zones` (`name`, `slug`, `status`) VALUES 
-                    ('Mangalore Zone', 'mangalore', 'active'),
-                    ('Thokkottu Zone', 'thokkottu', 'active'),
-                    ('Vitla Zone', 'vitla', 'active');
+                INSERT IGNORE INTO `zones` (`name`, `slug`, `access_code`, `status`) VALUES 
+                    ('Mangalore Zone', 'mangalore', 'ZONE2026', 'active'),
+                    ('Thokkottu Zone', 'thokkottu', 'ZONE2026', 'active'),
+                    ('Vitla Zone', 'vitla', 'ZONE2026', 'active');
             ");
         }
 
@@ -247,7 +253,8 @@ function ensureWarehouseSchema(PDO $pdo): bool {
                 ('company_gstin', '29ABCDE1234F1Z5'),
                 ('company_phone', '+91 63663 78967'),
                 ('company_website', 'liyasinternational.com'),
-                ('company_address', 'Central Warehouse, Mangalore, Karnataka');
+                ('company_address', 'Central Warehouse, Mangalore, Karnataka'),
+                ('zone_orders_access_code', 'ZONE2026');
         ");
 
         if (session_status() === PHP_SESSION_ACTIVE) {
