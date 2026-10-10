@@ -150,10 +150,7 @@ try {
                             </div>
                         </div>
                         <div class="table-actions" style="display: flex; gap: 8px;">
-                            <a href="<?= BASE_URL ?>/zone/orders/dashboard/" target="_blank" class="btn-action noselect" style="text-decoration: none; background: #2563eb; color: #fff; padding: 6px 12px; border-radius: 6px; font-size: 13px; display: inline-flex; align-items: center; gap: 5px;">
-                                <i class='bx bx-broadcast'></i>
-                                <span>Zone Orders Hub</span>
-                            </a>
+                          
                             <a href="create.php" class="btn-action btn-add noselect" style="text-decoration: none;">
                                 <span class="text">+ Add Zone</span>
                             </a>
@@ -166,7 +163,7 @@ try {
                                 <tr>
                                     <th>Zone Name</th>
                                     <th>Portal Path</th>
-                                    <th>Access Code</th>
+                             
                                     <th>Orders</th>
                                     <th>Status</th>
                                     <th>Actions</th>
@@ -199,9 +196,7 @@ try {
                                                 <i class='bx bx-external-link' style="font-size: 14px;"></i>
                                             </a>
                                         </td>
-                                        <td>
-                                            <code style="background: #f1f5f9; padding: 3px 8px; border-radius: 6px; font-weight: 700; color: #1e293b; font-size: 12px; border: 1px solid #cbd5e1;"><?= $zoneCode ?></code>
-                                        </td>
+                                   
                                         <td>
                                             <div style="font-size: 13px;">
                                                 <strong><?= (int)$zone['total_orders'] ?></strong> total
