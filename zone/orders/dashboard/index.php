@@ -1189,16 +1189,16 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
     <!-- Top Fixed Portal Header -->
     <header class="portal-header">
         <div class="header-inner">
-            <a href="<?= BASE_URL ?>/zone/orders/dashboard/" class="brand-block">
-                <img src="<?= BASE_URL ?>/assets/images/logo/logo-bg.jpg" alt="Logo" class="brand-logo">
+       
+              
                 <div class="brand-info">
                     <h1>
-                        <span>Zone Orders Hub</span>
-                        <span class="badge-live-stream"><span class="pulse-dot"></span> LIVE SYNC</span>
+                        <span>Zone Orders Management</span>
+                       
                     </h1>
-                    <p>Centralized Portal • All Delivery Zones</p>
+                    <p>All Delivery Zones</p>
                 </div>
-            </a>
+         
 
             <div class="header-actions">
              
