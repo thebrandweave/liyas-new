@@ -330,6 +330,67 @@ function ensureWarehouseSchema(PDO $pdo): bool {
             error_log("Schema sync vehicle_loads error: " . $e->getMessage());
         }
 
+        // ============================================
+        // 11. PRIMARY KEY INTEGRITY CHECKER
+        // Fixes phpMyAdmin "Current selection does not contain a unique column" warning
+        // by ensuring all tables in the database have a valid PRIMARY KEY.
+        // ============================================
+        try {
+            $allDbTables = $pdo->query("SHOW TABLES")->fetchAll(PDO::FETCH_COLUMN) ?: [];
+            $knownPkMap = [
+                'orders'                   => 'order_id',
+                'order_items'              => 'order_item_id',
+                'vehicle_loads'            => 'id',
+                'vehicles'                 => 'id',
+                'zones'                    => 'id',
+                'receipts'                 => 'id',
+                'order_payments'           => 'id',
+                'rewards'                  => 'id',
+                'products'                 => 'product_id',
+                'categories'               => 'category_id',
+                'cart_items'               => 'cart_item_id',
+                'admins'                   => 'admin_id',
+                'users'                    => 'user_id',
+                'advertisements'           => 'ad_id',
+                'notifications'            => 'notification_id',
+                'reviews'                  => 'review_id',
+                'social_links'             => 'social_id',
+                'activity_logs'            => 'activity_id',
+                'newsletter_subscriptions' => 'newsletter_id',
+                'product_attributes'       => 'attribute_id',
+                'products_media'           => 'media_id',
+                'shipping_addresses'       => 'address_id',
+                'admin_tokens'             => 'id',
+                'codes'                    => 'id',
+                'history'                  => 'id',
+                'system_settings'          => 'setting_key'
+            ];
+
+            foreach ($allDbTables as $tbl) {
+                try {
+                    $pkExists = $pdo->query("SHOW KEYS FROM `{$tbl}` WHERE Key_name = 'PRIMARY'")->fetchAll();
+                    if (empty($pkExists)) {
+                        $cols = $pdo->query("SHOW COLUMNS FROM `{$tbl}`")->fetchAll(PDO::FETCH_COLUMN);
+                        $targetCol = $knownPkMap[$tbl] ?? ($tbl . '_id');
+
+                        if ($tbl === 'system_settings' && in_array('setting_key', $cols)) {
+                            $pdo->exec("ALTER TABLE `{$tbl}` ADD PRIMARY KEY (`setting_key`)");
+                        } elseif (in_array($targetCol, $cols)) {
+                            $pdo->exec("ALTER TABLE `{$tbl}` MODIFY COLUMN `{$targetCol}` INT NOT NULL AUTO_INCREMENT PRIMARY KEY");
+                        } elseif (in_array('id', $cols)) {
+                            $pdo->exec("ALTER TABLE `{$tbl}` MODIFY COLUMN `id` INT NOT NULL AUTO_INCREMENT PRIMARY KEY");
+                        } else {
+                            $pdo->exec("ALTER TABLE `{$tbl}` ADD COLUMN `id` INT NOT NULL AUTO_INCREMENT PRIMARY KEY FIRST");
+                        }
+                    }
+                } catch (Exception $e) {
+                    error_log("Schema sync PK fix error on table {$tbl}: " . $e->getMessage());
+                }
+            }
+        } catch (Exception $e) {
+            error_log("Schema sync PK integrity error: " . $e->getMessage());
+        }
+
         return true;
     } catch (Exception $e) {
         error_log("Warehouse schema sync failed: " . $e->getMessage());
