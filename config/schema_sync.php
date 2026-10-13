@@ -391,6 +391,36 @@ function ensureWarehouseSchema(PDO $pdo): bool {
             error_log("Schema sync PK integrity error: " . $e->getMessage());
         }
 
+        // ============================================
+        // 12. DELIVERED EXTRA ITEMS STOCK RECONCILIATION
+        // One-time safe sync: Ensure any extra items delivered from vehicles
+        // on previous orders are properly decremented from products warehouse stock.
+        // ============================================
+        try {
+            $hasSyncedExtra = $pdo->query("SELECT setting_value FROM system_settings WHERE setting_key = 'synced_extra_delivery_stock_v1'")->fetchColumn();
+            if (!$hasSyncedExtra) {
+                $extraDelivered = $pdo->query("
+                    SELECT oi.product_id, SUM(oi.quantity) as missed_qty
+                    FROM order_items oi
+                    JOIN orders o ON oi.order_id = o.order_id
+                    WHERE oi.is_extra = 1 AND o.status = 'delivered'
+                    GROUP BY oi.product_id
+                ")->fetchAll(PDO::FETCH_ASSOC);
+
+                foreach ($extraDelivered as $ed) {
+                    $ePid = (int)$ed['product_id'];
+                    $mQty = (int)$ed['missed_qty'];
+                    if ($ePid > 0 && $mQty > 0) {
+                        adjustProductStock($pdo, $ePid, -$mQty, "One-time sync: Deduct previously delivered vehicle extra items");
+                    }
+                }
+
+                $pdo->exec("INSERT INTO system_settings (setting_key, setting_value) VALUES ('synced_extra_delivery_stock_v1', '1') ON DUPLICATE KEY UPDATE setting_value = '1'");
+            }
+        } catch (Exception $e) {
+            error_log("Schema sync delivered extra stock reconcile error: " . $e->getMessage());
+        }
+
         return true;
     } catch (Exception $e) {
         error_log("Warehouse schema sync failed: " . $e->getMessage());

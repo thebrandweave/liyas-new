@@ -58,17 +58,44 @@ $count_stmt->execute([$searchTerm, $searchTerm, $searchTerm]);
 $total_records = $count_stmt->fetchColumn();
 $total_pages = ceil($total_records / $per_page);
 
-// Fetch products with stock allocation across zones
+// Fetch products with accurate stock allocation across zones, order items, and vehicle loads
 $query = "
     SELECT 
         p.*,
-        COALESCE(SUM(CASE WHEN o.status != 'cancelled' THEN o.quantity ELSE 0 END), 0) AS total_cases_in_zones,
-        COALESCE(SUM(CASE WHEN o.status = 'delivered' THEN o.quantity ELSE 0 END), 0) AS cases_delivered,
-        COALESCE(SUM(CASE WHEN o.status IN ('pending', 'processing', 'shipped') THEN o.quantity ELSE 0 END), 0) AS cases_in_transit
+        (
+            COALESCE((
+                SELECT SUM(oi.quantity)
+                FROM order_items oi
+                JOIN orders ord ON oi.order_id = ord.order_id
+                WHERE oi.product_id = p.product_id AND ord.status = 'delivered'
+            ), 0) + COALESCE((
+                SELECT SUM(ord2.quantity)
+                FROM orders ord2
+                WHERE ord2.product_id = p.product_id 
+                  AND ord2.status = 'delivered'
+                  AND NOT EXISTS (SELECT 1 FROM order_items oi2 WHERE oi2.order_id = ord2.order_id)
+            ), 0)
+        ) AS cases_delivered,
+        (
+            COALESCE((
+                SELECT SUM(oi.quantity)
+                FROM order_items oi
+                JOIN orders ord ON oi.order_id = ord.order_id
+                WHERE oi.product_id = p.product_id AND ord.status IN ('pending', 'processing', 'shipped')
+            ), 0) + COALESCE((
+                SELECT SUM(ord2.quantity)
+                FROM orders ord2
+                WHERE ord2.product_id = p.product_id 
+                  AND ord2.status IN ('pending', 'processing', 'shipped')
+                  AND NOT EXISTS (SELECT 1 FROM order_items oi2 WHERE oi2.order_id = ord2.order_id)
+            ), 0) + COALESCE((
+                SELECT SUM(vl.cases_loaded)
+                FROM vehicle_loads vl
+                WHERE vl.product_id = p.product_id AND vl.is_active = 1 AND vl.order_id IS NULL
+            ), 0)
+        ) AS cases_in_transit
     FROM products p
-    LEFT JOIN orders o ON p.product_id = o.product_id
     WHERE p.name LIKE :search1 OR p.product_name LIKE :search2 OR p.description LIKE :search3
-    GROUP BY p.product_id
     ORDER BY p.case_price ASC, p.created_at DESC
     LIMIT :limit OFFSET :offset
 ";

@@ -297,37 +297,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['generate_receipt'])) 
                 }
 
                 if ($order) {
-                    // 1. Stock adjustments based on diff between ordered and delivered regular quantities
+                    // 1. Stock adjustments based on diff between previously booked items and delivered items (including vehicle extras)
                     $oldItems = getOrderItems($pdo, $order_id);
-                    $oldRegularQtyByPid = [];
+                    $oldQtyByPid = [];
                     $loadedExtraByPid = [];
                     foreach ($oldItems as $oi) {
                         $p_id = (int)$oi['product_id'];
-                        if (empty($oi['is_extra'])) {
-                            $oldRegularQtyByPid[$p_id] = ($oldRegularQtyByPid[$p_id] ?? 0) + (int)$oi['quantity'];
-                        } else {
+                        if ($p_id > 0) {
+                            $oldQtyByPid[$p_id] = ($oldQtyByPid[$p_id] ?? 0) + (int)$oi['quantity'];
+                        }
+                        if (!empty($oi['is_extra'])) {
                             $loadedExtraByPid[$p_id] = ($loadedExtraByPid[$p_id] ?? 0) + (int)$oi['quantity'];
                         }
                     }
 
-                    $newRegularQtyByPid = [];
+                    $newQtyByPid = [];
                     $deliveredExtraByPid = [];
                     foreach ($processed_items as $pi) {
                         $p_id = (int)$pi['product_id'];
-                        if (empty($pi['is_extra'])) {
-                            $newRegularQtyByPid[$p_id] = ($newRegularQtyByPid[$p_id] ?? 0) + (int)$pi['quantity'];
-                        } else {
+                        if ($p_id > 0) {
+                            $newQtyByPid[$p_id] = ($newQtyByPid[$p_id] ?? 0) + (int)$pi['quantity'];
+                        }
+                        if (!empty($pi['is_extra'])) {
                             $deliveredExtraByPid[$p_id] = ($deliveredExtraByPid[$p_id] ?? 0) + (int)$pi['quantity'];
                         }
                     }
 
-                    $allProductIds = array_unique(array_merge(array_keys($oldRegularQtyByPid), array_keys($newRegularQtyByPid)));
+                    $allProductIds = array_unique(array_merge(array_keys($oldQtyByPid), array_keys($newQtyByPid)));
                     foreach ($allProductIds as $apid) {
-                        $oldQ = $oldRegularQtyByPid[$apid] ?? 0;
-                        $newQ = $newRegularQtyByPid[$apid] ?? 0;
+                        $oldQ = $oldQtyByPid[$apid] ?? 0;
+                        $newQ = $newQtyByPid[$apid] ?? 0;
                         $diff = $newQ - $oldQ;
                         if ($diff !== 0) {
-                            adjustProductStock($pdo, $apid, -$diff, "Order #{$order_id} delivered");
+                            adjustProductStock($pdo, $apid, -$diff, "Order #{$order_id} delivered (including vehicle extras)");
                         }
                     }
 
