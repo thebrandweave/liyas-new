@@ -705,6 +705,10 @@ $total_delivered = (int)$orderTotals['total_delivered'];
                     <i class='bx bx-shopping-bag'></i>
                     <span>Orders Dashboard</span>
                 </a>
+                <a href="<?= BASE_URL ?>/zone/orders/dashboard/vehicles/" class="btn-header" style="color: #1e40af; background: #eff6ff; border-color: #bfdbfe; font-weight: 700;" title="Vehicles & Line-Sale Loading">
+                    <i class='bx bxs-truck' style="color: #2563eb; font-size: 16px;"></i>
+                    <span>Vehicles</span>
+                </a>
                 <a href="add.php" class="btn-header btn-header-primary" title="Add New Product SKU">
                     <i class='bx bx-plus-circle'></i>
                     <span>+ Add Product</span>

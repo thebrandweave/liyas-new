@@ -840,6 +840,62 @@ function getAllShopNamesWithZones(PDO $pdo): array {
 }
 
 /**
+ * Synchronize order items to vehicle_loads table so each product loaded for this order is tracked
+ */
+function syncOrderVehicleLoads(PDO $pdo, int $orderId, ?int $vehicleId = null): void {
+	try {
+		if ($vehicleId === null) {
+			$stmt = $pdo->prepare("SELECT vehicle_id FROM orders WHERE order_id = ?");
+			$stmt->execute([$orderId]);
+			$vehicleId = (int)$stmt->fetchColumn();
+		}
+
+		// Delete existing vehicle_loads for this order
+		$pdo->prepare("DELETE FROM vehicle_loads WHERE order_id = ?")->execute([$orderId]);
+
+		if ($vehicleId <= 0) return;
+
+		// Fetch order details
+		$oStmt = $pdo->prepare("SELECT zone_id, order_number, shop_name, customer_name, product_id, quantity FROM orders WHERE order_id = ?");
+		$oStmt->execute([$orderId]);
+		$order = $oStmt->fetch(PDO::FETCH_ASSOC);
+		if (!$order) return;
+
+		$zoneId = !empty($order['zone_id']) ? (int)$order['zone_id'] : null;
+		$shop = $order['shop_name'] ?: ($order['customer_name'] ?: 'Order');
+		$notes = "Order #" . ($order['order_number'] ?: $orderId);
+
+		// Fetch all items from order_items
+		$iStmt = $pdo->prepare("SELECT product_id, quantity, is_extra FROM order_items WHERE order_id = ?");
+		$iStmt->execute([$orderId]);
+		$items = $iStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+		$ins = $pdo->prepare("
+			INSERT INTO vehicle_loads (vehicle_id, zone_id, product_id, order_id, cases_loaded, shop_name, is_active, notes, created_at)
+			VALUES (?, ?, ?, ?, ?, ?, 1, ?, NOW())
+		");
+
+		if (!empty($items)) {
+			foreach ($items as $it) {
+				$pid = (int)($it['product_id'] ?? 0);
+				$qty = (int)($it['quantity'] ?? 0);
+				if ($qty > 0) {
+					$extraTag = !empty($it['is_extra']) ? ' (Extra)' : '';
+					$ins->execute([$vehicleId, $zoneId, $pid ?: null, $orderId, $qty, $shop, $notes . $extraTag]);
+				}
+			}
+		} elseif (!empty($order['product_id']) && (int)$order['quantity'] > 0) {
+			$ins->execute([$vehicleId, $zoneId, (int)$order['product_id'], $orderId, (int)$order['quantity'], $shop, $notes]);
+		} else {
+			$cases = max(1, (int)$order['quantity']);
+			$ins->execute([$vehicleId, $zoneId, null, $orderId, $cases, $shop, $notes]);
+		}
+	} catch (Exception $e) {
+		error_log("Error in syncOrderVehicleLoads: " . $e->getMessage());
+	}
+}
+
+/**
  * Assign an order to a vehicle and record its loaded cases
  */
 function assignOrderToVehicle(PDO $pdo, int $orderId, int $vehicleId): array {
@@ -869,25 +925,15 @@ function assignOrderToVehicle(PDO $pdo, int $orderId, int $vehicleId): array {
 		}
 
 		$cases = max(1, (int)$order['total_cases']);
-		$zoneId = !empty($order['zone_id']) ? (int)$order['zone_id'] : null;
 
 		// 1. Update order vehicle_id
 		$updStmt = $pdo->prepare("UPDATE orders SET vehicle_id = ? WHERE order_id = ?");
 		$updStmt->execute([$vehicleId, $orderId]);
 
-		// 2. Remove any previous vehicle_loads entry for this order
-		$pdo->prepare("DELETE FROM vehicle_loads WHERE order_id = ?")->execute([$orderId]);
+		// 2. Synchronize itemized vehicle_loads
+		syncOrderVehicleLoads($pdo, $orderId, $vehicleId);
 
-		// 3. Insert new vehicle_loads record
-		$shop = $order['shop_name'] ?: ($order['customer_name'] ?: 'Order');
-		$notes = "Order #" . ($order['order_number'] ?: $orderId) . " (" . $shop . ")";
-		$insStmt = $pdo->prepare("
-			INSERT INTO vehicle_loads (vehicle_id, zone_id, order_id, cases_loaded, notes)
-			VALUES (?, ?, ?, ?, ?)
-		");
-		$insStmt->execute([$vehicleId, $zoneId, $orderId, $cases, $notes]);
-
-		// 4. Update vehicle status to 'loading'
+		// 3. Update vehicle status to 'loading'
 		$pdo->prepare("UPDATE vehicles SET status = 'loading' WHERE id = ? AND status = 'active'")->execute([$vehicleId]);
 
 		return ['success' => true, 'cases_loaded' => $cases, 'message' => "Order assigned. {$cases} cases loaded onto vehicle."];
@@ -909,4 +955,5 @@ function unassignOrderFromVehicle(PDO $pdo, int $orderId): array {
 		return ['success' => false, 'error' => $e->getMessage()];
 	}
 }
+
 

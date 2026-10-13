@@ -1099,62 +1099,14 @@ if ($percent > 85) {
                                         </div>
                                     </div>
 
-                                    <!-- Amount of Cases Loaded Metrics (No Capacity Ceiling) -->
-                                    <!-- <div class="v-load-box">
-                                        <div class="v-load-row">
-                                            <span class="v-load-primary"><?= $totalLoaded ?> Cases Loaded</span>
-                                            <?php if ($ordersCount > 0): ?>
-                                                <span style="font-size: 12px; font-weight: 700; color: #2563eb;"><?= $ordersCount ?> Active Orders</span>
-                                            <?php endif; ?>
-                                        </div> -->
-
-                                        <!-- Cargo & Vehicle Storage Breakdown -->
-                                        <!-- <?php 
-                                        $vStorageItems = $v['storage_items'] ?? [];
-                                        $vOrderItems = $v['order_items'] ?? [];
-                                        if (!empty($vStorageItems) || !empty($vOrderItems)): 
-                                        ?>
-                                        <div style="margin: 8px 0; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 10px;">
-                                            <?php if (!empty($vStorageItems)): ?>
-                                                <div style="margin-bottom: <?= !empty($vOrderItems) ? '6px' : '0' ?>;">
-                                                    <div style="font-size: 10px; font-weight: 800; text-transform: uppercase; color: #b45309; display: flex; align-items: center; gap: 4px;">
-                                                        <i class='bx bx-archive'></i> In Vehicle Storage (<?= (int)($v['storage_cases'] ?? 0) ?> cs):
-                                                    </div>
-                                                    <div style="display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px;">
-                                                        <?php foreach ($vStorageItems as $si): ?>
-                                                            <span style="font-size: 11px; background: #fef3c7; color: #92400e; border: 1px solid #fde68a; font-weight: 700; padding: 2px 7px; border-radius: 6px;">
-                                                                <?= htmlspecialchars($si['product_name']) ?>: <strong><?= (int)$si['cases'] ?> cs</strong>
-                                                            </span>
-                                                        <?php endforeach; ?>
-                                                    </div>
-                                                </div>
-                                            <?php endif; ?>
-                                            <?php if (!empty($vOrderItems)): ?>
-                                                <div>
-                                                    <div style="font-size: 10px; font-weight: 800; text-transform: uppercase; color: #2563eb; display: flex; align-items: center; gap: 4px;">
-                                                        <i class='bx bx-package'></i> For Active Orders:
-                                                    </div>
-                                                    <div style="display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px;">
-                                                        <?php foreach ($vOrderItems as $oi): ?>
-                                                            <span style="font-size: 11px; background: #eff6ff; color: #1e40af; border: 1px solid #bfdbfe; font-weight: 700; padding: 2px 7px; border-radius: 6px;">
-                                                                <?= htmlspecialchars($oi['product_name']) ?>: <strong><?= (int)$oi['cases'] ?> cs</strong>
-                                                            </span>
-                                                        <?php endforeach; ?>
-                                                    </div>
-                                                </div>
-                                            <?php endif; ?>
-                                        </div>
-                                        <?php endif; ?> -->
-
-                                        <!-- Zone-Specific Case Count -->
-                                        <div class="v-load-zone-focus">
-                                            <i class='bx bx-info-circle'></i>
-                                            <?php if ($filterZone === 'all'): ?>
-                                                <span>Total <?= $totalLoaded ?> cases loaded across all zones</span>
-                                            <?php else: ?>
-                                                <span>From Selected Zone: <strong><?= $zoneCases ?> cases</strong></span>
-                                            <?php endif; ?>
-                                        </div>
+                                    <!-- Zone-Specific Case Count -->
+                                    <div class="v-load-zone-focus">
+                                        <i class='bx bx-info-circle'></i>
+                                        <?php if ($filterZone === 'all'): ?>
+                                            <span>Total <?= $totalLoaded ?> cases loaded across all zones</span>
+                                        <?php else: ?>
+                                            <span>From Selected Zone: <strong><?= $zoneCases ?> cases</strong></span>
+                                        <?php endif; ?>
                                     </div>
 
                                     <!-- Zones Breakdown: Exact Cases Loaded for Each Zone -->

@@ -49,8 +49,8 @@ foreach ($products as $p) {
     $productsById[(int)$p['product_id']] = $p;
 }
 
-// Fallback: If no order items found for existing order, construct from order row
-if ($order && empty($order_items)) {
+// Fallback: If no order items found for existing order, construct from order row ONLY if valid product_id > 0 and quantity > 0
+if ($order && empty($order_items) && !empty($order['product_id']) && (int)$order['product_id'] > 0 && (int)$order['quantity'] > 0) {
     $pid = (int)$order['product_id'];
     $pRate = (float)($order['unit_price'] ?: ($order['case_price'] ?: $order['price']));
     $pQty = (int)$order['quantity'];
@@ -64,25 +64,7 @@ if ($order && empty($order_items)) {
         'name' => $order['product_name'] ?: ($order['fallback_product_name'] ?: 'Liyas Water'),
         'product_name' => $order['product_name'] ?: ($order['fallback_product_name'] ?: 'Liyas Water'),
         'net_content' => $order['net_content'],
-        'net_content_unit' => $order['net_content_unit']
-    ];
-}
-
-// Fallback: If new spot delivery (no existing order), start with first active product
-if (empty($order_items) && !empty($products)) {
-    $firstP = $products[0];
-    $firstRate = (float)($firstP['case_price'] ?: $firstP['price']);
-    $order_items[] = [
-        'order_item_id' => 0,
-        'order_id' => 0,
-        'product_id' => (int)$firstP['product_id'],
-        'quantity' => 1,
-        'price_at_purchase' => $firstRate,
-        'line_total' => $firstRate,
-        'name' => $firstP['name'],
-        'product_name' => $firstP['product_name'] ?: $firstP['name'],
-        'net_content' => $firstP['net_content'],
-        'net_content_unit' => $firstP['net_content_unit'],
+        'net_content_unit' => $order['net_content_unit'],
         'is_extra' => 0
     ];
 }
@@ -93,6 +75,24 @@ if ($assignedVehicleId <= 0 && $order_id > 0) {
     $vChk = $pdo->prepare("SELECT vehicle_id FROM vehicle_loads WHERE order_id = ? AND is_active = 1 LIMIT 1");
     $vChk->execute([$order_id]);
     $assignedVehicleId = (int)$vChk->fetchColumn();
+}
+if ($assignedVehicleId <= 0) {
+    $assignedVehicleId = (int)($_GET['vehicle_id'] ?? ($_POST['vehicle_id'] ?? 0));
+}
+
+// Available active vehicles operating in this zone
+$vZoneStmt = $pdo->prepare("
+    SELECT id, vehicle_number, vehicle_name, driver_name, driver_phone 
+    FROM vehicles 
+    WHERE status != 'inactive' 
+      AND (id IN (SELECT vehicle_id FROM vehicle_loads WHERE zone_id = ? AND is_active = 1) OR zone_id = ?) 
+    ORDER BY (id IN (SELECT vehicle_id FROM vehicle_loads WHERE zone_id = ? AND is_active = 1)) DESC, id DESC
+");
+$vZoneStmt->execute([$zone_id, $zone_id, $zone_id]);
+$availVehicles = $vZoneStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+if ($assignedVehicleId <= 0 && !empty($availVehicles)) {
+    $assignedVehicleId = (int)$availVehicles[0]['id'];
 }
 $assignedVehicle = null;
 if ($assignedVehicleId > 0) {
@@ -338,6 +338,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['generate_receipt'])) 
                         $vChk->execute([$order_id]);
                         $assignedVehicleId = (int)$vChk->fetchColumn();
                     }
+                    if ($assignedVehicleId <= 0) {
+                        $assignedVehicleId = (int)($_POST['vehicle_id'] ?? 0);
+                    }
+                    if ($assignedVehicleId <= 0 && !empty($availVehicles)) {
+                        $assignedVehicleId = (int)$availVehicles[0]['id'];
+                    }
 
                     // 2. Update orders record
                     $upOrd = $pdo->prepare("
@@ -374,63 +380,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['generate_receipt'])) 
                     foreach ($processed_items as $pi) {
                         $insOi->execute([$order_id, $pi['product_id'], $pi['quantity'], $pi['rate'], $pi['is_extra']]);
                     }
+                    $order_number = $order['order_number'] ?: ('#' . $order_id);
 
-                    // 4. Retain any unbilled / remaining extra loaded cases on vehicle as active storage
-                    if ($assignedVehicleId > 0) {
-                        // Deactivate previous order load entries so delivered regular cases leave the vehicle
-                        $pdo->prepare("UPDATE vehicle_loads SET is_active = 0 WHERE order_id = ?")->execute([$order_id]);
-
-                        // Reconcile pre-existing vehicle storage for products that were available
-                        $prevVl = $pdo->prepare("SELECT product_id, SUM(cases_loaded) as qty FROM vehicle_loads WHERE vehicle_id = ? AND is_active = 1 AND product_id IS NOT NULL AND (order_id IS NULL OR order_id != ?) GROUP BY product_id");
-                        $prevVl->execute([$assignedVehicleId, $order_id]);
-                        $prevVlRows = $prevVl->fetchAll(PDO::FETCH_ASSOC) ?: [];
-                        foreach ($prevVlRows as $pvr) {
-                            $pid = (int)$pvr['product_id'];
-                            $loadedExtraByPid[$pid] = ($loadedExtraByPid[$pid] ?? 0) + (int)$pvr['qty'];
-                        }
-
-                        if (!empty($loadedExtraByPid)) {
-                            $inClause = implode(',', array_fill(0, count($loadedExtraByPid), '?'));
-                            $deactStmt = $pdo->prepare("UPDATE vehicle_loads SET is_active = 0 WHERE vehicle_id = ? AND is_active = 1 AND product_id IN ($inClause)");
-                            $deactStmt->execute(array_merge([$assignedVehicleId], array_keys($loadedExtraByPid)));
-                        }
-
-                        // Retain remaining extra cases in vehicle_loads
-                        foreach ($loadedExtraByPid as $epid => $loadedCases) {
-                            $deliveredCases = (int)($deliveredExtraByPid[$epid] ?? 0);
-                            $remainingCases = max(0, $loadedCases - $deliveredCases);
-                            if ($remainingCases > 0) {
-                                $insStorage = $pdo->prepare("
-                                    INSERT INTO vehicle_loads (vehicle_id, zone_id, product_id, order_id, cases_loaded, shop_name, is_active, notes)
-                                    VALUES (?, ?, ?, NULL, ?, ?, 1, ?)
-                                ");
-                                $insStorage->execute([
-                                    $assignedVehicleId,
-                                    $zone_id,
-                                    $epid,
-                                    $remainingCases,
-                                    $shop_name,
-                                    "Vehicle Storage: Remaining extra cases after delivery to " . $shop_name . " (Order #" . ($order['order_number'] ?: $order_id) . ")"
-                                ]);
-                            }
-                        }
-
-                        // Update vehicle delivery stats
-                        $pdo->prepare("UPDATE vehicles SET total_deliveries_done = total_deliveries_done + 1, updated_at = NOW() WHERE id = ?")->execute([$assignedVehicleId]);
-                    }
                 } else {
                     // New direct spot delivery without prior order
+                    $assignedVehicleId = (int)($_POST['vehicle_id'] ?? 0);
+                    if ($assignedVehicleId <= 0 && !empty($availVehicles)) {
+                        $assignedVehicleId = (int)$availVehicles[0]['id'];
+                    }
+
                     $maxOrdStmt = $pdo->query("SELECT MAX(order_id) FROM orders");
                     $nextOrdId = (int)$maxOrdStmt->fetchColumn() + 1;
                     $order_number = '' . str_pad($nextOrdId, 3, '0', STR_PAD_LEFT);
 
                     $insOrd = $pdo->prepare("
                         INSERT INTO orders (
-                            order_number, zone_id, shop_name, customer_name, location, 
+                            order_number, zone_id, vehicle_id, shop_name, customer_name, location, 
                             phone, product_id, quantity, unit_price, discount, 
                             total_amount, status, is_zone_read, created_at, updated_at
                         ) VALUES (
-                            ?, ?, ?, ?, ?, 
+                            ?, ?, ?, ?, ?, ?, 
                             ?, ?, ?, ?, 0, 
                             ?, 'delivered', 1, NOW(), NOW()
                         )
@@ -438,6 +407,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['generate_receipt'])) 
                     $insOrd->execute([
                         $order_number,
                         $zone_id,
+                        $assignedVehicleId > 0 ? $assignedVehicleId : null,
                         $shop_name,
                         $customer_name ?: $shop_name,
                         $place,
@@ -449,15 +419,90 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['generate_receipt'])) 
                     ]);
                     $order_id = (int)$pdo->lastInsertId();
 
-                    // Insert into order_items & deduct stock
+                    // Insert into order_items & deduct warehouse stock
                     $insOi = $pdo->prepare("
                         INSERT INTO order_items (order_id, product_id, quantity, price_at_purchase, is_extra, created_at, updated_at) 
                         VALUES (?, ?, ?, ?, ?, NOW(), NOW())
                     ");
+                    $deliveredExtraByPid = [];
                     foreach ($processed_items as $pi) {
                         adjustProductStock($pdo, $pi['product_id'], -$pi['quantity'], "Direct delivery #{$order_number}");
                         $insOi->execute([$order_id, $pi['product_id'], $pi['quantity'], $pi['rate'], $pi['is_extra']]);
+                        $p_id = (int)$pi['product_id'];
+                        // In direct spot delivery, delivered products from vehicle storage are tracked for vehicle deduction
+                        $deliveredExtraByPid[$p_id] = ($deliveredExtraByPid[$p_id] ?? 0) + (int)$pi['quantity'];
                     }
+                }
+
+                // 4. Retain any unbilled / remaining extra loaded cases on vehicle as active storage
+                if ($assignedVehicleId > 0) {
+                    // Deactivate previous order load entries so delivered regular cases leave the vehicle
+                    $pdo->prepare("UPDATE vehicle_loads SET is_active = 0 WHERE order_id = ?")->execute([$order_id]);
+
+                    // Reconcile pre-existing vehicle storage for products that were available in vehicle
+                    $prevVl = $pdo->prepare("
+                        SELECT product_id, SUM(cases_loaded) as qty 
+                        FROM vehicle_loads 
+                        WHERE vehicle_id = ? 
+                          AND is_active = 1 
+                          AND product_id IS NOT NULL 
+                          AND (order_id IS NULL OR order_id != ?) 
+                        GROUP BY product_id
+                    ");
+                    $prevVl->execute([$assignedVehicleId, $order_id]);
+                    $prevVlRows = $prevVl->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+                    $loadedStorageByPid = [];
+                    foreach ($prevVlRows as $pvr) {
+                        $pid = (int)$pvr['product_id'];
+                        $loadedStorageByPid[$pid] = (int)$pvr['qty'];
+                    }
+
+                    if ($order && !empty($loadedExtraByPid)) {
+                        foreach ($loadedExtraByPid as $pid => $qty) {
+                            $loadedStorageByPid[$pid] = ($loadedStorageByPid[$pid] ?? 0) + $qty;
+                        }
+                    }
+
+                    $productsToReconcile = array_unique(array_merge(array_keys($loadedStorageByPid), array_keys($deliveredExtraByPid)));
+
+                    foreach ($productsToReconcile as $epid) {
+                        $loadedCases = $loadedStorageByPid[$epid] ?? 0;
+                        $deliveredCases = (int)($deliveredExtraByPid[$epid] ?? 0);
+                        if ($loadedCases <= 0 && $deliveredCases <= 0) continue;
+
+                        $remainingCases = max(0, $loadedCases - $deliveredCases);
+
+                        // Deactivate current active storage loads for this product on this vehicle
+                        $deactStmt = $pdo->prepare("
+                            UPDATE vehicle_loads 
+                            SET is_active = 0 
+                            WHERE vehicle_id = ? 
+                              AND is_active = 1 
+                              AND product_id = ? 
+                              AND (order_id IS NULL OR order_id != ?)
+                        ");
+                        $deactStmt->execute([$assignedVehicleId, $epid, $order_id]);
+
+                        // Retain remaining cases in vehicle storage
+                        if ($remainingCases > 0) {
+                            $insStorage = $pdo->prepare("
+                                INSERT INTO vehicle_loads (vehicle_id, zone_id, product_id, order_id, cases_loaded, shop_name, is_active, notes)
+                                VALUES (?, ?, ?, NULL, ?, ?, 1, ?)
+                            ");
+                            $insStorage->execute([
+                                $assignedVehicleId,
+                                $zone_id,
+                                $epid,
+                                $remainingCases,
+                                $shop_name,
+                                "Vehicle Storage: Remaining extra cases after delivery to " . $shop_name . " (Order #" . $order_number . ")"
+                            ]);
+                        }
+                    }
+
+                    // Update vehicle delivery stats
+                    $pdo->prepare("UPDATE vehicles SET total_deliveries_done = total_deliveries_done + 1, updated_at = NOW() WHERE id = ?")->execute([$assignedVehicleId]);
                 }
 
                 // Generate Bill Number
@@ -573,25 +618,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['items']) && is_array(
         $rowItem['line_total'] = (int)$it['quantity'] * $rate;
         $regular_items[] = $rowItem;
     }
-}
-
-if (empty($regular_items) && !empty($products)) {
-    $firstP = $products[0];
-    $firstRate = (float)($firstP['case_price'] ?: $firstP['price']);
-    $regular_items[] = [
-        'order_item_id' => 0,
-        'order_id' => $order_id,
-        'product_id' => (int)$firstP['product_id'],
-        'quantity' => 1,
-        'price_at_purchase' => $firstRate,
-        'original_rate' => $firstRate,
-        'is_extra' => 0,
-        'line_total' => $firstRate,
-        'name' => $firstP['name'],
-        'product_name' => $firstP['product_name'] ?: $firstP['name'],
-        'net_content' => $firstP['net_content'],
-        'net_content_unit' => $firstP['net_content_unit']
-    ];
 }
 ?>
 <!DOCTYPE html>
@@ -988,11 +1014,27 @@ if (empty($regular_items) && !empty($products)) {
                 <?php if ($order_id > 0): ?>
                     <input type="hidden" name="order_id" value="<?= $order_id ?>">
                 <?php endif; ?>
+                <input type="hidden" name="vehicle_id" id="assignedVehicleIdInput" value="<?= $assignedVehicleId ?>">
 
                 <!-- Shop & Customer Details -->
                 <div class="section-hdr">
                     <i class='bx bx-store-alt' style="color: #2563eb;"></i> Shop &amp; Delivery Details
                 </div>
+
+                <?php if ($order_id <= 0 && count($availVehicles) > 1): ?>
+                <div class="form-group" style="margin-bottom: 16px;">
+                    <label class="form-label" for="vehicleSelect">
+                        <i class='bx bxs-truck' style="color: #2563eb;"></i> Delivering Vehicle
+                    </label>
+                    <select name="vehicle_id" id="vehicleSelect" class="form-control" onchange="window.location.href = '<?= zone_url($zone_slug, 'generate-receipt') ?>?vehicle_id=' + this.value;">
+                        <?php foreach ($availVehicles as $av): ?>
+                            <option value="<?= $av['id'] ?>" <?= ($assignedVehicleId === (int)$av['id']) ? 'selected' : '' ?>>
+                                <?= htmlspecialchars($av['vehicle_number']) ?><?= !empty($av['vehicle_name']) ? ' - ' . htmlspecialchars($av['vehicle_name']) : '' ?><?= !empty($av['driver_name']) ? ' (' . htmlspecialchars($av['driver_name']) . ')' : '' ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <?php endif; ?>
 
                 <div class="form-group">
                     <label class="form-label" for="shop_name">Shop / Customer Name <span style="color: #ef4444;">*</span></label>
@@ -1022,6 +1064,13 @@ if (empty($regular_items) && !empty($products)) {
 
                 <!-- Interactive Item Delivery Cards -->
                 <div id="itemsContainer" style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 16px;">
+                    <div id="noItemsPlaceholder" style="<?= !empty($regular_items) ? 'display: none;' : '' ?> text-align: center; padding: 22px 16px; background: #ffffff; border: 2px dashed #cbd5e1; border-radius: 12px; color: #64748b;">
+                        <i class='bx bx-package' style="font-size: 32px; color: #94a3b8; display: block; margin-bottom: 6px;"></i>
+                        <div style="font-weight: 700; font-size: 14px; color: #334155;">No products added to bill yet</div>
+                        <div style="font-size: 12px; color: #64748b; margin-top: 3px;">
+                            <?= !empty($vehicle_extra_products) ? 'Click the extra products loaded in the vehicle below or catalog products to add to this delivery.' : 'Add catalog products below to begin delivery.' ?>
+                        </div>
+                    </div>
                     <?php foreach ($regular_items as $idx => $it): 
                         $pid = (int)$it['product_id'];
                         $pName = htmlspecialchars($it['product_name'] ?: ($it['name'] ?: 'Liyas Water'));
@@ -1094,15 +1143,42 @@ if (empty($regular_items) && !empty($products)) {
                     <div style="font-size: 13px; font-weight: 800; color: #1e40af; margin-bottom: 4px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px;">
                         <span style="display: flex; align-items: center; gap: 6px;">
                             <i class='bx bxs-truck' style="font-size: 18px; color: #2563eb;"></i>
-                            Extra Cases Loaded in Vehicle <?= !empty($assignedVehicle['vehicle_number']) ? '(' . htmlspecialchars($assignedVehicle['vehicle_number']) . ')' : '' ?>
+                            Extra Cases Loaded in Vehicle <?= !empty($assignedVehicle['vehicle_number']) ? '(' . htmlspecialchars($assignedVehicle['vehicle_number']) . (!empty($assignedVehicle['vehicle_name']) ? ' - ' . htmlspecialchars($assignedVehicle['vehicle_name']) : '') . ')' : '' ?>
                         </span>
                         <span style="font-size: 11px; font-weight: 700; color: #1d4ed8; background: #dbeafe; padding: 2px 8px; border-radius: 6px;">
-                            Billed to Customer
+                            Linesale / Vehicle Stock
                         </span>
                     </div>
                     <div style="font-size: 12px; color: #475569; margin-bottom: 10px;">
-                        Select extra cases from the vehicle that the customer/shop wants to buy. Any unselected cases remain stored in the vehicle.
+                        Click any product below or select from dropdown to add to this shop's delivery bill. Unselected cases remain stored in the vehicle.
                     </div>
+
+                    <!-- One-click Quick Add Pills -->
+                    <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 12px;">
+                        <?php foreach ($vehicle_extra_products as $vep): ?>
+                            <button type="button" class="btn-quick-extra" onclick="quickAddVehicleExtra(<?= $vep['product_id'] ?>)" 
+                                    style="background: #ffffff; border: 1.5px solid #93c5fd; color: #1e40af; padding: 7px 12px; border-radius: 8px; font-size: 12px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); transition: all 0.15s ease;"
+                                    onmouseover="this.style.background='#eff6ff'; this.style.borderColor='#2563eb';"
+                                    onmouseout="this.style.background='#ffffff'; this.style.borderColor='#93c5fd';"
+                                    title="Click to add <?= htmlspecialchars($vep['product_name']) ?> to bill">
+                                <i class='bx bx-plus-circle' style="color: #2563eb; font-size: 16px;"></i>
+                                <span><?= htmlspecialchars($vep['product_name']) ?></span>
+                                <span style="background: #dbeafe; color: #1e40af; padding: 1px 6px; border-radius: 4px; font-size: 11px; font-weight: 800;"><?= (int)$vep['available_cases'] ?> cs</span>
+                                <span style="color: #059669; font-weight: 800;">₹<?= number_format($vep['price'], 2) ?></span>
+                            </button>
+                        <?php endforeach; ?>
+                        <?php if (count($vehicle_extra_products) > 1): ?>
+                            <button type="button" onclick="addAllVehicleExtras()" 
+                                    style="background: #2563eb; border: 1.5px solid #2563eb; color: #ffffff; padding: 7px 12px; border-radius: 8px; font-size: 12px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); transition: all 0.15s ease;"
+                                    onmouseover="this.style.background='#1d4ed8';"
+                                    onmouseout="this.style.background='#2563eb';"
+                                    title="Add all loaded products from vehicle to bill">
+                                <i class='bx bx-check-double' style="font-size: 16px;"></i>
+                                <span>+ Add All to Bill</span>
+                            </button>
+                        <?php endif; ?>
+                    </div>
+
                     <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
                         <select id="extraVehicleSelect" class="form-control" style="flex: 1; min-width: 220px;">
                             <option value="">-- Select extra cases loaded in vehicle --</option>
@@ -1295,18 +1371,7 @@ if (empty($regular_items) && !empty($products)) {
         function removeItemRow(btn) {
             const card = btn.closest('.item-delivery-card');
             if (!card) return;
-            const isExtra = card.classList.contains('item-vehicle-extra-card') || (card.querySelector('.item-is-extra')?.value === '1');
-            if (isExtra) {
-                card.remove();
-            } else {
-                const cards = itemsContainer.querySelectorAll('.item-delivery-card');
-                if (cards.length <= 1) {
-                    const input = card.querySelector('.item-qty-input');
-                    if (input) input.value = 0;
-                } else {
-                    card.remove();
-                }
-            }
+            card.remove();
             recalculate();
         }
 
@@ -1463,6 +1528,23 @@ if (empty($regular_items) && !empty($products)) {
             recalculate();
         }
 
+        function quickAddVehicleExtra(pid) {
+            const sel = document.getElementById('extraVehicleSelect');
+            if (!sel) return;
+            sel.value = pid;
+            addExtraCaseFromVehicle();
+        }
+
+        function addAllVehicleExtras() {
+            const sel = document.getElementById('extraVehicleSelect');
+            if (!sel) return;
+            const options = Array.from(sel.options).filter(o => o.value !== '');
+            options.forEach(opt => {
+                sel.value = opt.value;
+                addExtraCaseFromVehicle();
+            });
+        }
+
         function updateCheckboxes() {
             if (enableCash.checked) {
                 boxCash.classList.add('visible');
@@ -1543,6 +1625,12 @@ if (empty($regular_items) && !empty($products)) {
             if (regularCountDisplay) {
                 const regCount = itemsContainer.querySelectorAll('.item-delivery-card').length;
                 regularCountDisplay.textContent = `${regCount} ${regCount === 1 ? 'Product' : 'Products'}`;
+            }
+
+            const placeholder = document.getElementById('noItemsPlaceholder');
+            if (placeholder) {
+                const cardCount = itemsContainer.querySelectorAll('.item-delivery-card').length;
+                placeholder.style.display = (cardCount === 0) ? 'block' : 'none';
             }
 
             if (dispSubtotal) dispSubtotal.textContent = '₹' + subtotal.toFixed(2);

@@ -53,6 +53,7 @@ if (isset($_GET['mark_all_read']) && $_GET['mark_all_read'] == '1') {
 // 1. Unread notifications for this zone
 $unread_stmt = $pdo->prepare("
     SELECT o.*, p.product_name, p.name as fallback_name,
+           COALESCE(o.vehicle_id, (SELECT vl.vehicle_id FROM vehicle_loads vl WHERE vl.order_id = o.order_id AND vl.is_active = 1 LIMIT 1)) AS resolved_vehicle_id,
            veh.vehicle_number AS assigned_vehicle_number,
            veh.vehicle_name AS assigned_vehicle_name,
            (SELECT GROUP_CONCAT(CONCAT(COALESCE(p2.product_name, p2.name), ' (', oi2.quantity, 'cs', IF(oi2.is_extra = 1 OR oi2.price_at_purchase = 0, ' - Extra', ''), ')') SEPARATOR ', ') 
@@ -61,7 +62,7 @@ $unread_stmt = $pdo->prepare("
             WHERE oi2.order_id = o.order_id) AS items_summary
     FROM orders o
     LEFT JOIN products p ON o.product_id = p.product_id
-    LEFT JOIN vehicles veh ON o.vehicle_id = veh.id
+    LEFT JOIN vehicles veh ON veh.id = COALESCE(o.vehicle_id, (SELECT vl.vehicle_id FROM vehicle_loads vl WHERE vl.order_id = o.order_id AND vl.is_active = 1 LIMIT 1))
     WHERE o.zone_id = ? AND o.is_zone_read = 0 AND o.status != 'cancelled'
     ORDER BY o.created_at DESC
 ");
@@ -131,6 +132,7 @@ $orders_stmt = $pdo->prepare("
         r.credited_amount as receipt_credit,
         r.due_amount as receipt_due,
         r.payment_type as receipt_pay_type,
+        COALESCE(o.vehicle_id, (SELECT vl.vehicle_id FROM vehicle_loads vl WHERE vl.order_id = o.order_id AND vl.is_active = 1 LIMIT 1)) AS resolved_vehicle_id,
         veh.vehicle_number AS assigned_vehicle_number,
         veh.vehicle_name AS assigned_vehicle_name,
         (SELECT COUNT(*) FROM order_items oi WHERE oi.order_id = o.order_id) AS items_count,
@@ -141,7 +143,7 @@ $orders_stmt = $pdo->prepare("
     FROM orders o
     LEFT JOIN products p ON o.product_id = p.product_id
     LEFT JOIN receipts r ON o.order_id = r.order_id
-    LEFT JOIN vehicles veh ON o.vehicle_id = veh.id
+    LEFT JOIN vehicles veh ON veh.id = COALESCE(o.vehicle_id, (SELECT vl.vehicle_id FROM vehicle_loads vl WHERE vl.order_id = o.order_id AND vl.is_active = 1 LIMIT 1))
     WHERE $where_sql
     ORDER BY o.created_at DESC
 ");
@@ -163,6 +165,77 @@ $metrics_stmt = $pdo->prepare("
 ");
 $metrics_stmt->execute([$zone_id]);
 $metrics = $metrics_stmt->fetch(PDO::FETCH_ASSOC);
+
+// 5. Active Vehicles operating in this zone & load remaining
+$zoneVehiclesStmt = $pdo->prepare("
+    SELECT DISTINCT v.id, v.vehicle_number, v.vehicle_name, v.driver_name, v.driver_phone, v.capacity_cases, v.status
+    FROM vehicles v
+    WHERE v.status != 'inactive' 
+      AND (
+          v.zone_id = ? 
+          OR v.id IN (SELECT vehicle_id FROM vehicle_loads WHERE zone_id = ? AND is_active = 1)
+          OR v.id IN (SELECT vehicle_id FROM orders WHERE zone_id = ? AND vehicle_id IS NOT NULL AND status NOT IN ('delivered', 'cancelled'))
+      )
+    ORDER BY v.vehicle_number ASC
+");
+$zoneVehiclesStmt->execute([$zone_id, $zone_id, $zone_id]);
+$zoneVehicles = $zoneVehiclesStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+$vehiclesLoadMap = [];
+foreach ($zoneVehicles as $zv) {
+    $vId = (int)$zv['id'];
+    $loadedProducts = getVehicleLoadedProductsWithCounts($pdo, $vId);
+    $totalCases = array_sum(array_column($loadedProducts, 'loaded_cases'));
+    $storageCases = array_sum(array_column($loadedProducts, 'storage_cases'));
+    $orderCases = array_sum(array_column($loadedProducts, 'order_cases'));
+
+    $breakdownParts = [];
+    foreach ($loadedProducts as $lp) {
+        if (!empty($lp['loaded_cases']) && $lp['loaded_cases'] > 0) {
+            $breakdownParts[] = htmlspecialchars($lp['product_name']) . ': ' . (int)$lp['loaded_cases'] . ' cs';
+        }
+    }
+    $breakdownText = !empty($breakdownParts) ? implode(', ', $breakdownParts) : '0 cs';
+
+    $vehiclesLoadMap[$vId] = [
+        'vehicle'         => $zv,
+        'loaded_products' => $loadedProducts,
+        'total_cases'     => $totalCases,
+        'storage_cases'   => $storageCases,
+        'order_cases'     => $orderCases,
+        'breakdown_text'  => $breakdownText
+    ];
+}
+
+// Ensure any vehicle assigned to listed orders is pre-computed in $vehiclesLoadMap
+foreach ($orders as $ord) {
+    $ovId = (int)($ord['resolved_vehicle_id'] ?? ($ord['vehicle_id'] ?? 0));
+    if ($ovId > 0 && !isset($vehiclesLoadMap[$ovId])) {
+        $loadedProducts = getVehicleLoadedProductsWithCounts($pdo, $ovId);
+        $totalCases = array_sum(array_column($loadedProducts, 'loaded_cases'));
+        $breakdownParts = [];
+        foreach ($loadedProducts as $lp) {
+            if (!empty($lp['loaded_cases']) && $lp['loaded_cases'] > 0) {
+                $breakdownParts[] = htmlspecialchars($lp['product_name']) . ': ' . (int)$lp['loaded_cases'] . ' cs';
+            }
+        }
+        $vehiclesLoadMap[$ovId] = [
+            'vehicle'         => [
+                'id'             => $ovId,
+                'vehicle_number' => $ord['assigned_vehicle_number'] ?? '',
+                'vehicle_name'   => $ord['assigned_vehicle_name'] ?? '',
+                'driver_name'    => '',
+                'driver_phone'   => '',
+                'capacity_cases' => 0
+            ],
+            'loaded_products' => $loadedProducts,
+            'total_cases'     => $totalCases,
+            'storage_cases'   => array_sum(array_column($loadedProducts, 'storage_cases')),
+            'order_cases'     => array_sum(array_column($loadedProducts, 'order_cases')),
+            'breakdown_text'  => !empty($breakdownParts) ? implode(', ', $breakdownParts) : '0 cs'
+        ];
+    }
+}
 
 // Helper function for WhatsApp link
 function buildWhatsAppLink($phone, $shop, $orderNum, $amount, $itemsText = '') {
@@ -916,6 +989,235 @@ function buildWhatsAppLink($phone, $shop, $orderNum, $amount, $itemsText = '') {
             display: block;
         }
 
+        /* Vehicle Load Remaining Widget Styles */
+        .vehicle-load-panel {
+            margin-bottom: 20px;
+        }
+
+        .vehicle-load-card {
+            background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+            border: 1.5px solid #cbd5e1;
+            border-radius: var(--radius-lg);
+            padding: 16px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+            transition: all 0.2s ease;
+        }
+
+        .vehicle-load-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 10px;
+            border-bottom: 1px solid #e2e8f0;
+            padding-bottom: 12px;
+            margin-bottom: 12px;
+        }
+
+        .vehicle-load-title-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .vehicle-truck-icon-box {
+            width: 38px;
+            height: 38px;
+            background: linear-gradient(135deg, #2563eb, #1d4ed8);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #ffffff;
+            font-size: 22px;
+            box-shadow: 0 3px 8px rgba(37,99,235,0.25);
+            flex-shrink: 0;
+        }
+
+        .vehicle-load-title {
+            font-size: 15px;
+            font-weight: 800;
+            color: #0f172a;
+            line-height: 1.2;
+        }
+
+        .vehicle-load-subtitle {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-top: 2px;
+        }
+
+        .vehicle-cards-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 12px;
+        }
+
+        @media (min-width: 768px) {
+            .vehicle-cards-grid {
+                grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            }
+        }
+
+        .vehicle-item-box {
+            background: #ffffff;
+            border: 1.5px solid #e2e8f0;
+            border-radius: var(--radius-md);
+            padding: 12px 14px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            transition: all 0.2s ease;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+        }
+
+        .vehicle-item-box:hover {
+            border-color: #93c5fd;
+            box-shadow: 0 4px 10px rgba(37,99,235,0.06);
+        }
+
+        .vehicle-item-top {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .vehicle-name-info {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+
+        .veh-num-badge {
+            background: #0f172a;
+            color: #ffffff;
+            font-size: 12px;
+            font-weight: 800;
+            padding: 3px 8px;
+            border-radius: 6px;
+            letter-spacing: 0.03em;
+        }
+
+        .veh-name-text {
+            font-size: 13px;
+            font-weight: 700;
+            color: #1e293b;
+            text-transform: capitalize;
+        }
+
+        .veh-driver-tag {
+            font-size: 11px;
+            font-weight: 600;
+            color: #64748b;
+            display: inline-flex;
+            align-items: center;
+            gap: 3px;
+            background: #f1f5f9;
+            padding: 2px 7px;
+            border-radius: 5px;
+        }
+
+        .vehicle-load-counter {
+            display: flex;
+            align-items: baseline;
+            gap: 4px;
+            background: #ecfdf5;
+            border: 1px solid #a7f3d0;
+            padding: 3px 10px;
+            border-radius: 8px;
+        }
+
+        .vehicle-load-counter.counter-empty {
+            background: #f1f5f9;
+            border-color: #cbd5e1;
+        }
+
+        .vehicle-load-counter .counter-num {
+            font-size: 18px;
+            font-weight: 800;
+            color: #047857;
+            line-height: 1;
+        }
+
+        .vehicle-load-counter.counter-empty .counter-num {
+            color: #64748b;
+        }
+
+        .vehicle-load-counter .counter-unit {
+            font-size: 11px;
+            font-weight: 700;
+            color: #059669;
+            text-transform: uppercase;
+        }
+
+        .vehicle-load-counter.counter-empty .counter-unit {
+            color: #64748b;
+        }
+
+        .veh-progress-wrap {
+            width: 100%;
+            height: 5px;
+            background: #e2e8f0;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        .veh-progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #10b981, #059669);
+            border-radius: 10px;
+            transition: width 0.3s ease;
+        }
+
+        .veh-breakdown-row {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+
+        .veh-prod-pill {
+            background: #f8fafc;
+            border: 1px solid #cbd5e1;
+            padding: 2px 8px;
+            border-radius: 6px;
+            font-size: 11px;
+            color: #1e293b;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .veh-prod-pill .pill-qty {
+            font-weight: 800;
+            color: #2563eb;
+        }
+
+        .order-veh-badge {
+            background: #0f172a;
+            color: #ffffff;
+            font-size: 11px;
+            font-weight: 800;
+            padding: 2px 8px;
+            border-radius: 6px;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .veh-cases-chip {
+            background: rgba(96, 165, 250, 0.25);
+            color: #93c5fd;
+            padding: 1px 6px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: 800;
+            letter-spacing: 0.02em;
+        }
+
         /* Order Cards Grid / List */
         .orders-list {
             display: flex;
@@ -1619,16 +1921,26 @@ function buildWhatsAppLink($phone, $shop, $orderNum, $amount, $itemsText = '') {
                     $nOrdId = $notif['order_id'];
                     $nOrdNum = $notif['order_number'] ?: ('#' . $nOrdId);
                     $nPhone = $notif['phone'] ?? '';
-                    $nSummary = !empty($notif['items_summary']) ? $notif['items_summary'] : ($nProd . ' &times; ' . $nQty . ' Cases');
+                    $nHasNoProducts = empty($notif['items_summary']) && (empty($notif['product_id']) || (int)$notif['product_id'] <= 0);
+                    $nSummary = !empty($notif['items_summary']) ? $notif['items_summary'] : (!$nHasNoProducts ? ($nProd . ' &times; ' . $nQty . ' Cases') : 'No products selected (Line Sale)');
                     $waLink = buildWhatsAppLink($nPhone, $nShop, $nOrdNum, $nAmt, $notif['items_summary'] ?? '');
                 ?>
                 <div class="notif-item" id="notif-card-<?= $nOrdId ?>">
                     <div>
                         <div class="notif-shop">
                             <?= $nShop ?> &bull; <span style="color: #2563eb; font-weight: 700;"><?= htmlspecialchars($nSummary) ?></span>
-                            <?php if (!empty($notif['assigned_vehicle_number'])): ?>
-                                <span style="background: #0f172a; color: #ffffff; font-size: 10px; font-weight: 800; padding: 2px 6px; border-radius: 5px; display: inline-flex; align-items: center; gap: 3px; margin-left: 6px;">
-                                    <i class='bx bxs-truck' style="color: #60a5fa;"></i> <?= htmlspecialchars($notif['assigned_vehicle_number']) ?>
+                            <?php if (!empty($notif['assigned_vehicle_number'])): 
+                                $nvId = (int)($notif['resolved_vehicle_id'] ?? ($notif['vehicle_id'] ?? 0));
+                                $nvLoad = $vehiclesLoadMap[$nvId] ?? null;
+                                $nvCases = $nvLoad ? (int)$nvLoad['total_cases'] : null;
+                                $nvBreakdown = $nvLoad ? $nvLoad['breakdown_text'] : '';
+                            ?>
+                                <span class="order-veh-badge" style="font-size: 10px; padding: 2px 6px; border-radius: 5px; margin-left: 6px;" title="Vehicle: <?= htmlspecialchars($notif['assigned_vehicle_number']) ?><?= !empty($notif['assigned_vehicle_name']) ? ' (' . htmlspecialchars($notif['assigned_vehicle_name']) . ')' : '' ?> | Load Remaining: <?= $nvCases !== null ? $nvCases . ' cs (' . htmlspecialchars($nvBreakdown) . ')' : '0 cs' ?>">
+                                    <i class='bx bxs-truck' style="color: #60a5fa;"></i> 
+                                    <span><?= htmlspecialchars($notif['assigned_vehicle_number']) ?></span>
+                                    <?php if ($nvCases !== null): ?>
+                                        <span class="veh-cases-chip"><?= $nvCases ?> cs left</span>
+                                    <?php endif; ?>
                                 </span>
                             <?php endif; ?>
                         </div>
@@ -1661,6 +1973,98 @@ function buildWhatsAppLink($phone, $shop, $orderNum, $amount, $itemsText = '') {
                 <?php endforeach; ?>
             </section>
         <?php endif; ?>
+
+        <!-- CURRENT VEHICLE LOAD STATUS WIDGET -->
+        <div class="vehicle-load-panel" id="vehicleLoadPanel">
+            <?php if (!empty($zoneVehicles)): ?>
+                <div class="vehicle-load-card">
+                    <div class="vehicle-load-header">
+                        <div class="vehicle-load-title-group">
+                            <span class="vehicle-truck-icon-box">
+                                <i class='bx bxs-truck'></i>
+                            </span>
+                            <div>
+                                <div class="vehicle-load-title">Current Vehicle Stock &amp; Remaining Load</div>
+                                <div class="vehicle-load-subtitle">Live on-road vehicle stock available for delivery in <?= htmlspecialchars($zone_name) ?></div>
+                            </div>
+                        </div>
+                        <div class="vehicle-load-badge-group">
+                            <span class="zone-badge" style="background:#ecfdf5; color:#047857; border-color:#a7f3d0;">
+                                <span class="pulse-dot"></span>
+                                <span><?= count($zoneVehicles) ?> <?= count($zoneVehicles) === 1 ? 'Vehicle Active' : 'Vehicles Active' ?></span>
+                            </span>
+                        </div>
+                    </div>
+
+                    <div class="vehicle-cards-grid">
+                        <?php foreach ($zoneVehicles as $zv): 
+                            $vId = (int)$zv['id'];
+                            $vData = $vehiclesLoadMap[$vId] ?? null;
+                            $totCases = $vData ? (int)$vData['total_cases'] : 0;
+                            $storageCases = $vData ? (int)$vData['storage_cases'] : 0;
+                            $orderCases = $vData ? (int)$vData['order_cases'] : 0;
+                            $loadedProds = $vData['loaded_products'] ?? [];
+                            $cap = (int)($zv['capacity_cases'] ?? 0);
+                            $pct = ($cap > 0) ? min(100, round(($totCases / $cap) * 100)) : null;
+                        ?>
+                        <div class="vehicle-item-box">
+                            <div class="vehicle-item-top">
+                                <div class="vehicle-name-info">
+                                    <span class="veh-num-badge">
+                                        <i class='bx bxs-truck' style="color: #60a5fa;"></i> <?= htmlspecialchars($zv['vehicle_number']) ?>
+                                    </span>
+                                    <?php if (!empty($zv['vehicle_name'])): ?>
+                                        <span class="veh-name-text"><?= htmlspecialchars($zv['vehicle_name']) ?></span>
+                                    <?php endif; ?>
+                                    <?php if (!empty($zv['driver_name'])): ?>
+                                        <span class="veh-driver-tag" title="Assigned Driver">
+                                            <i class='bx bx-user'></i> <?= htmlspecialchars($zv['driver_name']) ?>
+                                            <?php if (!empty($zv['driver_phone'])): ?>
+                                                <a href="tel:<?= htmlspecialchars($zv['driver_phone']) ?>" style="color: #2563eb; text-decoration: none; margin-left: 2px;" title="Call Driver">
+                                                    <i class='bx bx-phone'></i>
+                                                </a>
+                                            <?php endif; ?>
+                                        </span>
+                                    <?php endif; ?>
+                                </div>
+
+                                <div class="vehicle-load-counter <?= ($totCases <= 0) ? 'counter-empty' : '' ?>" title="Remaining load cases in this vehicle">
+                                    <span class="counter-num"><?= $totCases ?></span>
+                                    <span class="counter-unit">Cases Left</span>
+                                </div>
+                            </div>
+
+                            <?php if ($pct !== null): ?>
+                                <div class="veh-progress-wrap" title="<?= $totCases ?> of <?= $cap ?> cases capacity (<?= $pct ?>%)">
+                                    <div class="veh-progress-bar" style="width: <?= $pct ?>%;"></div>
+                                </div>
+                            <?php endif; ?>
+
+                            <div class="veh-breakdown-row">
+                                <?php if (!empty($loadedProds)): ?>
+                                    <?php foreach ($loadedProds as $lp): 
+                                        if (empty($lp['loaded_cases'])) continue;
+                                    ?>
+                                        <span class="veh-prod-pill">
+                                            <strong><?= htmlspecialchars($lp['product_name']) ?></strong>: 
+                                            <span class="pill-qty"><?= (int)$lp['loaded_cases'] ?> cs</span>
+                                            <?php if (!empty($lp['storage_cases']) && $lp['storage_cases'] > 0 && !empty($lp['order_cases']) && $lp['order_cases'] > 0): ?>
+                                                <small style="color: #64748b; font-size: 10px;">(<?= (int)$lp['storage_cases'] ?> extra + <?= (int)$lp['order_cases'] ?> orders)</small>
+                                            <?php endif; ?>
+                                        </span>
+                                    <?php endforeach; ?>
+                                <?php else: ?>
+                                    <span style="font-size: 12px; color: #94a3b8; font-style: italic;">
+                                        <i class='bx bx-info-circle'></i> Vehicle is currently empty (0 cases loaded)
+                                    </span>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+            <?php endif; ?>
+        </div>
 
         <!-- KEY METRICS OVERVIEW (Clickable Quick Filters) -->
         <!-- Added Total Credited next to Cash Collected + Instant Click-to-Filter -->
@@ -1865,7 +2269,8 @@ function buildWhatsAppLink($phone, $shop, $orderNum, $amount, $itemsText = '') {
                     $shop = htmlspecialchars($order['shop_name'] ?: ($order['customer_name'] ?: 'Customer'));
                     $loc = htmlspecialchars($order['location'] ?: 'Area / Shop');
                     $prod = htmlspecialchars($order['product_name'] ?: ($order['fallback_name'] ?: 'Liyas Mineral Water'));
-                    $itemsSummary = !empty($order['items_summary']) ? htmlspecialchars($order['items_summary']) : $prod;
+                    $hasNoProducts = empty($order['items_summary']) && (empty($order['product_id']) || (int)$order['product_id'] <= 0);
+                    $itemsSummary = !empty($order['items_summary']) ? htmlspecialchars($order['items_summary']) : (!$hasNoProducts ? $prod : 'No products selected (Line Sale)');
                     $qty = (int)$order['quantity'];
                     $amount = formatCurrency($order['total_amount']);
                     $status = strtolower($order['status']);
@@ -1886,9 +2291,18 @@ function buildWhatsAppLink($phone, $shop, $orderNum, $amount, $itemsText = '') {
                                     <i class='bx bx-copy-alt' style="font-size: 12px;"></i>
                                     <?= htmlspecialchars($ordNum) ?>
                                 </span>
-                                <?php if (!empty($order['assigned_vehicle_number'])): ?>
-                                    <span style="background: #0f172a; color: #ffffff; font-size: 11px; font-weight: 800; padding: 2px 8px; border-radius: 6px; display: inline-flex; align-items: center; gap: 4px;" title="Assigned Delivery Vehicle: <?= htmlspecialchars($order['assigned_vehicle_name'] ?? '') ?>">
-                                        <i class='bx bxs-truck' style="color: #60a5fa;"></i> <?= htmlspecialchars($order['assigned_vehicle_number']) ?>
+                                <?php if (!empty($order['assigned_vehicle_number'])): 
+                                    $ovId = (int)($order['resolved_vehicle_id'] ?? ($order['vehicle_id'] ?? 0));
+                                    $ovLoad = $vehiclesLoadMap[$ovId] ?? null;
+                                    $ovCases = $ovLoad ? (int)$ovLoad['total_cases'] : null;
+                                    $ovBreakdown = $ovLoad ? $ovLoad['breakdown_text'] : '';
+                                ?>
+                                    <span class="order-veh-badge" title="Vehicle: <?= htmlspecialchars($order['assigned_vehicle_number']) ?><?= !empty($order['assigned_vehicle_name']) ? ' (' . htmlspecialchars($order['assigned_vehicle_name']) . ')' : '' ?> | Load Remaining: <?= $ovCases !== null ? $ovCases . ' cs (' . htmlspecialchars($ovBreakdown) . ')' : '0 cs' ?>">
+                                        <i class='bx bxs-truck' style="color: #60a5fa;"></i> 
+                                        <span><?= htmlspecialchars($order['assigned_vehicle_number']) ?></span>
+                                        <?php if ($ovCases !== null): ?>
+                                            <span class="veh-cases-chip"><?= $ovCases ?> cs left</span>
+                                        <?php endif; ?>
                                     </span>
                                 <?php endif; ?>
                                 <?php if ((int)$order['is_zone_read'] === 0): ?>
@@ -2274,6 +2688,13 @@ function buildWhatsAppLink($phone, $shop, $orderNum, $amount, $itemsText = '') {
                         }
                     } else if (currentBanner) {
                         currentBanner.remove();
+                    }
+
+                    // 3.1 Update Vehicle Load Status Panel
+                    const currentVehPanel = document.getElementById('vehicleLoadPanel');
+                    const newVehPanel = doc.getElementById('vehicleLoadPanel');
+                    if (currentVehPanel && newVehPanel) {
+                        currentVehPanel.innerHTML = newVehPanel.innerHTML;
                     }
 
                     // 4. Update Metrics Grid while preserving mobile accordion open state

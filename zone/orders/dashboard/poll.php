@@ -96,7 +96,7 @@ try {
                 }
             }
 
-            // If delivered, auto-reset assigned vehicle while preserving lifetime delivery count
+            // If delivered or cancelled, auto-reset assigned vehicle & order loads while preserving lifetime delivery count
             $vehicleReset = false;
             if ($new_status === 'delivered') {
                 $vStmt = $pdo->prepare("SELECT vehicle_id FROM orders WHERE order_id = ?");
@@ -105,8 +105,13 @@ try {
                 if ($currVehId > 0) {
                     $pdo->prepare("UPDATE vehicles SET total_deliveries_done = total_deliveries_done + 1 WHERE id = ?")->execute([$currVehId]);
                     $pdo->prepare("UPDATE orders SET vehicle_id = NULL WHERE order_id = ?")->execute([$order_id]);
+                    $pdo->prepare("DELETE FROM vehicle_loads WHERE order_id = ?")->execute([$order_id]);
                     $vehicleReset = true;
                 }
+            } elseif ($new_status === 'cancelled') {
+                $pdo->prepare("UPDATE orders SET vehicle_id = NULL WHERE order_id = ?")->execute([$order_id]);
+                $pdo->prepare("DELETE FROM vehicle_loads WHERE order_id = ?")->execute([$order_id]);
+                $vehicleReset = true;
             }
 
             // Return fresh metrics
@@ -183,12 +188,20 @@ try {
             exit;
         }
 
-        $oStmt = $pdo->prepare("SELECT order_id, order_number, shop_name, customer_name, discount FROM orders WHERE order_id = ?");
+        $oStmt = $pdo->prepare("SELECT order_id, order_number, shop_name, customer_name, discount, status FROM orders WHERE order_id = ?");
         $oStmt->execute([$order_id]);
         $orderInfo = $oStmt->fetch(PDO::FETCH_ASSOC);
         if (!$orderInfo) {
             echo json_encode(['success' => false, 'error' => 'Order not found.']);
             exit;
+        }
+
+        // Fetch existing items for this order to manage stock diff and allowances
+        $existing_items = getOrderItems($pdo, $order_id);
+        $existingQtyMap = [];
+        foreach ($existing_items as $ei) {
+            $ep = (int)$ei['product_id'];
+            $existingQtyMap[$ep] = ($existingQtyMap[$ep] ?? 0) + (int)$ei['quantity'];
         }
 
         $parsed_items = [];
@@ -230,7 +243,7 @@ try {
             $dbProdsMap[(int)$dp['product_id']] = $dp;
         }
 
-        // Validate that combined quantity across all rows (regular + extra) does not exceed available stock
+        // Validate that combined quantity across all rows (regular + extra) does not exceed available stock + already reserved stock
         $totalReqQty = [];
         foreach ($parsed_items as $itemData) {
             $p = $itemData['product_id'];
@@ -241,10 +254,11 @@ try {
             $dp = $dbProdsMap[$p];
             $pName = $dp['product_name'] ?: $dp['name'];
             $availStock = max(0, (int)($dp['case_stock'] !== null ? $dp['case_stock'] : ($dp['stock'] ?? 0)));
-            if ($reqQty > $availStock) {
+            $effectiveAvailStock = $availStock + ($existingQtyMap[$p] ?? 0);
+            if ($reqQty > $effectiveAvailStock) {
                 echo json_encode([
                     'success' => false,
-                    'error'   => "Quantity for '{$pName}' ({$reqQty} cases) exceeds available stock of {$availStock} cases."
+                    'error'   => "Quantity for '{$pName}' ({$reqQty} cases) exceeds available stock of {$effectiveAvailStock} cases."
                 ]);
                 exit;
             }
@@ -255,8 +269,10 @@ try {
         $valid_order_items = [];
 
         foreach ($parsed_items as $itemData) {
-            $pid = $itemData['product_id'];
-            if (!isset($dbProdsMap[$pid])) continue;
+            $pid = (int)$itemData['product_id'];
+            $qty = (int)$itemData['quantity'];
+            if (!isset($dbProdsMap[$pid]) || $qty <= 0) continue;
+
             $dp = $dbProdsMap[$pid];
             $pName = $dp['product_name'] ?: $dp['name'];
             $defaultPrice = (float)($dp['case_price'] ?: $dp['price']);
@@ -266,7 +282,7 @@ try {
                 $price = 0.00;
                 $line_total = 0.00;
             } else {
-                $price = ($itemData['rate'] !== null && (float)$itemData['rate'] > 0) ? (float)$itemData['rate'] : $defaultPrice;
+                $price = ($itemData['rate'] !== null && (float)$itemData['rate'] >= 0) ? (float)$itemData['rate'] : $defaultPrice;
                 $line_total = $price * $qty;
                 $base_total += $line_total;
             }
@@ -294,6 +310,26 @@ try {
         try {
             $pdo->beginTransaction();
 
+            // 1. Manage Stock Adjustments (Restore old, Deduct new)
+            $orderStatus = strtolower($orderInfo['status'] ?? 'pending');
+            if ($orderStatus !== 'cancelled') {
+                foreach ($existing_items as $oldItem) {
+                    $oldPid = (int)($oldItem['product_id'] ?? 0);
+                    $oldQty = (int)($oldItem['quantity'] ?? 0);
+                    if ($oldPid > 0 && $oldQty > 0) {
+                        adjustProductStock($pdo, $oldPid, +$oldQty, "Order #{$order_id} update: restored previous items");
+                    }
+                }
+                foreach ($valid_order_items as $newItem) {
+                    $newPid = (int)$newItem['product_id'];
+                    $newQty = (int)$newItem['quantity'];
+                    if ($newPid > 0 && $newQty > 0) {
+                        adjustProductStock($pdo, $newPid, -$newQty, "Order #{$order_id} update: applied items");
+                    }
+                }
+            }
+
+            // 2. Replace order items
             $pdo->prepare("DELETE FROM order_items WHERE order_id = ?")->execute([$order_id]);
 
             // Check if is_extra column exists in order_items table
@@ -316,7 +352,6 @@ try {
                         $voi['price_at_purchase'],
                         $voi['is_extra']
                     ]);
-                    adjustProductStock($pdo, $voi['product_id'], -$voi['quantity'], "Zone added products for order #{$order_id}");
                 }
             } else {
                 $insItem = $pdo->prepare("
@@ -330,10 +365,10 @@ try {
                         $voi['quantity'],
                         $voi['price_at_purchase']
                     ]);
-                    adjustProductStock($pdo, $voi['product_id'], -$voi['quantity'], "Zone added products for order #{$order_id}");
                 }
             }
 
+            // 3. Update orders table
             // Pick primary non-extra item if available
             $primaryItem = $valid_order_items[0];
             foreach ($valid_order_items as $voi) {
@@ -354,6 +389,14 @@ try {
 
             $pdo->commit();
 
+            // Sync vehicle loads if order is assigned to a vehicle
+            $vCheckStmt = $pdo->prepare("SELECT vehicle_id FROM orders WHERE order_id = ?");
+            $vCheckStmt->execute([$order_id]);
+            $assignedVehId = (int)$vCheckStmt->fetchColumn();
+            if ($assignedVehId > 0 && function_exists('syncOrderVehicleLoads')) {
+                syncOrderVehicleLoads($pdo, $order_id, $assignedVehId);
+            }
+
             $itemsSummaryArr = [];
             foreach ($valid_order_items as $voi) {
                 $extraTag = !empty($voi['is_extra']) ? ' [Extra]' : '';
@@ -362,13 +405,14 @@ try {
             $itemsSummary = implode(', ', $itemsSummaryArr);
 
             echo json_encode([
-                'success'       => true,
-                'order_id'      => $order_id,
-                'items_summary' => $itemsSummary,
-                'total_cases'   => $total_cases,
-                'total_amount'  => number_format($total_amount, 2, '.', ''),
-                'formatted_amt' => '₹' . number_format($total_amount, 2),
-                'message'       => "Products & quantities added successfully for Order #{$order_id}."
+                'success'         => true,
+                'order_id'        => $order_id,
+                'items_summary'   => $itemsSummary,
+                'total_cases'     => $total_cases,
+                'total_amount'    => number_format($total_amount, 2, '.', ''),
+                'formatted_total' => '₹' . number_format($total_amount, 2),
+                'formatted_amt'   => '₹' . number_format($total_amount, 2),
+                'message'         => "Products & quantities updated successfully for Order #{$order_id}."
             ]);
             exit;
         } catch (Exception $e) {
@@ -376,6 +420,50 @@ try {
             echo json_encode(['success' => false, 'error' => 'Database error: ' . $e->getMessage()]);
             exit;
         }
+    }
+
+    // ----------------------------------------------------
+    // Action 3d: Assign or Unassign Vehicle for Order
+    // ----------------------------------------------------
+    if ($action === 'assign_vehicle' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+        $order_id = (int)($_POST['order_id'] ?? 0);
+        $vehicle_id = (int)($_POST['vehicle_id'] ?? 0);
+
+        if ($order_id <= 0) {
+            echo json_encode(['success' => false, 'error' => 'Invalid order ID.']);
+            exit;
+        }
+
+        if ($vehicle_id > 0) {
+            $res = assignOrderToVehicle($pdo, $order_id, $vehicle_id);
+            if ($res['success']) {
+                $vStmt = $pdo->prepare("SELECT vehicle_number, vehicle_name FROM vehicles WHERE id = ?");
+                $vStmt->execute([$vehicle_id]);
+                $vRow = $vStmt->fetch(PDO::FETCH_ASSOC);
+                $vPlate = $vRow ? $vRow['vehicle_number'] : "Vehicle #{$vehicle_id}";
+
+                echo json_encode([
+                    'success'        => true,
+                    'order_id'       => $order_id,
+                    'vehicle_id'     => $vehicle_id,
+                    'vehicle_number' => $vRow['vehicle_number'] ?? '',
+                    'vehicle_name'   => $vRow['vehicle_name'] ?? '',
+                    'cases_loaded'   => $res['cases_loaded'] ?? 0,
+                    'message'        => "Order assigned to {$vPlate}."
+                ]);
+            } else {
+                echo json_encode(['success' => false, 'error' => $res['error'] ?? 'Failed to assign vehicle.']);
+            }
+        } else {
+            $res = unassignOrderFromVehicle($pdo, $order_id);
+            echo json_encode([
+                'success'    => true,
+                'order_id'   => $order_id,
+                'vehicle_id' => null,
+                'message'    => 'Vehicle unassigned from order.'
+            ]);
+        }
+        exit;
     }
 
     // ----------------------------------------------------
@@ -449,9 +537,9 @@ try {
                 SELECT vl.cases_loaded, COALESCE(p.product_name, p.name) as product_name 
                 FROM vehicle_loads vl
                 LEFT JOIN products p ON vl.product_id = p.product_id
-                WHERE vl.vehicle_id = ? AND vl.order_id = ? AND vl.is_active = 1
+                WHERE vl.vehicle_id = ? AND vl.is_active = 1 AND vl.product_id IS NOT NULL AND vl.order_id IS NULL
             ");
-            $stStmt->execute([$vId, $order_id]);
+            $stStmt->execute([$vId]);
             $order['vehicle_storage'] = $stStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
         }
 

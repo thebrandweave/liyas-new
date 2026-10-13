@@ -111,7 +111,14 @@ $ordersSql = "
         (SELECT GROUP_CONCAT(CONCAT(COALESCE(p2.product_name, p2.name), ' (', oi2.quantity, 'cs', IF(oi2.price_at_purchase = 0, ' - Extra', ''), ')') SEPARATOR ', ') 
          FROM order_items oi2 
          JOIN products p2 ON oi2.product_id = p2.product_id 
-         WHERE oi2.order_id = o.order_id) AS items_summary
+         WHERE oi2.order_id = o.order_id) AS items_summary,
+        (SELECT GROUP_CONCAT(CONCAT(COALESCE(p_buf.product_name, p_buf.name), ' (', vl_buf.cases_loaded, 'cs)') SEPARATOR ', ')
+         FROM vehicle_loads vl_buf
+         JOIN products p_buf ON vl_buf.product_id = p_buf.product_id
+         WHERE vl_buf.vehicle_id = o.vehicle_id 
+           AND vl_buf.is_active = 1 
+           AND vl_buf.product_id IS NOT NULL 
+           AND vl_buf.order_id IS NULL) AS vehicle_buffer_stock
     FROM orders o
     LEFT JOIN zones z ON o.zone_id = z.id
     LEFT JOIN products p ON o.product_id = p.product_id
@@ -135,8 +142,23 @@ if (!empty($shopFilter)) {
 // Fetch all distinct shops for filter dropdown
 $allShopsList = getAllShopsList($pdo);
 
-// Fetch all active vehicles for assigning orders
-$allActiveVehicles = $pdo->query("SELECT id, vehicle_number, vehicle_name, driver_name FROM vehicles WHERE status != 'inactive' ORDER BY vehicle_number ASC")->fetchAll(PDO::FETCH_ASSOC) ?: [];
+// Fetch all active vehicles with current load counts for assigning orders
+$allActiveVehicles = $pdo->query("
+    SELECT 
+        v.id, 
+        v.vehicle_number, 
+        v.vehicle_name, 
+        v.driver_name,
+        v.capacity_cases,
+        COALESCE((
+            SELECT SUM(vl.cases_loaded) 
+            FROM vehicle_loads vl 
+            WHERE vl.vehicle_id = v.id AND vl.is_active = 1
+        ), 0) AS total_cases_loaded
+    FROM vehicles v 
+    WHERE v.status != 'inactive' 
+    ORDER BY v.vehicle_number ASC
+")->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
 // Fetch all active products for the Add Products modal
 $allProductsList = $pdo->query("SELECT product_id, name, product_name, case_price, price, case_stock, stock, net_content, net_content_unit FROM products WHERE status != 'inactive' OR status IS NULL ORDER BY case_price ASC, name ASC")->fetchAll(PDO::FETCH_ASSOC) ?: [];
@@ -1258,10 +1280,10 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
              
 
                
-                <button type="button" class="btn-header" onclick="openVehiclesSidebar('<?= htmlspecialchars($selectedZone) ?>')" style="color: #1e40af; background: #eff6ff; border-color: #bfdbfe; font-weight: 700;" title="Vehicles Loading Hub & Fleet">
+                <a href="<?= BASE_URL ?>/zone/orders/dashboard/vehicles/" class="btn-header" style="color: #1e40af; background: #eff6ff; border-color: #bfdbfe; font-weight: 700;" title="Zone Vehicles & Vehicle Products Hub">
                     <i class='bx bxs-truck' style="color: #2563eb; font-size: 16px;"></i>
                     <span>Vehicles</span>
-                </button>
+                </a>
 
                 <button type="button" class="btn-header" onclick="toggleRewardsSidebar(true)" style="color: #6b21a8; background: #faf5ff; border-color: #e9d5ff; font-weight: 700;" title="Shop Reward Status">
                     <i class='bx bxs-gift' style="color: #7c3aed; font-size: 16px;"></i>
@@ -1642,6 +1664,27 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
                             <?php endif; ?>
                         </div>
 
+                        <!-- Assigned Vehicle & On-Truck Line-Sale Stock Indicator -->
+                        <?php if (!empty($order['assigned_vehicle_number'])): ?>
+                            <div class="assigned-veh-info-strip" style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 8px 12px; margin-bottom: 12px; font-size: 12px;">
+                                <div style="display: flex; align-items: center; justify-content: space-between; gap: 6px;">
+                                    <div style="font-weight: 700; color: #1e40af; display: flex; align-items: center; gap: 6px;">
+                                        <i class='bx bxs-truck' style="color: #2563eb; font-size: 16px;"></i>
+                                        <span>Assigned Vehicle: <strong><?= htmlspecialchars($order['assigned_vehicle_number']) ?></strong> <?= !empty($order['assigned_vehicle_name']) ? '(' . htmlspecialchars($order['assigned_vehicle_name']) . ')' : '' ?></span>
+                                    </div>
+                                    <a href="<?= BASE_URL ?>/zone/orders/dashboard/vehicles/?search=<?= urlencode($order['assigned_vehicle_number']) ?>" target="_blank" style="font-size: 11px; color: #2563eb; text-decoration: none; font-weight: 700; display: inline-flex; align-items: center; gap: 2px;">
+                                        <span>View Vehicle</span> <i class='bx bx-right-arrow-alt'></i>
+                                    </a>
+                                </div>
+                                <?php if (!empty($order['vehicle_buffer_stock'])): ?>
+                                    <div style="margin-top: 6px; font-size: 11px; color: #b45309; background: #fef3c7; border: 1px solid #fde68a; padding: 4px 8px; border-radius: 6px; display: flex; align-items: center; gap: 5px;">
+                                        <i class='bx bx-archive' style="font-size: 13px;"></i>
+                                        <div><strong>On-Board Line-Sale Stock:</strong> <?= htmlspecialchars($order['vehicle_buffer_stock']) ?></div>
+                                    </div>
+                                <?php endif; ?>
+                            </div>
+                        <?php endif; ?>
+
                         <!-- Card Action Buttons -->
                         <div class="card-actions-row" style="flex-wrap: wrap; gap: 8px;">
                             <!-- Quick Status Update Dropdown -->
@@ -1654,16 +1697,16 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
                             </select>
 
                             <!-- Quick Vehicle Assignment Selector -->
-                            <select class="status-select order-vehicle-select" id="orderVehSelect_<?= $orderId ?>" style="max-width: 135px; font-size: 11px; border-color: #cbd5e1;" onchange="assignOrderToVehicleFromCard(<?= $orderId ?>, this.value)" title="Assign to Vehicle">
+                            <select class="status-select order-vehicle-select" id="orderVehSelect_<?= $orderId ?>" style="max-width: 160px; font-size: 11px; border-color: #cbd5e1;" onchange="assignOrderToVehicleFromCard(<?= $orderId ?>, this.value)" title="Assign to Vehicle">
                                 <option value="">🚚 Assign Vehicle</option>
                                 <?php foreach ($allActiveVehicles as $veh): ?>
                                     <option value="<?= $veh['id'] ?>" <?= ($order['status'] !== 'delivered' && (int)($order['vehicle_id'] ?? 0) === (int)$veh['id']) ? 'selected' : '' ?>>
-                                        <?= htmlspecialchars($veh['vehicle_number']) ?>
+                                        <?= htmlspecialchars($veh['vehicle_number']) ?> (<?= (int)$veh['total_cases_loaded'] ?> cs)
                                     </option>
                                 <?php endforeach; ?>
                             </select>
 
-                            <!-- In Yard Check / Uncheck Toggle Button -->
+                            <!-- In Yard Check / Uncheck Toggle Button
                             <?php $isInYard = !empty($order['in_yard']); ?>
                             <button type="button" 
                                     class="btn-card-action btn-yard-toggle <?= $isInYard ? 'yard-in' : 'yard-out' ?>" 
@@ -1672,23 +1715,23 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
                                     title="Check/Uncheck whether order is in yard">
                                 <i class='bx <?= $isInYard ? 'bx-checkbox-checked' : 'bx-checkbox' ?>'></i>
                                 <span class="yard-text"><?= $isInYard ? 'In Yard' : 'Not in Yard' ?></span>
-                            </button>
+                            </button> -->
 
                             <div style="display: flex; gap: 6px; flex-wrap: wrap;">
-                                <!-- <?php if ($hasNoProducts): ?>
+                              
                                     <button type="button" class="btn-card-action" style="background: #ecfdf5; color: #047857; border-color: #a7f3d0; font-weight: 700;" onclick="openAddOrderProductsModal(<?= $orderId ?>, '<?= htmlspecialchars(addslashes($orderNum)) ?>', '<?= htmlspecialchars(addslashes($shopName)) ?>')" title="Add Products & Quantities">
                                         <i class='bx bx-plus-circle'></i> Add Products
                                     </button>
-                                <?php endif; ?> -->
-<!-- 
+                               
+
                                 <a href="<?= BASE_URL ?>/admin/orders/create.php?reorder_id=<?= $orderId ?>" 
                                    class="btn-card-action" style="color: #2563eb; background: #eff6ff; border-color: #bfdbfe; font-weight: 700;" title="Place Reorder for this Shop">
                                     <i class='bx bx-refresh'></i> Reorder
-                                </a> -->
+                                </a>
 
-                                <button type="button" class="btn-card-action" onclick="viewOrderModal(<?= $orderId ?>)" title="View Order Details">
+                                <!-- <button type="button" class="btn-card-action" onclick="viewOrderModal(<?= $orderId ?>)" title="View Order Details">
                                     <i class='bx bx-show'></i> Details
-                                </button>
+                                </button> -->
 
                                 <?php if (!empty($order['zone_slug'])): ?>
                                     <a href="<?= BASE_URL ?>/zone/generate-receipt.php?zone=<?= urlencode($order['zone_slug']) ?>&order_id=<?= $orderId ?>" 
@@ -2063,6 +2106,34 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
                     });
             };
 
+            // 1b. Assign / Unassign Order to Vehicle via AJAX
+            window.assignOrderToVehicleFromCard = function(orderId, vehicleId) {
+                const selectElem = document.getElementById('orderVehSelect_' + orderId);
+                if (selectElem) selectElem.disabled = true;
+
+                const fd = new FormData();
+                fd.append('action', 'assign_vehicle');
+                fd.append('order_id', orderId);
+                fd.append('vehicle_id', vehicleId || '');
+
+                fetch(pollApiUrl, { method: 'POST', body: fd })
+                    .then(r => r.json())
+                    .then(res => {
+                        if (selectElem) selectElem.disabled = false;
+                        if (res.success) {
+                            showToast('Vehicle Assigned', res.message || 'Vehicle assignment updated successfully.');
+                            setTimeout(pollOrders, 300);
+                        } else {
+                            alert(res.error || 'Failed to update vehicle assignment.');
+                            setTimeout(pollOrders, 300);
+                        }
+                    })
+                    .catch(e => {
+                        if (selectElem) selectElem.disabled = false;
+                        console.error('Vehicle assignment failed:', e);
+                    });
+            };
+
             // 2. Acknowledge / Mark Single Order as Checked
             window.acknowledgeOrder = function(orderId) {
                 const btn = document.getElementById('btnAck_' + orderId);
@@ -2248,15 +2319,18 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
             // 6. Add Products Modal Controls & Logic (When Order has no items)
             const AOP_PRODUCTS = <?= json_encode($allProductsList) ?>;
 
-            function getAopProductOptionsHtml(selectedPid = 0) {
+            function getAopProductOptionsHtml(selectedPid = 0, extraStockAllowance = 0) {
                 let html = '<option value="">-- Choose Product Item --</option>';
                 AOP_PRODUCTS.forEach(p => {
                     const pid = parseInt(p.product_id);
                     const pName = p.product_name || p.name || 'Product';
                     const rate = parseFloat(p.case_price || p.price || 0);
-                    const stock = Math.max(0, parseInt(p.case_stock !== null && p.case_stock !== undefined ? p.case_stock : (p.stock || 0)));
+                    let stock = Math.max(0, parseInt(p.case_stock !== null && p.case_stock !== undefined ? p.case_stock : (p.stock || 0)));
+                    if (pid === parseInt(selectedPid)) {
+                        stock += parseInt(extraStockAllowance || 0);
+                    }
                     const sel = (pid === parseInt(selectedPid)) ? 'selected' : '';
-                    if (stock <= 0) {
+                    if (stock <= 0 && pid !== parseInt(selectedPid)) {
                         html += `<option value="${pid}" data-rate="${rate}" data-stock="0" disabled style="color: #94a3b8;">${pName} (₹${rate.toFixed(2)}/cs - Out of stock)</option>`;
                     } else {
                         html += `<option value="${pid}" data-rate="${rate}" data-stock="${stock}" ${sel}>${pName} (₹${rate.toFixed(2)}/cs, Stock: ${stock})</option>`;
@@ -2270,7 +2344,7 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
                 if (!backdrop) return;
 
                 document.getElementById('aopOrderId').value = orderId;
-                document.getElementById('aopModalTitle').textContent = `Add Products: #${orderNum}`;
+                document.getElementById('aopModalTitle').textContent = `Add / Edit Products: #${orderNum}`;
                 document.getElementById('aopModalSubtitle').textContent = `Shop: ${shopName}`;
                 
                 const errBox = document.getElementById('aopErrorMsg');
@@ -2280,10 +2354,45 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
                 }
 
                 const tbody = document.getElementById('aopItemsTableBody');
-                tbody.innerHTML = '';
-                addAopRow();
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="6" style="text-align: center; padding: 24px; color: #64748b;">
+                            <i class='bx bx-loader-alt bx-spin' style="font-size: 22px; color: #2563eb; vertical-align: middle; margin-right: 6px;"></i>
+                            Loading existing order products...
+                        </td>
+                    </tr>
+                `;
 
                 backdrop.classList.add('open');
+
+                // Fetch existing order items so previous products are NEVER lost or erased!
+                fetch(pollApiUrl + '&action=get_order_details&order_id=' + orderId)
+                    .then(r => r.json())
+                    .then(res => {
+                        tbody.innerHTML = '';
+                        if (res.success && res.order && Array.isArray(res.order.items) && res.order.items.length > 0) {
+                            // Populate existing items
+                            res.order.items.forEach(it => {
+                                const pid = parseInt(it.product_id || 0);
+                                const qty = parseInt(it.quantity || 1);
+                                const rate = (it.price_at_purchase !== null && it.price_at_purchase !== undefined) ? parseFloat(it.price_at_purchase) : '';
+                                const isExtra = parseInt(it.is_extra || 0) === 1;
+                                addAopRow(pid, qty, rate, isExtra, qty);
+                            });
+                            // Add an additional empty row so user can immediately add another product
+                            addAopRow();
+                        } else {
+                            // No existing products on order, start with 1 blank row
+                            addAopRow();
+                        }
+                        calculateAopTotals();
+                    })
+                    .catch(err => {
+                        console.error('Failed to load order products:', err);
+                        tbody.innerHTML = '';
+                        addAopRow();
+                        calculateAopTotals();
+                    });
             };
 
             window.closeAddOrderProductsModal = function() {
@@ -2291,7 +2400,7 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
                 if (backdrop) backdrop.classList.remove('open');
             };
 
-            window.addAopRow = function(selectedPid = 0, defaultQty = 1, defaultRate = '', isExtra = false) {
+            window.addAopRow = function(selectedPid = 0, defaultQty = 1, defaultRate = '', isExtra = false, existingQty = 0) {
                 const tbody = document.getElementById('aopItemsTableBody');
                 if (!tbody) return;
 
@@ -2301,11 +2410,11 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
                 tr.innerHTML = `
                     <td style="padding: 6px 8px;">
                         <select class="form-input-v aop-prod-select" style="width: 100%; font-size: 13px; padding: 6px 8px; border-radius: 6px; border: 1px solid #cbd5e1;" onchange="handleAopProductChange(this)">
-                            ${getAopProductOptionsHtml(selectedPid)}
+                            ${getAopProductOptionsHtml(selectedPid, existingQty)}
                         </select>
                     </td>
                     <td style="padding: 6px 8px;">
-                        <input type="text" step="0.01" min="0" class="form-input-v aop-rate-input" style="width: 100%; font-size: 13px; padding: 6px 8px; border-radius: 6px; border: 1px solid #cbd5e1;" placeholder="0.00" value="${defaultRate}" oninput="calculateAopTotals()">
+                        <input type="text" step="0.01" min="0" class="form-input-v aop-rate-input" style="width: 100%; font-size: 13px; padding: 6px 8px; border-radius: 6px; border: 1px solid #cbd5e1;" placeholder="0.00" value="${defaultRate !== '' ? defaultRate : ''}" oninput="calculateAopTotals()">
                     </td>
                     <td style="padding: 6px 8px;">
                         <input type="text" min="1" max="9999" class="form-input-v aop-qty-input" style="width: 100%; font-size: 13px; padding: 6px 8px; border-radius: 6px; border: 1px solid #cbd5e1;" value="${defaultQty}" oninput="handleAopQtyInput(this)">
@@ -2330,7 +2439,11 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
 
                 const sel = tr.querySelector('.aop-prod-select');
                 if (sel && sel.value) {
-                    handleAopProductChange(sel);
+                    const rateInput = tr.querySelector('.aop-rate-input');
+                    if (defaultRate !== '' && rateInput) {
+                        rateInput.value = parseFloat(defaultRate).toFixed(2);
+                    }
+                    handleAopProductChange(sel, defaultRate !== '');
                 } else {
                     calculateAopTotals();
                 }
@@ -2371,7 +2484,7 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
                 calculateAopTotals();
             };
 
-            window.handleAopProductChange = function(selectElem) {
+            window.handleAopProductChange = function(selectElem, preserveRate = false) {
                 const row = selectElem.closest('tr');
                 if (!row) return;
                 const opt = selectElem.options[selectElem.selectedIndex];
@@ -2394,7 +2507,7 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
                 const rate = parseFloat(opt.dataset.rate || 0);
                 const stock = parseInt(opt.dataset.stock || 0);
 
-                if (rateInput) {
+                if (rateInput && (!preserveRate || rateInput.value === '')) {
                     rateInput.value = rate.toFixed(2);
                 }
 
@@ -2509,7 +2622,7 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
 
                     if (totalSpan) {
                         if (isExtra && pid > 0 && qty > 0) {
-                            totalSpan.innerHTML = `<span style="text-decoration:line-through; color:#94a3b8; font-size:11px; margin-right:4px;">₹${lineTotal.toFixed(2)}</span>₹0.00 <span style="font-size:10px; color:#059669; font-weight:700;"></span>`;
+                            totalSpan.innerHTML = `<span style="text-decoration:line-through; color:#94a3b8; font-size:11px; margin-right:4px;">₹${lineTotal.toFixed(2)}</span>₹0.00 <span style="font-size:10px; color:#059669; font-weight:700;">(Extra)</span>`;
                         } else {
                             totalSpan.textContent = '₹' + lineTotal.toFixed(2);
                         }
@@ -2669,7 +2782,6 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
                                         </div>
                                     `;
                                 }
-                                card.querySelectorAll("button[onclick*='openAddOrderProductsModal']").forEach(b => b.remove());
                             }
                             setTimeout(pollOrders, 500);
                         } else {
