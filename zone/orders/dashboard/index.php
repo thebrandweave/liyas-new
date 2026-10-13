@@ -1290,10 +1290,10 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
                     <span>Rewards</span>
                 </button>
 
-                <a href="<?= BASE_URL ?>/admin/orders/create.php" class="btn-header" style="color: #047857; background: #ecfdf5; border-color: #a7f3d0; font-weight: 700;" title="Place New Order or Reorder">
+                <!-- <a href="<?= BASE_URL ?>/admin/orders/create.php" class="btn-header" style="color: #047857; background: #ecfdf5; border-color: #a7f3d0; font-weight: 700;" title="Place New Order or Reorder">
                     <i class='bx bx-plus-circle' style="color: #059669; font-size: 16px;"></i>
                     <span> New Order</span>
-                </a>
+                </a> -->
 
                 <a href="<?= BASE_URL ?>/zone/orders/dashboard/products/" class="btn-header" title="Products & Inventory Management">
                     <i class='bx bx-cube'></i>
