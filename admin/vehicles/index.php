@@ -921,7 +921,7 @@ foreach ($fleetData['vehicles'] as $v) {
                             <div class="v-stat-num" style="color: #1d4ed8;">
                                 <?= number_format($fleetLoadsDelivered) ?> cs
                             </div>
-                            <div class="v-stat-label">Total Loads Taken to Delivery</div>
+                            <div class="v-stat-label">Total Loads Delivered</div>
                         </div>
                         <div class="v-stat-icon-wrap v-icon-blue">
                             <i class='bx bx-layer'></i>

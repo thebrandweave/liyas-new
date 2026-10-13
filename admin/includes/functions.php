@@ -455,22 +455,30 @@ function getAllVehiclesWithLoads(PDO $pdo, $filterZone = null): array {
 			$loadsByVehicle[$vId][$zId] = ($loadsByVehicle[$vId][$zId] ?? 0) + $cases;
 		}
 
-		// All-time cumulative loads taken across all trips (never reset)
-		$allTimeLoadsStmt = $pdo->query("
-			SELECT vehicle_id, SUM(cases_loaded) as total_cases_all_time
-			FROM vehicle_loads
-			GROUP BY vehicle_id
+		// Count delivered orders and calculate total cases delivered per vehicle from authoritative orders & order_items
+		$delivStatsStmt = $pdo->query("
+			SELECT 
+				o.vehicle_id,
+				COUNT(DISTINCT o.order_id) AS delivered_count,
+				COALESCE(SUM(
+					COALESCE(
+						(SELECT SUM(quantity) FROM order_items WHERE order_id = o.order_id),
+						o.quantity,
+						1
+					)
+				), 0) AS delivered_cases
+			FROM orders o
+			WHERE o.vehicle_id IS NOT NULL AND o.status = 'delivered'
+			GROUP BY o.vehicle_id
 		");
-		$allTimeLoadsMap = $allTimeLoadsStmt->fetchAll(PDO::FETCH_KEY_PAIR) ?: [];
-
-		// Count delivered orders per vehicle (never lost)
-		$delivOrdersStmt = $pdo->query("
-			SELECT vehicle_id, COUNT(*) as delivered_count 
-			FROM orders 
-			WHERE vehicle_id IS NOT NULL AND status = 'delivered'
-			GROUP BY vehicle_id
-		");
-		$delivOrdersMap = $delivOrdersStmt->fetchAll(PDO::FETCH_KEY_PAIR) ?: [];
+		$delivStatsRows = $delivStatsStmt ? ($delivStatsStmt->fetchAll(PDO::FETCH_ASSOC) ?: []) : [];
+		$delivOrdersMap = [];
+		$delivCasesMap  = [];
+		foreach ($delivStatsRows as $dsr) {
+			$vid = (int)$dsr['vehicle_id'];
+			$delivOrdersMap[$vid] = (int)$dsr['delivered_count'];
+			$delivCasesMap[$vid]  = (int)$dsr['delivered_cases'];
+		}
 
 		// Count assigned active orders per vehicle
 		$ordersCountStmt = $pdo->query("
@@ -546,9 +554,9 @@ function getAllVehiclesWithLoads(PDO $pdo, $filterZone = null): array {
 				$activeVehiclesCount++;
 			}
 
-			// Lifetime / Cumulative stats that NEVER reset
-			$deliveriesDone = (int)($v['total_deliveries_done'] ?? 0) + (int)($delivOrdersMap[$vId] ?? 0);
-			$loadsTaken     = (int)($v['total_loads_delivered'] ?? 0) + (int)($allTimeLoadsMap[$vId] ?? 0);
+			// Live delivery statistics from completed delivered orders (with fallback to vehicle lifetime counters)
+			$deliveriesDone = isset($delivOrdersMap[$vId]) ? $delivOrdersMap[$vId] : (int)($v['total_deliveries_done'] ?? 0);
+			$loadsDelivered = isset($delivCasesMap[$vId]) ? $delivCasesMap[$vId] : (int)($v['total_loads_delivered'] ?? 0);
 
 			$v['total_cases_loaded']        = $totalLoaded;
 			$v['current_zone_cases']        = $currentZoneCases;
@@ -560,7 +568,8 @@ function getAllVehiclesWithLoads(PDO $pdo, $filterZone = null): array {
 			$v['load_percent']              = 0;
 			$v['assigned_orders_count']     = (int)($ordersCountMap[$vId] ?? 0);
 			$v['deliveries_done']           = $deliveriesDone;
-			$v['loads_taken_to_delivery']   = $loadsTaken;
+			$v['loads_delivered']           = $loadsDelivered;
+			$v['loads_taken_to_delivery']   = $loadsDelivered;
 		}
 		unset($v);
 
