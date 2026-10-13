@@ -17,12 +17,61 @@ if (!isZoneOrdersAuthenticated()) {
 $action = $_REQUEST['action'] ?? 'poll';
 $selectedZone = trim($_REQUEST['zone'] ?? 'all'); // 'all' or zone_id or zone_slug
 
+/**
+ * Robust helper to safely extract and validate order_id from various request methods,
+ * superglobals, JSON payloads, or string formats (#123, ORD-123).
+ */
+function getRequestedOrderId(PDO $pdo): int {
+    $raw = $_POST['order_id'] ?? $_GET['order_id'] ?? $_REQUEST['order_id'] ?? $_POST['id'] ?? $_GET['id'] ?? $_REQUEST['id'] ?? $_POST['orderId'] ?? $_GET['orderId'] ?? null;
+
+    if ($raw === null || $raw === '') {
+        $input = file_get_contents('php://input');
+        if (!empty($input)) {
+            $json = json_decode($input, true);
+            if (is_array($json)) {
+                $raw = $json['order_id'] ?? $json['id'] ?? $json['orderId'] ?? null;
+            }
+        }
+    }
+
+    if ($raw !== null && $raw !== '') {
+        $id = (int)$raw;
+        if ($id > 0) {
+            return $id;
+        }
+
+        // Handle string formats like "#112", "ORD-112", etc.
+        $trimmed = trim((string)$raw);
+        $cleanDigits = preg_replace('/[^0-9]/', '', $trimmed);
+        if (!empty($cleanDigits)) {
+            $numericId = (int)$cleanDigits;
+            if ($numericId > 0) {
+                $chk = $pdo->prepare("SELECT order_id FROM orders WHERE order_id = ?");
+                $chk->execute([$numericId]);
+                if ($chk->fetchColumn()) {
+                    return $numericId;
+                }
+            }
+        }
+
+        // Try lookup by order_number
+        $numChk = $pdo->prepare("SELECT order_id FROM orders WHERE order_number = ? LIMIT 1");
+        $numChk->execute([$trimmed]);
+        $foundId = (int)$numChk->fetchColumn();
+        if ($foundId > 0) {
+            return $foundId;
+        }
+    }
+
+    return 0;
+}
+
 try {
     // ----------------------------------------------------
     // Action 1: Mark Single Order as Checked / Read
     // ----------------------------------------------------
     if ($action === 'mark_read' && $_SERVER['REQUEST_METHOD'] === 'POST') {
-        $order_id = (int)($_POST['order_id'] ?? 0);
+        $order_id = getRequestedOrderId($pdo);
         if ($order_id > 0) {
             $stmt = $pdo->prepare("UPDATE orders SET is_zone_read = 1, zone_read_at = NOW() WHERE order_id = ?");
             $stmt->execute([$order_id]);
@@ -62,74 +111,80 @@ try {
     // Action 3: Quick Status Update
     // ----------------------------------------------------
     if ($action === 'update_status' && $_SERVER['REQUEST_METHOD'] === 'POST') {
-        $order_id = (int)($_POST['order_id'] ?? 0);
-        $new_status = trim($_POST['status'] ?? '');
+        $order_id = getRequestedOrderId($pdo);
+        $new_status = trim($_POST['status'] ?? ($_REQUEST['status'] ?? ''));
         $allowed = ['pending', 'processing', 'shipped', 'delivered', 'cancelled'];
 
-        if ($order_id > 0 && in_array($new_status, $allowed)) {
-            $oldStmt = $pdo->prepare("SELECT status, shop_name, customer_name, phone FROM orders WHERE order_id = ?");
-            $oldStmt->execute([$order_id]);
-            $oData = $oldStmt->fetch(PDO::FETCH_ASSOC);
+        if ($order_id <= 0) {
+            echo json_encode(['success' => false, 'error' => 'Invalid order ID.']);
+            exit;
+        }
 
-            if (!$oData) {
-                echo json_encode(['success' => false, 'error' => 'Order not found.']);
-                exit;
+        if (!in_array($new_status, $allowed)) {
+            echo json_encode(['success' => false, 'error' => 'Invalid status value.']);
+            exit;
+        }
+
+        $oldStmt = $pdo->prepare("SELECT status, shop_name, customer_name, phone FROM orders WHERE order_id = ?");
+        $oldStmt->execute([$order_id]);
+        $oData = $oldStmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$oData) {
+            echo json_encode(['success' => false, 'error' => 'Order not found.']);
+            exit;
+        }
+
+        $old_status = $oData['status'] ?: 'pending';
+
+        $upStmt = $pdo->prepare("
+            UPDATE orders 
+            SET status = ?, is_zone_read = 1, zone_read_at = COALESCE(zone_read_at, NOW()), updated_at = NOW() 
+            WHERE order_id = ?
+        ");
+        $upStmt->execute([$new_status, $order_id]);
+
+        // Adjust product inventory stock automatically
+        handleOrderStatusStockChange($pdo, $order_id, $old_status, $new_status);
+
+        // Update shop reward progress if delivered or cancelled
+        if ($new_status === 'delivered' || $old_status === 'delivered' || $new_status === 'cancelled') {
+            $shopName = $oData['shop_name'] ?: ($oData['customer_name'] ?: '');
+            if ($shopName !== '') {
+                updateShopRewardProgress($pdo, $shopName, $oData['phone'] ?? '');
             }
+        }
 
-            $old_status = $oData['status'] ?: 'pending';
-
-            $upStmt = $pdo->prepare("
-                UPDATE orders 
-                SET status = ?, is_zone_read = 1, zone_read_at = COALESCE(zone_read_at, NOW()), updated_at = NOW() 
-                WHERE order_id = ?
-            ");
-            $upStmt->execute([$new_status, $order_id]);
-
-            // Adjust product inventory stock automatically
-            handleOrderStatusStockChange($pdo, $order_id, $old_status, $new_status);
-
-            // Update shop reward progress if delivered or cancelled
-            if ($new_status === 'delivered' || $old_status === 'delivered' || $new_status === 'cancelled') {
-                $shopName = $oData['shop_name'] ?: ($oData['customer_name'] ?: '');
-                if ($shopName !== '') {
-                    updateShopRewardProgress($pdo, $shopName, $oData['phone'] ?? '');
-                }
-            }
-
-            // If delivered or cancelled, auto-reset assigned vehicle & order loads while preserving lifetime delivery count
-            $vehicleReset = false;
-            if ($new_status === 'delivered') {
-                $vStmt = $pdo->prepare("SELECT vehicle_id FROM orders WHERE order_id = ?");
-                $vStmt->execute([$order_id]);
-                $currVehId = (int)$vStmt->fetchColumn();
-                if ($currVehId > 0) {
-                    $pdo->prepare("UPDATE vehicles SET total_deliveries_done = total_deliveries_done + 1 WHERE id = ?")->execute([$currVehId]);
-                    $pdo->prepare("UPDATE orders SET vehicle_id = NULL WHERE order_id = ?")->execute([$order_id]);
-                    $pdo->prepare("DELETE FROM vehicle_loads WHERE order_id = ?")->execute([$order_id]);
-                    $vehicleReset = true;
-                }
-            } elseif ($new_status === 'cancelled') {
+        // If delivered or cancelled, auto-reset assigned vehicle & order loads while preserving lifetime delivery count
+        $vehicleReset = false;
+        if ($new_status === 'delivered') {
+            $vStmt = $pdo->prepare("SELECT vehicle_id FROM orders WHERE order_id = ?");
+            $vStmt->execute([$order_id]);
+            $currVehId = (int)$vStmt->fetchColumn();
+            if ($currVehId > 0) {
+                $pdo->prepare("UPDATE vehicles SET total_deliveries_done = total_deliveries_done + 1 WHERE id = ?")->execute([$currVehId]);
                 $pdo->prepare("UPDATE orders SET vehicle_id = NULL WHERE order_id = ?")->execute([$order_id]);
                 $pdo->prepare("DELETE FROM vehicle_loads WHERE order_id = ?")->execute([$order_id]);
                 $vehicleReset = true;
             }
-
-            // Return fresh metrics
-            $freshMetrics = getLiveMetrics($pdo, $selectedZone);
-
-            echo json_encode([
-                'success'       => true,
-                'order_id'      => $order_id,
-                'old_status'    => $old_status,
-                'new_status'    => $new_status,
-                'badge_class'   => getStatusBadgeClass($new_status),
-                'vehicle_reset' => $vehicleReset,
-                'message'       => "Order #{$order_id} status updated to " . ucfirst($new_status),
-                'metrics'       => $freshMetrics
-            ]);
-            exit;
+        } elseif ($new_status === 'cancelled') {
+            $pdo->prepare("UPDATE orders SET vehicle_id = NULL WHERE order_id = ?")->execute([$order_id]);
+            $pdo->prepare("DELETE FROM vehicle_loads WHERE order_id = ?")->execute([$order_id]);
+            $vehicleReset = true;
         }
-        echo json_encode(['success' => false, 'error' => 'Invalid status or order ID.']);
+
+        // Return fresh metrics
+        $freshMetrics = getLiveMetrics($pdo, $selectedZone);
+
+        echo json_encode([
+            'success'       => true,
+            'order_id'      => $order_id,
+            'old_status'    => $old_status,
+            'new_status'    => $new_status,
+            'badge_class'   => getStatusBadgeClass($new_status),
+            'vehicle_reset' => $vehicleReset,
+            'message'       => "Order #{$order_id} status updated to " . ucfirst($new_status),
+            'metrics'       => $freshMetrics
+        ]);
         exit;
     }
 
@@ -137,7 +192,7 @@ try {
     // Action 3b: Toggle In-Yard Status for Order
     // ----------------------------------------------------
     if ($action === 'toggle_in_yard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
-        $order_id = (int)($_POST['order_id'] ?? 0);
+        $order_id = getRequestedOrderId($pdo);
         if ($order_id <= 0) {
             echo json_encode(['success' => false, 'error' => 'Invalid order ID.']);
             exit;
@@ -175,8 +230,18 @@ try {
     // Action 3c: Add Products & Quantities for Order
     // ----------------------------------------------------
     if ($action === 'add_order_products' && $_SERVER['REQUEST_METHOD'] === 'POST') {
-        $order_id = (int)($_POST['order_id'] ?? 0);
+        $order_id = getRequestedOrderId($pdo);
         $raw_items = $_POST['items'] ?? [];
+
+        if (empty($raw_items)) {
+            $input = file_get_contents('php://input');
+            if (!empty($input)) {
+                $json = json_decode($input, true);
+                if (is_array($json) && !empty($json['items'])) {
+                    $raw_items = $json['items'];
+                }
+            }
+        }
 
         if ($order_id <= 0) {
             echo json_encode(['success' => false, 'error' => 'Invalid order ID.']);
@@ -425,9 +490,12 @@ try {
     // ----------------------------------------------------
     // Action 3d: Assign or Unassign Vehicle for Order
     // ----------------------------------------------------
-    if ($action === 'assign_vehicle' && $_SERVER['REQUEST_METHOD'] === 'POST') {
-        $order_id = (int)($_POST['order_id'] ?? 0);
-        $vehicle_id = (int)($_POST['vehicle_id'] ?? 0);
+    if (in_array($action, ['assign_vehicle', 'assign_order', 'unassign_order']) && $_SERVER['REQUEST_METHOD'] === 'POST') {
+        $order_id = getRequestedOrderId($pdo);
+        $vehicle_id = (int)($_POST['vehicle_id'] ?? ($_REQUEST['vehicle_id'] ?? 0));
+        if ($action === 'unassign_order') {
+            $vehicle_id = 0;
+        }
 
         if ($order_id <= 0) {
             echo json_encode(['success' => false, 'error' => 'Invalid order ID.']);
@@ -470,7 +538,7 @@ try {
     // Action 4: Get Full Order Details (for Quick Modal)
     // ----------------------------------------------------
     if ($action === 'get_order_details') {
-        $order_id = (int)($_GET['order_id'] ?? 0);
+        $order_id = getRequestedOrderId($pdo);
         if ($order_id <= 0) {
             echo json_encode(['success' => false, 'error' => 'Invalid order ID.']);
             exit;

@@ -743,6 +743,7 @@ try {
 /**
  * Vehicles Sidebar JavaScript Engine
  */
+const VEH_API_URL = '<?= rtrim(BASE_URL, "/") ?>'.replace(/^https?:\/\/[^\/]+/i, window.location.origin) + '/zone/orders/dashboard/vehicles_api.php';
 let currentVehiclesFilterZone = 'all';
 let cachedVehiclesData = null;
 
@@ -798,7 +799,7 @@ function refreshVehiclesData() {
     const icon = document.getElementById('vRefreshIcon');
     if (icon) icon.classList.add('bx-spin');
 
-    const apiUrl = '<?= BASE_URL ?>/zone/orders/dashboard/vehicles_api.php?action=get_vehicles&zone=' + encodeURIComponent(currentVehiclesFilterZone);
+    const apiUrl = VEH_API_URL + '?action=get_vehicles&zone=' + encodeURIComponent(currentVehiclesFilterZone);
 
     fetch(apiUrl)
         .then(r => r.json())
@@ -1030,7 +1031,7 @@ function submitAddVehicle(e) {
     const fd = new FormData(form);
     fd.append('action', 'add_vehicle');
 
-    fetch('<?= BASE_URL ?>/zone/orders/dashboard/vehicles_api.php', {
+    fetch(VEH_API_URL, {
         method: 'POST',
         body: fd
     })
@@ -1093,7 +1094,7 @@ function submitQuickLoad(e) {
     const fd = new FormData(form);
     fd.append('action', 'load_cases');
 
-    fetch('<?= BASE_URL ?>/zone/orders/dashboard/vehicles_api.php', {
+    fetch(VEH_API_URL, {
         method: 'POST',
         body: fd
     })
@@ -1119,7 +1120,7 @@ function setVehicleStatus(vehicleId, status) {
     fd.append('vehicle_id', vehicleId);
     fd.append('status', status);
 
-    fetch('<?= BASE_URL ?>/zone/orders/dashboard/vehicles_api.php', {
+    fetch(VEH_API_URL, {
         method: 'POST',
         body: fd
     })
@@ -1142,7 +1143,7 @@ function resetVehicleLoad(vehicleId, vehicleNumber) {
     fd.append('action', 'reset_vehicle_load');
     fd.append('vehicle_id', vehicleId);
 
-    fetch('<?= BASE_URL ?>/zone/orders/dashboard/vehicles_api.php', {
+    fetch(VEH_API_URL, {
         method: 'POST',
         body: fd
     })
@@ -1157,36 +1158,49 @@ function resetVehicleLoad(vehicleId, vehicleNumber) {
 }
 
 // Quick assign / unassign order to vehicle helper function for order cards
-function assignOrderToVehicleFromCard(orderId, vehicleId) {
-    const fd = new FormData();
-    if (!vehicleId) {
-        fd.append('action', 'unassign_order');
-        fd.append('order_id', orderId);
-    } else {
-        fd.append('action', 'assign_order');
-        fd.append('order_id', orderId);
-        fd.append('vehicle_id', vehicleId);
-    }
-
-    fetch('<?= BASE_URL ?>/zone/orders/dashboard/vehicles_api.php', {
-        method: 'POST',
-        body: fd
-    })
-    .then(r => r.json())
-    .then(data => {
-        if (data.success) {
-            if (typeof showToast === 'function') {
-                showToast('Vehicle Updated', data.message || 'Vehicle assignment updated.');
-                if (typeof pollOrders === 'function') setTimeout(pollOrders, 300);
-            } else {
-                location.reload();
-            }
-        } else {
-            alert(data.error || 'Failed to update vehicle assignment.');
+if (typeof window.assignOrderToVehicleFromCard !== 'function') {
+    window.assignOrderToVehicleFromCard = function(orderId, vehicleId) {
+        const parsedId = parseInt(orderId || 0);
+        if (!parsedId || parsedId <= 0) {
+            alert('Invalid order ID.');
+            return;
         }
-    })
-    .catch(err => {
-        console.error('Vehicle assign error:', err);
-    });
+        const selectElem = document.getElementById('orderVehSelect_' + parsedId);
+        if (selectElem) selectElem.disabled = true;
+
+        const fd = new FormData();
+        fd.append('order_id', parsedId);
+        if (!vehicleId) {
+            fd.append('action', 'unassign_order');
+        } else {
+            fd.append('action', 'assign_order');
+            fd.append('vehicle_id', vehicleId);
+        }
+
+        fetch(VEH_API_URL, {
+            method: 'POST',
+            body: fd
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (selectElem) selectElem.disabled = false;
+            if (data.success) {
+                if (typeof showToast === 'function') {
+                    showToast('Vehicle Updated', data.message || 'Vehicle assignment updated.');
+                    if (typeof refreshVehiclesData === 'function') refreshVehiclesData();
+                    if (typeof pollOrders === 'function') setTimeout(pollOrders, 300);
+                } else {
+                    location.reload();
+                }
+            } else {
+                alert(data.error || 'Failed to update vehicle assignment.');
+                if (typeof pollOrders === 'function') setTimeout(pollOrders, 300);
+            }
+        })
+        .catch(err => {
+            if (selectElem) selectElem.disabled = false;
+            console.error('Vehicle assign error:', err);
+        });
+    };
 }
 </script>

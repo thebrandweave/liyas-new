@@ -16,6 +16,54 @@ if (!isZoneOrdersAuthenticated() && empty($_SESSION['delivery_zone_id']) && empt
 
 $action = trim($_REQUEST['action'] ?? '');
 
+/**
+ * Robust helper to safely extract and validate order_id
+ */
+if (!function_exists('getRequestedOrderId')) {
+    function getRequestedOrderId(PDO $pdo): int {
+        $raw = $_POST['order_id'] ?? $_GET['order_id'] ?? $_REQUEST['order_id'] ?? $_POST['id'] ?? $_GET['id'] ?? $_REQUEST['id'] ?? $_POST['orderId'] ?? $_GET['orderId'] ?? null;
+
+        if ($raw === null || $raw === '') {
+            $input = file_get_contents('php://input');
+            if (!empty($input)) {
+                $json = json_decode($input, true);
+                if (is_array($json)) {
+                    $raw = $json['order_id'] ?? $json['id'] ?? $json['orderId'] ?? null;
+                }
+            }
+        }
+
+        if ($raw !== null && $raw !== '') {
+            $id = (int)$raw;
+            if ($id > 0) {
+                return $id;
+            }
+
+            $trimmed = trim((string)$raw);
+            $cleanDigits = preg_replace('/[^0-9]/', '', $trimmed);
+            if (!empty($cleanDigits)) {
+                $numericId = (int)$cleanDigits;
+                if ($numericId > 0) {
+                    $chk = $pdo->prepare("SELECT order_id FROM orders WHERE order_id = ?");
+                    $chk->execute([$numericId]);
+                    if ($chk->fetchColumn()) {
+                        return $numericId;
+                    }
+                }
+            }
+
+            $numChk = $pdo->prepare("SELECT order_id FROM orders WHERE order_number = ? LIMIT 1");
+            $numChk->execute([$trimmed]);
+            $foundId = (int)$numChk->fetchColumn();
+            if ($foundId > 0) {
+                return $foundId;
+            }
+        }
+
+        return 0;
+    }
+}
+
 switch ($action) {
     case 'get_vehicles':
         $zone = trim($_GET['zone'] ?? 'all');
@@ -80,17 +128,24 @@ switch ($action) {
         }
         exit;
 
+    case 'assign_vehicle':
     case 'assign_order':
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
             echo json_encode(['success' => false, 'error' => 'Method not allowed.']);
             exit;
         }
 
-        $orderId = (int)($_POST['order_id'] ?? 0);
-        $vehicleId = (int)($_POST['vehicle_id'] ?? 0);
+        $orderId = getRequestedOrderId($pdo);
+        $vehicleId = (int)($_POST['vehicle_id'] ?? ($_REQUEST['vehicle_id'] ?? 0));
 
-        if ($orderId <= 0 || $vehicleId <= 0) {
-            echo json_encode(['success' => false, 'error' => 'Invalid order or vehicle ID.']);
+        if ($orderId <= 0) {
+            echo json_encode(['success' => false, 'error' => 'Invalid order ID.']);
+            exit;
+        }
+
+        if ($vehicleId <= 0) {
+            $res = unassignOrderFromVehicle($pdo, $orderId);
+            echo json_encode($res);
             exit;
         }
 
@@ -104,7 +159,7 @@ switch ($action) {
             exit;
         }
 
-        $orderId = (int)($_POST['order_id'] ?? 0);
+        $orderId = getRequestedOrderId($pdo);
         if ($orderId <= 0) {
             echo json_encode(['success' => false, 'error' => 'Invalid order ID.']);
             exit;

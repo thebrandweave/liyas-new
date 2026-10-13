@@ -1566,7 +1566,8 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
                 </div>
             <?php else: ?>
                 <?php foreach ($orders as $order): 
-                    $orderId = (int)$order['order_id'];
+                    $orderId = (int)($order['order_id'] ?? ($order['id'] ?? 0));
+                    if ($orderId <= 0) continue;
                     $orderNum = !empty($order['order_number']) ? $order['order_number'] : ('#' . $orderId);
                     $shopName = $order['shop_name'] ?: ($order['customer_name'] ?: 'Customer');
                     $isUnread = ((int)$order['is_zone_read'] === 0 && $order['status'] !== 'cancelled');
@@ -1648,7 +1649,7 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
                                     </div>
                                 </div>
                                 <div style="text-align: right;">
-                                    <button type="button" class="btn-card-action" style="background: #059669; color: #ffffff; border-color: #059669; font-weight: 700; padding: 4px 10px; font-size: 12px;" onclick="openAddOrderProductsModal(<?= $orderId ?>, '<?= htmlspecialchars(addslashes($orderNum)) ?>', '<?= htmlspecialchars(addslashes($shopName)) ?>')">
+                                    <button type="button" class="btn-card-action" style="background: #059669; color: #ffffff; border-color: #059669; font-weight: 700; padding: 4px 10px; font-size: 12px;" onclick="openAddOrderProductsModal(<?= $orderId ?>, <?= htmlspecialchars(json_encode((string)$orderNum), ENT_QUOTES, 'UTF-8') ?>, <?= htmlspecialchars(json_encode((string)$shopName), ENT_QUOTES, 'UTF-8') ?>)">
                                         <i class='bx bx-plus-circle'></i> Add Products
                                     </button>
                                 </div>
@@ -1719,7 +1720,7 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
 
                             <div style="display: flex; gap: 6px; flex-wrap: wrap;">
                               
-                                    <button type="button" class="btn-card-action" style="background: #ecfdf5; color: #047857; border-color: #a7f3d0; font-weight: 700;" onclick="openAddOrderProductsModal(<?= $orderId ?>, '<?= htmlspecialchars(addslashes($orderNum)) ?>', '<?= htmlspecialchars(addslashes($shopName)) ?>')" title="Add Products & Quantities">
+                                    <button type="button" class="btn-card-action" style="background: #ecfdf5; color: #047857; border-color: #a7f3d0; font-weight: 700;" onclick="openAddOrderProductsModal(<?= $orderId ?>, <?= htmlspecialchars(json_encode((string)$orderNum), ENT_QUOTES, 'UTF-8') ?>, <?= htmlspecialchars(json_encode((string)$shopName), ENT_QUOTES, 'UTF-8') ?>)" title="Add Products & Quantities">
                                         <i class='bx bx-plus-circle'></i> Add Products
                                     </button>
                                
@@ -1842,7 +1843,8 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
         (function() {
             const BASE_URL = <?= json_encode(BASE_URL) ?>;
             const currentZone = <?= json_encode($selectedZone) ?>;
-            const pollApiUrl = BASE_URL + '/zone/orders/dashboard/poll.php?zone=' + encodeURIComponent(currentZone);
+            const apiBase = BASE_URL.replace(/^https?:\/\/[^\/]+/i, window.location.origin);
+            const pollApiUrl = apiBase + '/zone/orders/dashboard/poll.php?zone=' + encodeURIComponent(currentZone);
             const notifAudio = document.getElementById('notifAudio');
             const toastContainer = document.getElementById('toastContainer');
             const btnSoundToggle = document.getElementById('btnSoundToggle');
@@ -2068,11 +2070,16 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
 
             // 1. Quick Status Update via AJAX
             window.updateOrderStatus = function(orderId, newStatus, selectElem) {
+                const parsedId = parseInt(orderId || 0);
+                if (!parsedId || parsedId <= 0) {
+                    alert('Invalid order ID.');
+                    return;
+                }
                 if (selectElem) selectElem.disabled = true;
 
                 const fd = new FormData();
                 fd.append('action', 'update_status');
-                fd.append('order_id', orderId);
+                fd.append('order_id', parsedId);
                 fd.append('status', newStatus);
 
                 fetch(pollApiUrl, { method: 'POST', body: fd })
@@ -2080,21 +2087,22 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
                     .then(res => {
                         if (selectElem) selectElem.disabled = false;
                         if (res.success) {
-                            const badge = document.getElementById('statusBadge_' + orderId);
+                            const badge = document.getElementById('statusBadge_' + parsedId);
                             if (badge) {
                                 badge.className = 'status-badge ' + res.badge_class;
                                 badge.textContent = newStatus.charAt(0).toUpperCase() + newStatus.slice(1);
                             }
-                            const unread = document.getElementById('unreadBadge_' + orderId);
+                            const unread = document.getElementById('unreadBadge_' + parsedId);
                             if (unread) unread.remove();
 
                             // Auto reset vehicle selection dropdown if status is delivered
                             if (newStatus === 'delivered' || res.vehicle_reset) {
-                                const vs = document.getElementById('orderVehSelect_' + orderId);
+                                const vs = document.getElementById('orderVehSelect_' + parsedId);
                                 if (vs) vs.value = '';
                             }
 
                             showToast('Status Updated', res.message);
+                            if (typeof refreshVehiclesData === 'function') refreshVehiclesData();
                             setTimeout(pollOrders, 300);
                         } else {
                             alert(res.error || 'Failed to update status.');
@@ -2108,13 +2116,22 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
 
             // 1b. Assign / Unassign Order to Vehicle via AJAX
             window.assignOrderToVehicleFromCard = function(orderId, vehicleId) {
-                const selectElem = document.getElementById('orderVehSelect_' + orderId);
+                const parsedId = parseInt(orderId || 0);
+                if (!parsedId || parsedId <= 0) {
+                    alert('Invalid order ID.');
+                    return;
+                }
+                const selectElem = document.getElementById('orderVehSelect_' + parsedId);
                 if (selectElem) selectElem.disabled = true;
 
                 const fd = new FormData();
-                fd.append('action', 'assign_vehicle');
-                fd.append('order_id', orderId);
-                fd.append('vehicle_id', vehicleId || '');
+                fd.append('order_id', parsedId);
+                if (!vehicleId) {
+                    fd.append('action', 'unassign_order');
+                } else {
+                    fd.append('action', 'assign_vehicle');
+                    fd.append('vehicle_id', vehicleId);
+                }
 
                 fetch(pollApiUrl, { method: 'POST', body: fd })
                     .then(r => r.json())
@@ -2122,6 +2139,7 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
                         if (selectElem) selectElem.disabled = false;
                         if (res.success) {
                             showToast('Vehicle Assigned', res.message || 'Vehicle assignment updated successfully.');
+                            if (typeof refreshVehiclesData === 'function') refreshVehiclesData();
                             setTimeout(pollOrders, 300);
                         } else {
                             alert(res.error || 'Failed to update vehicle assignment.');
@@ -2136,20 +2154,22 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
 
             // 2. Acknowledge / Mark Single Order as Checked
             window.acknowledgeOrder = function(orderId) {
-                const btn = document.getElementById('btnAck_' + orderId);
+                const parsedId = parseInt(orderId || 0);
+                if (!parsedId || parsedId <= 0) return;
+                const btn = document.getElementById('btnAck_' + parsedId);
                 if (btn) btn.disabled = true;
 
                 const fd = new FormData();
                 fd.append('action', 'mark_read');
-                fd.append('order_id', orderId);
+                fd.append('order_id', parsedId);
 
                 fetch(pollApiUrl, { method: 'POST', body: fd })
                     .then(r => r.json())
                     .then(res => {
                         if (res.success) {
-                            const card = document.getElementById('orderCard_' + orderId);
+                            const card = document.getElementById('orderCard_' + parsedId);
                             if (card) card.classList.remove('unread');
-                            const unread = document.getElementById('unreadBadge_' + orderId);
+                            const unread = document.getElementById('unreadBadge_' + parsedId);
                             if (unread) unread.remove();
                             if (btn) btn.remove();
                             showToast('Order Checked', res.message);
@@ -2179,17 +2199,22 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
 
             // 4. View Order Details Modal
             window.viewOrderModal = function(orderId) {
+                const parsedId = parseInt(orderId || 0);
+                if (!parsedId || parsedId <= 0) {
+                    alert('Invalid order ID.');
+                    return;
+                }
                 const backdrop = document.getElementById('orderModalBackdrop');
                 const title = document.getElementById('modalOrderTitle');
                 const subtitle = document.getElementById('modalOrderSubtitle');
                 const body = document.getElementById('modalOrderBody');
 
                 backdrop.classList.add('open');
-                title.textContent = 'Loading Order #' + orderId + '...';
+                title.textContent = 'Loading Order #' + parsedId + '...';
                 subtitle.textContent = 'Fetching details from warehouse database';
                 body.innerHTML = "<div style='text-align:center; padding: 40px 0;'><i class='bx bx-loader-alt bx-spin' style='font-size: 32px; color: #2563eb;'></i></div>";
 
-                fetch(pollApiUrl + '&action=get_order_details&order_id=' + orderId)
+                fetch(pollApiUrl + '&action=get_order_details&order_id=' + parsedId)
                     .then(r => r.json())
                     .then(res => {
                         if (!res.success || !res.order) {
@@ -2285,12 +2310,17 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
 
             // 5. Toggle In Yard Status for Order
             window.toggleOrderInYard = function(orderId, btn) {
-                if (!btn) btn = document.getElementById('btnInYard_' + orderId);
+                const parsedId = parseInt(orderId || 0);
+                if (!parsedId || parsedId <= 0) {
+                    alert('Invalid order ID.');
+                    return;
+                }
+                if (!btn) btn = document.getElementById('btnInYard_' + parsedId);
                 if (btn) btn.disabled = true;
 
                 const fd = new FormData();
                 fd.append('action', 'toggle_in_yard');
-                fd.append('order_id', orderId);
+                fd.append('order_id', parsedId);
 
                 fetch(pollApiUrl, { method: 'POST', body: fd })
                     .then(r => r.json())
@@ -2305,7 +2335,7 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
                                 btn.className = 'btn-card-action btn-yard-toggle yard-out';
                                 btn.innerHTML = "<i class='bx bx-checkbox'></i> <span class='yard-text'>Not in Yard</span>";
                             }
-                            showToast('Yard Status Updated', `Order #${orderId} marked as ${res.label}.`);
+                            showToast('Yard Status Updated', `Order #${parsedId} marked as ${res.label}.`);
                         } else {
                             alert(res.error || 'Failed to update yard status.');
                         }
@@ -2343,9 +2373,15 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
                 const backdrop = document.getElementById('modalAddOrderProductsBackdrop');
                 if (!backdrop) return;
 
-                document.getElementById('aopOrderId').value = orderId;
-                document.getElementById('aopModalTitle').textContent = `Add / Edit Products: #${orderNum}`;
-                document.getElementById('aopModalSubtitle').textContent = `Shop: ${shopName}`;
+                const parsedId = parseInt(orderId || 0);
+                if (!parsedId || parsedId <= 0) {
+                    alert('Invalid order ID. Cannot open products editor.');
+                    return;
+                }
+
+                document.getElementById('aopOrderId').value = parsedId;
+                document.getElementById('aopModalTitle').textContent = `Add / Edit Products: #${orderNum || parsedId}`;
+                document.getElementById('aopModalSubtitle').textContent = `Shop: ${shopName || 'Customer'}`;
                 
                 const errBox = document.getElementById('aopErrorMsg');
                 if (errBox) {
@@ -2366,7 +2402,7 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
                 backdrop.classList.add('open');
 
                 // Fetch existing order items so previous products are NEVER lost or erased!
-                fetch(pollApiUrl + '&action=get_order_details&order_id=' + orderId)
+                fetch(pollApiUrl + '&action=get_order_details&order_id=' + parsedId)
                     .then(r => r.json())
                     .then(res => {
                         tbody.innerHTML = '';
@@ -2651,13 +2687,23 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
             };
 
             window.submitAddOrderProducts = function() {
-                const orderId = document.getElementById('aopOrderId').value;
+                const orderId = parseInt(document.getElementById('aopOrderId')?.value || 0);
                 const errBox = document.getElementById('aopErrorMsg');
                 const submitBtn = document.getElementById('btnAopSubmit');
 
                 if (errBox) {
                     errBox.textContent = '';
                     errBox.style.display = 'none';
+                }
+
+                if (!orderId || isNaN(orderId) || orderId <= 0) {
+                    if (errBox) {
+                        errBox.textContent = 'Invalid order ID. Please re-open the product editor.';
+                        errBox.style.display = 'block';
+                    } else {
+                        alert('Invalid order ID.');
+                    }
+                    return;
                 }
 
                 const rows = document.querySelectorAll('.aop-row');
