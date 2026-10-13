@@ -151,10 +151,45 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 // --- FILTERS & FETCH ---
 $filterZone   = trim($_GET['zone'] ?? 'all');
 $filterStatus = trim($_GET['status'] ?? 'all');
+$filterDate   = trim($_GET['date'] ?? 'all');
 $searchQuery  = trim($_GET['search'] ?? '');
 $viewMode     = trim($_GET['view'] ?? 'cards'); // 'cards' or 'table'
 
-$fleetData = getAllVehiclesWithLoads($pdo, $filterZone);
+// Validate and normalize filterDate
+if (!in_array($filterDate, ['all', 'today', 'yesterday', 'weekly', 'monthly', 'this_week', 'this_month'])) {
+    $filterDate = 'all';
+}
+
+$dateLabels = [
+    'all'        => 'All Time',
+    'today'      => 'Today',
+    'yesterday'  => 'Yesterday',
+    'weekly'     => 'This Week',
+    'this_week'  => 'This Week',
+    'monthly'    => 'This Month',
+    'this_month' => 'This Month'
+];
+$currentDateLabel = $dateLabels[$filterDate] ?? 'All Time';
+
+// URL builder helper for maintaining filter state across tabs
+function buildVehiclesUrl(array $overrides = []): string {
+    $params = [
+        'zone'   => $_GET['zone'] ?? 'all',
+        'status' => $_GET['status'] ?? 'all',
+        'date'   => $_GET['date'] ?? 'all',
+        'search' => $_GET['search'] ?? ''
+    ];
+    $merged = array_merge($params, $overrides);
+    $queryParts = [];
+    foreach ($merged as $k => $v) {
+        if ($v !== '' && $v !== 'all' && $v !== null) {
+            $queryParts[$k] = $v;
+        }
+    }
+    return 'index.php' . (!empty($queryParts) ? '?' . http_build_query($queryParts) : '');
+}
+
+$fleetData = getAllVehiclesWithLoads($pdo, $filterZone, $filterDate);
 $vehicles  = $fleetData['vehicles'] ?? [];
 $zonesList = $fleetData['zones'] ?? [];
 $summary   = $fleetData['summary'] ?? [];
@@ -176,12 +211,12 @@ foreach ($vehicles as $v) {
     }
 }
 
-// Fleet-wide cumulative delivery & loads statistics (never reset)
+// Fleet-wide cumulative delivery & loads statistics
 $fleetDeliveriesDone = 0;
 $fleetLoadsDelivered = 0;
 foreach ($fleetData['vehicles'] as $fv) {
     $fleetDeliveriesDone += (int)($fv['deliveries_done'] ?? 0);
-    $fleetLoadsDelivered += (int)($fv['loads_taken_to_delivery'] ?? 0);
+    $fleetLoadsDelivered += (int)($fv['loads_taken_to_delivery'] ?? ($fv['loads_delivered'] ?? 0));
 }
 
 // Apply client search & status filters
@@ -908,7 +943,12 @@ foreach ($fleetData['vehicles'] as $v) {
                     <div class="v-stat-card">
                         <div>
                             <div class="v-stat-num" style="color: #047857;"><?= number_format($fleetDeliveriesDone) ?></div>
-                            <div class="v-stat-label">Total Deliveries Done</div>
+                            <div class="v-stat-label">
+                                Total Deliveries Done
+                                <?php if ($filterDate !== 'all'): ?>
+                                    <span style="display: block; font-size: 10px; color: #059669; font-weight: 700;"><?= htmlspecialchars($currentDateLabel) ?></span>
+                                <?php endif; ?>
+                            </div>
                         </div>
                         <div class="v-stat-icon-wrap v-icon-emerald">
                             <i class='bx bx-check-double'></i>
@@ -921,7 +961,12 @@ foreach ($fleetData['vehicles'] as $v) {
                             <div class="v-stat-num" style="color: #1d4ed8;">
                                 <?= number_format($fleetLoadsDelivered) ?> cs
                             </div>
-                            <div class="v-stat-label">Total Loads Delivered</div>
+                            <div class="v-stat-label">
+                                Total Loads Delivered
+                                <?php if ($filterDate !== 'all'): ?>
+                                    <span style="display: block; font-size: 10px; color: #2563eb; font-weight: 700;"><?= htmlspecialchars($currentDateLabel) ?></span>
+                                <?php endif; ?>
+                            </div>
                         </div>
                         <div class="v-stat-icon-wrap v-icon-blue">
                             <i class='bx bx-layer'></i>
@@ -950,7 +995,7 @@ foreach ($fleetData['vehicles'] as $v) {
                             <i class='bx bx-map-pin'></i> Loading Zone:
                         </span>
 
-                        <a href="index.php?zone=all<?= $searchQuery ? '&search=' . urlencode($searchQuery) : '' ?><?= $filterStatus !== 'all' ? '&status=' . urlencode($filterStatus) : '' ?>" 
+                        <a href="<?= buildVehiclesUrl(['zone' => 'all']) ?>" 
                            class="v-zone-tab <?= ($filterZone === 'all') ? 'active' : '' ?>">
                             All Zones <span class="badge"><?= number_format($summary['grand_total_cases'] ?? 0) ?> cs</span>
                         </a>
@@ -961,7 +1006,7 @@ foreach ($fleetData['vehicles'] as $v) {
                                 $zCases = $zoneCaseTotals[$zId] ?? 0;
                                 $isZActive = ($filterZone === (string)$zId || $filterZone === $z['slug']);
                             ?>
-                            <a href="index.php?zone=<?= urlencode($z['slug']) ?><?= $searchQuery ? '&search=' . urlencode($searchQuery) : '' ?><?= $filterStatus !== 'all' ? '&status=' . urlencode($filterStatus) : '' ?>" 
+                            <a href="<?= buildVehiclesUrl(['zone' => $z['slug']]) ?>" 
                                class="v-zone-tab <?= $isZActive ? 'active' : '' ?>" title="<?= htmlspecialchars($z['name']) ?>">
                                 <?= htmlspecialchars($z['name']) ?>
                                 <span class="badge"><?= number_format($zCases) ?> cs</span>
@@ -973,6 +1018,7 @@ foreach ($fleetData['vehicles'] as $v) {
                     <div class="v-filter-right">
                         <form method="GET" action="index.php" style="display: flex; gap: 8px;">
                             <input type="hidden" name="zone" value="<?= htmlspecialchars($filterZone) ?>">
+                            <input type="hidden" name="date" value="<?= htmlspecialchars($filterDate) ?>">
                             
                             <select name="status" class="form-select-v" style="padding: 7px 10px; font-size: 12px; width: 120px;" onchange="this.form.submit()">
                                 <option value="all" <?= ($filterStatus === 'all') ? 'selected' : '' ?>>All Status</option>
@@ -987,12 +1033,53 @@ foreach ($fleetData['vehicles'] as $v) {
                                 <input type="text" name="search" value="<?= htmlspecialchars($searchQuery) ?>" placeholder="Search plate / driver...">
                             </div>
 
-                            <?php if ($searchQuery || $filterStatus !== 'all'): ?>
-                                <a href="index.php?zone=<?= urlencode($filterZone) ?>" class="btn-v-secondary" style="padding: 7px 10px;" title="Clear Search">
+                            <?php if ($searchQuery || $filterStatus !== 'all' || $filterDate !== 'all'): ?>
+                                <a href="index.php?zone=<?= urlencode($filterZone) ?>" class="btn-v-secondary" style="padding: 7px 10px;" title="Reset Filters">
                                     <i class='bx bx-x'></i>
                                 </a>
                             <?php endif; ?>
                         </form>
+                    </div>
+
+                    <!-- Date Filter Bar (Loads Gone: Today, Yesterday, Weekly, Monthly, All) -->
+                    <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; width: 100%; padding-top: 10px; margin-top: 10px; border-top: 1px dashed #e2e8f0;">
+                        <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                            <span style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #475569; margin-right: 4px; display: inline-flex; align-items: center; gap: 4px;">
+                                <i class='bx bx-calendar' style="color: #2563eb; font-size: 14px;"></i> Loads Gone:
+                            </span>
+
+                            <a href="<?= buildVehiclesUrl(['date' => 'all']) ?>" 
+                               class="v-zone-tab <?= ($filterDate === 'all') ? 'active' : '' ?>">
+                                All Time
+                            </a>
+
+                            <a href="<?= buildVehiclesUrl(['date' => 'today']) ?>" 
+                               class="v-zone-tab <?= ($filterDate === 'today') ? 'active' : '' ?>">
+                                <i class='bx bx-time'></i> Today
+                            </a>
+
+                            <a href="<?= buildVehiclesUrl(['date' => 'yesterday']) ?>" 
+                               class="v-zone-tab <?= ($filterDate === 'yesterday') ? 'active' : '' ?>">
+                                <i class='bx bx-history'></i> Yesterday
+                            </a>
+
+                            <a href="<?= buildVehiclesUrl(['date' => 'weekly']) ?>" 
+                               class="v-zone-tab <?= ($filterDate === 'weekly') ? 'active' : '' ?>">
+                                <i class='bx bx-calendar-week'></i> Weekly
+                            </a>
+
+                            <a href="<?= buildVehiclesUrl(['date' => 'monthly']) ?>" 
+                               class="v-zone-tab <?= ($filterDate === 'monthly') ? 'active' : '' ?>">
+                                <i class='bx bx-calendar-event'></i> Monthly
+                            </a>
+                        </div>
+
+                        <?php if ($filterDate !== 'all'): ?>
+                            <div style="font-size: 12px; font-weight: 600; color: #1e40af; background: #eff6ff; border: 1px solid #bfdbfe; padding: 4px 10px; border-radius: 6px; display: inline-flex; align-items: center; gap: 6px;">
+                                <span>Showing: <strong><?= htmlspecialchars($currentDateLabel) ?></strong> (<?= number_format($fleetLoadsDelivered) ?> cs delivered)</span>
+                                <a href="<?= buildVehiclesUrl(['date' => 'all']) ?>" style="color: #ef4444; text-decoration: none; font-weight: 700;" title="Clear Date Filter">&times;</a>
+                            </div>
+                        <?php endif; ?>
                     </div>
                 </div>
 
@@ -1087,17 +1174,25 @@ if ($percent > 85) {
                                         <?php endif; ?>
                                     </div>
 
-                                    <!-- Lifetime Persistent Metrics (Deliveries Done & Loads Taken to Delivery - Never Reset) -->
+                                    <!-- Lifetime Persistent Metrics (Deliveries Done & Loads Taken to Delivery) -->
                                     <div class="v-lifetime-stats-box">
-                                        <div class="v-stat-pill-box green" title="Total delivered orders completed by this vehicle (Never reset)">
-                                            <div class="v-stat-pill-lbl"><i class='bx bx-check-circle'></i> Deliveries Done</div>
+                                        <div class="v-stat-pill-box green" title="Total delivered orders completed by this vehicle (<?= htmlspecialchars($currentDateLabel) ?>)">
+                                            <div class="v-stat-pill-lbl">
+                                                <i class='bx bx-check-circle'></i> Deliveries Done
+                                                <?php if ($filterDate !== 'all'): ?>
+                                                    <span style="font-size: 9px; opacity: 0.85;">(<?= htmlspecialchars($currentDateLabel) ?>)</span>
+                                                <?php endif; ?>
+                                            </div>
                                             <div class="v-stat-pill-val"><?= number_format($deliveriesDone) ?></div>
-                                            <!-- <div class="v-stat-pill-sub">Completed Deliveries</div> -->
                                         </div>
-                                        <div class="v-stat-pill-box blue" title="Total cumulative load cases taken out to delivery (Never reset)">
-                                            <div class="v-stat-pill-lbl"><i class='bx bx-layer'></i> Loads Delivered</div>
+                                        <div class="v-stat-pill-box blue" title="Total load cases taken out to delivery (<?= htmlspecialchars($currentDateLabel) ?>)">
+                                            <div class="v-stat-pill-lbl">
+                                                <i class='bx bx-layer'></i> Loads Delivered
+                                                <?php if ($filterDate !== 'all'): ?>
+                                                    <span style="font-size: 9px; opacity: 0.85;">(<?= htmlspecialchars($currentDateLabel) ?>)</span>
+                                                <?php endif; ?>
+                                            </div>
                                             <div class="v-stat-pill-val"><?= number_format($loadsTaken) ?> cs</div>
-                                            <!-- <div class="v-stat-pill-sub">Cases to Delivery</div> -->
                                         </div>
                                     </div>
 

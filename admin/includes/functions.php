@@ -371,7 +371,7 @@ function getAllShopsList(PDO $pdo): array {
  * @param mixed $filterZone Zone ID (int) or Zone slug (string) or 'all'
  * @return array
  */
-function getAllVehiclesWithLoads(PDO $pdo, $filterZone = null): array {
+function getAllVehiclesWithLoads(PDO $pdo, $filterZone = null, $dateFilter = 'all'): array {
 	try {
 		// Resolve filter zone ID if slug passed
 		$filterZoneId = null;
@@ -455,6 +455,18 @@ function getAllVehiclesWithLoads(PDO $pdo, $filterZone = null): array {
 			$loadsByVehicle[$vId][$zId] = ($loadsByVehicle[$vId][$zId] ?? 0) + $cases;
 		}
 
+		// Date filter condition for delivered orders
+		$dateWhere = "";
+		if ($dateFilter === 'today') {
+			$dateWhere = " AND DATE(COALESCE(o.updated_at, o.created_at)) = CURDATE()";
+		} elseif ($dateFilter === 'yesterday') {
+			$dateWhere = " AND DATE(COALESCE(o.updated_at, o.created_at)) = SUBDATE(CURDATE(), 1)";
+		} elseif ($dateFilter === 'weekly' || $dateFilter === 'this_week') {
+			$dateWhere = " AND YEARWEEK(COALESCE(o.updated_at, o.created_at), 1) = YEARWEEK(CURDATE(), 1)";
+		} elseif ($dateFilter === 'monthly' || $dateFilter === 'this_month') {
+			$dateWhere = " AND YEAR(COALESCE(o.updated_at, o.created_at)) = YEAR(CURDATE()) AND MONTH(COALESCE(o.updated_at, o.created_at)) = MONTH(CURDATE())";
+		}
+
 		// Count delivered orders and calculate total cases delivered per vehicle from authoritative orders & order_items
 		$delivStatsStmt = $pdo->query("
 			SELECT 
@@ -468,7 +480,9 @@ function getAllVehiclesWithLoads(PDO $pdo, $filterZone = null): array {
 					)
 				), 0) AS delivered_cases
 			FROM orders o
-			WHERE o.vehicle_id IS NOT NULL AND o.status = 'delivered'
+			WHERE o.vehicle_id IS NOT NULL 
+			  AND o.status = 'delivered'
+			  {$dateWhere}
 			GROUP BY o.vehicle_id
 		");
 		$delivStatsRows = $delivStatsStmt ? ($delivStatsStmt->fetchAll(PDO::FETCH_ASSOC) ?: []) : [];
@@ -554,9 +568,14 @@ function getAllVehiclesWithLoads(PDO $pdo, $filterZone = null): array {
 				$activeVehiclesCount++;
 			}
 
-			// Live delivery statistics from completed delivered orders (with fallback to vehicle lifetime counters)
-			$deliveriesDone = isset($delivOrdersMap[$vId]) ? $delivOrdersMap[$vId] : (int)($v['total_deliveries_done'] ?? 0);
-			$loadsDelivered = isset($delivCasesMap[$vId]) ? $delivCasesMap[$vId] : (int)($v['total_loads_delivered'] ?? 0);
+			// Live delivery statistics from completed delivered orders (respecting date filter)
+			if ($dateFilter !== 'all') {
+				$deliveriesDone = (int)($delivOrdersMap[$vId] ?? 0);
+				$loadsDelivered = (int)($delivCasesMap[$vId] ?? 0);
+			} else {
+				$deliveriesDone = isset($delivOrdersMap[$vId]) ? $delivOrdersMap[$vId] : (int)($v['total_deliveries_done'] ?? 0);
+				$loadsDelivered = isset($delivCasesMap[$vId]) ? $delivCasesMap[$vId] : (int)($v['total_loads_delivered'] ?? 0);
+			}
 
 			$v['total_cases_loaded']        = $totalLoaded;
 			$v['current_zone_cases']        = $currentZoneCases;
