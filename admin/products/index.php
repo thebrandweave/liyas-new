@@ -132,7 +132,7 @@ foreach ($products as $p) {
     <title>Products Inventory - Liyas Website</title>
     <style>
         body { font-family: 'Poppins', sans-serif; }
-        .table-card table tbody td { font-size: 14px; color: #334155; }
+        .table-card table tbody td { font-size: 14px; color: #334155; border:1px solid #cac8c8 }
         .text-muted-custom { font-size: 13px; color: #94a3b8; }
         .price-bold { color: #0284c7; font-weight: 600; font-size: 15px; }
         .badge-stock {

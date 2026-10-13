@@ -359,7 +359,7 @@ if (isset($_GET['export']) && in_array($_GET['export'], ['csv', 'excel'])) {
         echo '<th class="num">Total Amount</th>';
         echo '<th class="num">Cash Paid</th>';
         echo '<th class="num">Credited</th>';
-        echo '<th class="num col-due-hdr" style="background-color: #fee2e2; color: #991b1b;">Due Balance</th>';
+        echo '<th class="num col-due-hdr" style=" color: #991b1b;">Due Balance</th>';
         echo '</tr></thead><tbody>';
 
         foreach ($export_rows as $row) {
@@ -1202,13 +1202,13 @@ $cleanBaseUrl = rtrim(BASE_URL, '/');
             text-transform: uppercase;
             letter-spacing: 0.05em;
             padding: 12px 14px;
-            border-bottom: 2px solid var(--border-light);
+            border: 1px solid #d2d4d6;
             white-space: nowrap;
         }
 
         .rev-table td {
             padding: 12px 14px;
-            border-bottom: 1px solid #f1f5f9;
+            border: 1px solid #d2d4d6;
             vertical-align: middle;
             color: #1e293b;
         }
@@ -1217,21 +1217,20 @@ $cleanBaseUrl = rtrim(BASE_URL, '/');
 
         /* Due Balance Column Light Red Highlighting */
         .rev-table th.col-due {
-            background: #fee2e2 !important;
+           
             color: #991b1b !important;
-            border-left: 1.5px solid #fecaca;
-            border-right: 1.5px solid #fecaca;
+         
             font-weight: 800;
         }
 
         .rev-table td.col-due {
-            background: #fff5f5 !important;
+
             border-left: 1.5px solid #fecaca !important;
             border-right: 1.5px solid #fecaca !important;
         }
 
         .rev-table tr:hover td.col-due {
-            background: #fee2e2 !important;
+            
         }
 
         .badge-zone-pill {
