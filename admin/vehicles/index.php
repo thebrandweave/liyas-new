@@ -53,8 +53,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $shopName = trim($_POST['shop_name'] ?? '');
         $notes    = trim($_POST['notes'] ?? 'Manual Load');
 
-        if ($vId <= 0 || $cases <= 0) {
-            $_SESSION['error_message'] = "Please select a valid vehicle and positive number of cases.";
+        if ($vId <= 0) {
+            $_SESSION['error_message'] = "Please select a target delivery vehicle.";
+        } elseif ($cases <= 0) {
+            $_SESSION['error_message'] = "Please enter a positive number of cases (at least 1 case).";
         } else {
             $ok = recordVehicleLoad($pdo, $vId, $zId, $cases, null, $notes, $shopName);
             if ($ok) {

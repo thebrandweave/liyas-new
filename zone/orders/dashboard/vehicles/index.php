@@ -37,8 +37,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $shopName  = trim($_POST['shop_name'] ?? '');
         $notes     = trim($_POST['notes'] ?? 'Vehicle Buffer Stock');
 
-        if ($vId <= 0 || $cases <= 0) {
-            $_SESSION['error_message'] = "Please select a valid vehicle and positive number of cases.";
+        if ($vId <= 0) {
+            $_SESSION['error_message'] = "Please select a target delivery vehicle.";
+        } elseif ($cases <= 0) {
+            $_SESSION['error_message'] = "Please enter a positive number of cases (at least 1 case).";
         } elseif (empty($pId)) {
             $_SESSION['error_message'] = "Please select a product to load onto the vehicle.";
         } else {
@@ -74,7 +76,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
         $redirectZone = $_GET['zone'] ?? 'all';
-        header("Location: index.php?zone=" . urlencode($redirectZone));
+        header("Location: " . ($_SERVER['REQUEST_URI'] ?: ("index.php?zone=" . urlencode($redirectZone))));
         exit;
     }
 
@@ -278,6 +280,25 @@ $productsStmt = $pdo->query("
     ORDER BY case_price ASC, name ASC
 ");
 $catalogProducts = $productsStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+// 2b. Fetch all active vehicles in fleet for modal vehicle selector
+$allFleetVehicles = $pdo->query("
+    SELECT 
+        v.id, 
+        v.vehicle_number, 
+        v.vehicle_name, 
+        v.driver_name,
+        v.capacity_cases, 
+        v.status,
+        COALESCE((
+            SELECT SUM(vl.cases_loaded) 
+            FROM vehicle_loads vl 
+            WHERE vl.vehicle_id = v.id AND vl.is_active = 1
+        ), 0) AS total_cases_loaded
+    FROM vehicles v 
+    WHERE v.status != 'deleted' 
+    ORDER BY v.vehicle_number ASC
+")->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
 // 3. Fetch active unassigned orders for Assign Order modal
 $unassignedOrdersStmt = $pdo->query("
@@ -1700,7 +1721,7 @@ if (!empty($searchQuery)) {
                                                         <span style="color: #64748b; margin-left: 4px;">(<?= (int)$ao['total_cases'] ?> cs)</span>
                                                     </div>
                                                     <div style="display: flex; gap: 6px;">
-                                                        <button type="button" class="btn-crud-mini" style="width: auto; padding: 2px 8px; height: 24px; font-size: 11px; color: #047857; background: #ecfdf5; border-color: #a7f3d0; font-weight: 700;" onclick="openAddOrderProductsModal(<?= $aoId ?>, '<?= htmlspecialchars(addslashes($aoNum)) ?>', '<?= htmlspecialchars(addslashes($aoShop)) ?>')" title="Add or edit products on this order">
+                                                        <button type="button" class="btn-crud-mini" style="width: auto; padding: 2px 8px; height: 24px; font-size: 11px; color: #047857; background: #ecfdf5; border-color: #a7f3d0; font-weight: 700;" onclick="openAddOrderProductsModal(<?= $aoId ?>, <?= htmlspecialchars(json_encode((string)$aoNum), ENT_QUOTES, 'UTF-8') ?>, <?= htmlspecialchars(json_encode((string)$aoShop), ENT_QUOTES, 'UTF-8') ?>)" title="Add or edit products on this order">
                                                             <i class='bx bx-edit-alt'></i> Edit Products
                                                         </button>
                                                         <?php if (!empty($aoZoneSlug)): ?>
@@ -1826,20 +1847,20 @@ if (!empty($searchQuery)) {
                 </h3>
                 <button type="button" class="modal-close" onclick="closeLoadProductModal()">&times;</button>
             </div>
-            <form method="POST" action="index.php?zone=<?= urlencode($filterZone) ?>">
+            <form method="POST" action="" onsubmit="return validateLoadProductForm(this);">
                 <input type="hidden" name="action" value="load_product">
 
                 <div class="form-group">
                     <label class="form-label">Target Delivery Vehicle *</label>
                     <select name="vehicle_id" id="modalLoadVehicleSelect" class="form-control" required onchange="updateVehicleCapacityHint()">
                         <option value="">-- Select Delivery Vehicle --</option>
-                        <?php foreach ($vehicles as $v): ?>
+                        <?php foreach ($allFleetVehicles as $v): ?>
                             <option value="<?= (int)$v['id'] ?>" 
                                     data-capacity="<?= (int)($v['capacity_cases'] ?? 100) ?>" 
-                                    data-loaded="<?= (int)$v['total_cases_loaded'] ?>"
+                                    data-loaded="<?= (int)($v['total_cases_loaded'] ?? 0) ?>"
                                     data-plate="<?= htmlspecialchars($v['vehicle_number']) ?>"
                                     data-name="<?= htmlspecialchars($v['vehicle_name']) ?>">
-                                <?= htmlspecialchars($v['vehicle_number']) ?> &bull; <?= htmlspecialchars($v['vehicle_name']) ?> (Loaded: <?= (int)$v['total_cases_loaded'] ?> / <?= (int)($v['capacity_cases'] ?? 100) ?> cs)
+                                <?= htmlspecialchars($v['vehicle_number']) ?> &bull; <?= htmlspecialchars($v['vehicle_name']) ?> (Loaded: <?= (int)($v['total_cases_loaded'] ?? 0) ?> / <?= (int)($v['capacity_cases'] ?? 100) ?> cs)
                             </option>
                         <?php endforeach; ?>
                     </select>
@@ -1944,7 +1965,7 @@ if (!empty($searchQuery)) {
                 </h3>
                 <button type="button" class="modal-close" onclick="closeEditProductLoadModal()">&times;</button>
             </div>
-            <form method="POST" action="index.php?zone=<?= urlencode($filterZone) ?>">
+            <form method="POST" action="">
                 <input type="hidden" name="action" value="edit_product_load">
                 <input type="hidden" name="load_id" id="editLoadId" value="">
 
@@ -1999,7 +2020,7 @@ if (!empty($searchQuery)) {
                 </h3>
                 <button type="button" class="modal-close" onclick="closeDeleteProductLoadModal()">&times;</button>
             </div>
-            <form method="POST" action="index.php?zone=<?= urlencode($filterZone) ?>">
+            <form method="POST" action="">
                 <input type="hidden" name="action" value="delete_product_load">
                 <input type="hidden" name="load_id" id="deleteLoadId" value="">
 
@@ -2033,7 +2054,7 @@ if (!empty($searchQuery)) {
                 </h3>
                 <button type="button" class="modal-close" onclick="closeAddVehicleModal()">&times;</button>
             </div>
-            <form method="POST" action="index.php">
+            <form method="POST" action="">
                 <input type="hidden" name="action" value="add_vehicle">
 
                 <div class="form-group">
@@ -2101,7 +2122,7 @@ if (!empty($searchQuery)) {
                 </h3>
                 <button type="button" class="modal-close" onclick="closeEditVehicleModal()">&times;</button>
             </div>
-            <form method="POST" action="index.php">
+            <form method="POST" action="">
                 <input type="hidden" name="action" value="edit_vehicle">
                 <input type="hidden" name="vehicle_id" id="editVehId" value="">
 
@@ -2171,7 +2192,7 @@ if (!empty($searchQuery)) {
                 </h3>
                 <button type="button" class="modal-close" onclick="closeResetLoadModal()">&times;</button>
             </div>
-            <form method="POST" action="index.php?zone=<?= urlencode($filterZone) ?>">
+            <form method="POST" action="">
                 <input type="hidden" name="action" value="reset_vehicle_load">
                 <input type="hidden" name="vehicle_id" id="resetVehId" value="">
 
@@ -2196,6 +2217,34 @@ if (!empty($searchQuery)) {
 
     <!-- Interactive JavaScript Modals & Handlers -->
     <script>
+        // Validation for Load Product Form
+        function validateLoadProductForm(form) {
+            const vSel = document.getElementById('modalLoadVehicleSelect');
+            const casesIn = document.getElementById('modalLoadCasesInput');
+            const pSel = document.getElementById('modalLoadProductSelect');
+
+            const vId = parseInt(vSel ? vSel.value : 0);
+            const cases = parseInt(casesIn ? casesIn.value : 0);
+            const pId = parseInt(pSel ? pSel.value : 0);
+
+            if (!vId || vId <= 0) {
+                alert('Please select a target delivery vehicle from the dropdown.');
+                if (vSel) vSel.focus();
+                return false;
+            }
+            if (!pId || pId <= 0) {
+                alert('Please select a product to load onto the vehicle.');
+                if (pSel) pSel.focus();
+                return false;
+            }
+            if (!cases || cases <= 0) {
+                alert('Please enter a positive number of cases (at least 1 case).');
+                if (casesIn) casesIn.focus();
+                return false;
+            }
+            return true;
+        }
+
         // Modal 1: Load Product
         function openLoadProductModal(vId = null, vNum = null) {
             const m = document.getElementById('modalLoadProduct');
@@ -2203,7 +2252,15 @@ if (!empty($searchQuery)) {
             const title = document.getElementById('loadProductModalTitle');
 
             if (vId && sel) {
-                sel.value = vId;
+                const parsedVid = parseInt(vId);
+                let opt = sel.querySelector(`option[value="${parsedVid}"]`);
+                if (!opt) {
+                    opt = document.createElement('option');
+                    opt.value = parsedVid;
+                    opt.textContent = vNum ? (vNum + ' (Selected Vehicle)') : ('Vehicle #' + parsedVid);
+                    sel.appendChild(opt);
+                }
+                sel.value = parsedVid;
                 if (title && vNum) title.textContent = `Load Product onto ${vNum}`;
             } else if (title) {
                 title.textContent = 'Load Product onto Vehicle';
@@ -2445,7 +2502,8 @@ if (!empty($searchQuery)) {
         // MODAL 7 & 8: ASSIGN ORDER & EDIT ORDER PRODUCTS
         // ========================================================
         const BASE_URL = <?= json_encode(BASE_URL) ?>;
-        const pollApiUrl = BASE_URL + '/zone/orders/dashboard/poll.php?zone=<?= urlencode($filterZone) ?>';
+        const apiBase = BASE_URL.replace(/^https?:\/\/[^\/]+/i, window.location.origin);
+        const pollApiUrl = apiBase + '/zone/orders/dashboard/poll.php?zone=<?= urlencode($filterZone) ?>';
         const AOP_PRODUCTS = <?= json_encode($catalogProducts) ?>;
 
         // Modal 7: Assign Order to Vehicle
@@ -2483,12 +2541,17 @@ if (!empty($searchQuery)) {
         }
 
         function openAddOrderProductsModal(orderId, orderNum, shopName) {
+            const parsedId = parseInt(orderId || 0);
+            if (!parsedId || parsedId <= 0) {
+                alert('Invalid order ID. Cannot open products editor.');
+                return;
+            }
             const backdrop = document.getElementById('modalAddOrderProductsBackdrop');
             if (!backdrop) return;
 
-            document.getElementById('aopOrderId').value = orderId;
-            document.getElementById('aopModalTitle').textContent = `Add / Edit Products: #${orderNum}`;
-            document.getElementById('aopModalSubtitle').textContent = `Shop: ${shopName}`;
+            document.getElementById('aopOrderId').value = parsedId;
+            document.getElementById('aopModalTitle').textContent = `Add / Edit Products: #${orderNum || parsedId}`;
+            document.getElementById('aopModalSubtitle').textContent = `Shop: ${shopName || 'Customer'}`;
             
             const errBox = document.getElementById('aopErrorMsg');
             if (errBox) {
@@ -2508,7 +2571,7 @@ if (!empty($searchQuery)) {
 
             backdrop.classList.add('open');
 
-            fetch(pollApiUrl + '&action=get_order_details&order_id=' + orderId)
+            fetch(pollApiUrl + '&action=get_order_details&order_id=' + parsedId)
                 .then(r => r.json())
                 .then(res => {
                     tbody.innerHTML = '';
@@ -2776,13 +2839,23 @@ if (!empty($searchQuery)) {
         }
 
         function submitAddOrderProducts() {
-            const orderId = document.getElementById('aopOrderId').value;
+            const orderId = parseInt(document.getElementById('aopOrderId')?.value || 0);
             const errBox = document.getElementById('aopErrorMsg');
             const submitBtn = document.getElementById('btnAopSubmit');
 
             if (errBox) {
                 errBox.textContent = '';
                 errBox.style.display = 'none';
+            }
+
+            if (!orderId || isNaN(orderId) || orderId <= 0) {
+                if (errBox) {
+                    errBox.textContent = 'Invalid order ID. Please re-open the product editor.';
+                    errBox.style.display = 'block';
+                } else {
+                    alert('Invalid order ID.');
+                }
+                return;
             }
 
             const rows = document.querySelectorAll('.aop-row');
@@ -2903,7 +2976,7 @@ if (!empty($searchQuery)) {
                 </h3>
                 <button type="button" class="modal-close" onclick="closeAssignOrderModal()">&times;</button>
             </div>
-            <form method="POST" action="index.php?zone=<?= urlencode($filterZone) ?>">
+            <form method="POST" action="">
                 <input type="hidden" name="action" value="assign_order">
                 <input type="hidden" name="vehicle_id" id="assignOrderVehicleId" value="">
 

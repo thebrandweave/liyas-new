@@ -127,9 +127,52 @@ $ordersSql = "
     WHERE {$whereSql}
     ORDER BY o.created_at DESC
 ";
-$stmtOrders = $pdo->prepare($ordersSql);
-$stmtOrders->execute($params);
-$orders = $stmtOrders->fetchAll(PDO::FETCH_ASSOC);
+$orders = [];
+try {
+    $stmtOrders = $pdo->prepare($ordersSql);
+    $stmtOrders->execute($params);
+    $orders = $stmtOrders->fetchAll(PDO::FETCH_ASSOC) ?: [];
+} catch (PDOException $e) {
+    error_log("Primary dashboard orders query failed: " . $e->getMessage());
+    if (function_exists('ensureWarehouseSchema')) {
+        ensureWarehouseSchema($pdo);
+    }
+    try {
+        $fallbackSql = "
+            SELECT 
+                o.*,
+                z.name AS zone_name,
+                z.slug AS zone_slug,
+                p.product_name,
+                p.name AS fallback_name,
+                p.case_price,
+                p.net_content,
+                p.net_content_unit,
+                veh.vehicle_number AS assigned_vehicle_number,
+                veh.vehicle_name AS assigned_vehicle_name
+            FROM orders o
+            LEFT JOIN zones z ON o.zone_id = z.id
+            LEFT JOIN products p ON o.product_id = p.product_id
+            LEFT JOIN vehicles veh ON o.vehicle_id = veh.id
+            WHERE {$whereSql}
+            ORDER BY o.created_at DESC
+        ";
+        $fallbackStmt = $pdo->prepare($fallbackSql);
+        $fallbackStmt->execute($params);
+        $orders = $fallbackStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    } catch (PDOException $e2) {
+        error_log("Fallback dashboard orders query failed: " . $e2->getMessage());
+        try {
+            $basicSql = "SELECT o.* FROM orders o WHERE {$whereSql} ORDER BY o.created_at DESC";
+            $basicStmt = $pdo->prepare($basicSql);
+            $basicStmt->execute($params);
+            $orders = $basicStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        } catch (PDOException $e3) {
+            error_log("Basic dashboard orders query failed: " . $e3->getMessage());
+            $orders = [];
+        }
+    }
+}
 
 // Shop delivery statistics summary for delivery breakdown
 $shopSummary = null;
@@ -143,37 +186,49 @@ if (!empty($shopFilter)) {
 $allShopsList = getAllShopsList($pdo);
 
 // Fetch all active vehicles with current load counts for assigning orders
-$allActiveVehicles = $pdo->query("
-    SELECT 
-        v.id, 
-        v.vehicle_number, 
-        v.vehicle_name, 
-        v.driver_name,
-        v.capacity_cases,
-        COALESCE((
-            SELECT SUM(vl.cases_loaded) 
-            FROM vehicle_loads vl 
-            WHERE vl.vehicle_id = v.id AND vl.is_active = 1
-        ), 0) AS total_cases_loaded
-    FROM vehicles v 
-    WHERE v.status != 'inactive' 
-    ORDER BY v.vehicle_number ASC
-")->fetchAll(PDO::FETCH_ASSOC) ?: [];
+$allActiveVehicles = [];
+try {
+    $allActiveVehicles = $pdo->query("
+        SELECT 
+            v.id, 
+            v.vehicle_number, 
+            v.vehicle_name, 
+            v.driver_name,
+            v.capacity_cases,
+            COALESCE((
+                SELECT SUM(vl.cases_loaded) 
+                FROM vehicle_loads vl 
+                WHERE vl.vehicle_id = v.id AND vl.is_active = 1
+            ), 0) AS total_cases_loaded
+        FROM vehicles v 
+        WHERE v.status != 'inactive' 
+        ORDER BY v.vehicle_number ASC
+    ")->fetchAll(PDO::FETCH_ASSOC) ?: [];
+} catch (Exception $e) {
+    try {
+        $allActiveVehicles = $pdo->query("SELECT id, vehicle_number, vehicle_name, driver_name, capacity_cases, 0 as total_cases_loaded FROM vehicles WHERE status != 'inactive'")->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    } catch (Exception $e2) {}
+}
 
 // Fetch all active products for the Add Products modal
-$allProductsList = $pdo->query("SELECT product_id, name, product_name, case_price, price, case_stock, stock, net_content, net_content_unit FROM products WHERE status != 'inactive' OR status IS NULL ORDER BY case_price ASC, name ASC")->fetchAll(PDO::FETCH_ASSOC) ?: [];
-
+$allProductsList = [];
+try {
+    $allProductsList = $pdo->query("SELECT product_id, name, product_name, case_price, price, case_stock, stock, net_content, net_content_unit FROM products WHERE status != 'inactive' OR status IS NULL ORDER BY case_price ASC, name ASC")->fetchAll(PDO::FETCH_ASSOC) ?: [];
+} catch (Exception $e) {}
 
 // Fetch unread incoming orders for initial notification list
-$unreadStmt = $pdo->query("
-    SELECT o.*, z.name as zone_name, z.slug as zone_slug, p.product_name, p.name as fallback_name
-    FROM orders o
-    LEFT JOIN zones z ON o.zone_id = z.id
-    LEFT JOIN products p ON o.product_id = p.product_id
-    WHERE o.is_zone_read = 0 AND o.status != 'cancelled'
-    ORDER BY o.created_at DESC
-");
-$unreadNotifications = $unreadStmt->fetchAll(PDO::FETCH_ASSOC);
+$unreadNotifications = [];
+try {
+    $unreadStmt = $pdo->query("
+        SELECT o.*, z.name as zone_name, z.slug as zone_slug, p.product_name, p.name as fallback_name
+        FROM orders o
+        LEFT JOIN zones z ON o.zone_id = z.id
+        LEFT JOIN products p ON o.product_id = p.product_id
+        WHERE o.is_zone_read = 0 AND o.status != 'cancelled'
+        ORDER BY o.created_at DESC
+    ");
+    $unreadNotifications = $unreadStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+} catch (Exception $e) {}
 
 // Fetch metrics (respecting selected zone)
 $metricsWhere = "WHERE 1=1";
@@ -188,37 +243,50 @@ if ($selectedZone !== 'all' && !empty($selectedZone)) {
     }
 }
 
-$metricsStmt = $pdo->prepare("
-    SELECT 
-        COUNT(DISTINCT o.order_id) AS total_orders,
-        SUM(CASE WHEN o.status = 'pending' THEN 1 ELSE 0 END) AS pending_count,
-        SUM(CASE WHEN o.status = 'processing' THEN 1 ELSE 0 END) AS processing_count,
-        SUM(CASE WHEN o.status = 'shipped' THEN 1 ELSE 0 END) AS shipped_count,
-        SUM(CASE WHEN o.status = 'delivered' THEN 1 ELSE 0 END) AS delivered_count,
-        SUM(CASE WHEN o.status = 'cancelled' THEN 1 ELSE 0 END) AS cancelled_count,
-        SUM(CASE WHEN o.is_zone_read = 0 AND o.status != 'cancelled' THEN 1 ELSE 0 END) AS unread_count,
-        COALESCE(SUM(r.cash_amount), 0) AS total_cash,
-        COALESCE(SUM(r.credited_amount), 0) AS total_credit,
-        COALESCE(SUM(r.due_amount), 0) AS total_due
-    FROM orders o
-    LEFT JOIN zones z ON o.zone_id = z.id
-    LEFT JOIN receipts r ON o.order_id = r.order_id
-    {$metricsWhere}
-");
-$metricsStmt->execute($metricsParams);
-$metrics = $metricsStmt->fetch(PDO::FETCH_ASSOC) ?: [
+$metrics = [
     'total_orders' => 0, 'pending_count' => 0, 'processing_count' => 0,
     'shipped_count' => 0, 'delivered_count' => 0, 'cancelled_count' => 0,
     'unread_count' => 0, 'total_cash' => 0, 'total_credit' => 0, 'total_due' => 0
 ];
+try {
+    $metricsStmt = $pdo->prepare("
+        SELECT 
+            COUNT(DISTINCT o.order_id) AS total_orders,
+            SUM(CASE WHEN o.status = 'pending' THEN 1 ELSE 0 END) AS pending_count,
+            SUM(CASE WHEN o.status = 'processing' THEN 1 ELSE 0 END) AS processing_count,
+            SUM(CASE WHEN o.status = 'shipped' THEN 1 ELSE 0 END) AS shipped_count,
+            SUM(CASE WHEN o.status = 'delivered' THEN 1 ELSE 0 END) AS delivered_count,
+            SUM(CASE WHEN o.status = 'cancelled' THEN 1 ELSE 0 END) AS cancelled_count,
+            SUM(CASE WHEN o.is_zone_read = 0 AND o.status != 'cancelled' THEN 1 ELSE 0 END) AS unread_count,
+            COALESCE(SUM(r.cash_amount), 0) AS total_cash,
+            COALESCE(SUM(r.credited_amount), 0) AS total_credit,
+            COALESCE(SUM(r.due_amount), 0) AS total_due
+        FROM orders o
+        LEFT JOIN zones z ON o.zone_id = z.id
+        LEFT JOIN receipts r ON o.order_id = r.order_id
+        {$metricsWhere}
+    ");
+    $metricsStmt->execute($metricsParams);
+    $rowM = $metricsStmt->fetch(PDO::FETCH_ASSOC);
+    if ($rowM) $metrics = $rowM;
+} catch (Exception $e) {
+    try {
+        $mBasic = $pdo->prepare("SELECT COUNT(*) as total_orders FROM orders o {$metricsWhere}");
+        $mBasic->execute($metricsParams);
+        $metrics['total_orders'] = (int)$mBasic->fetchColumn();
+    } catch (Exception $e2) {}
+}
 
 // Zone order counts for the zone pills
-$zoneCountsStmt = $pdo->query("
-    SELECT o.zone_id, COUNT(*) as count 
-    FROM orders o 
-    GROUP BY o.zone_id
-");
-$zoneCountsRaw = $zoneCountsStmt->fetchAll(PDO::FETCH_KEY_PAIR);
+$zoneCountsRaw = [];
+try {
+    $zoneCountsStmt = $pdo->query("
+        SELECT o.zone_id, COUNT(*) as count 
+        FROM orders o 
+        GROUP BY o.zone_id
+    ");
+    $zoneCountsRaw = $zoneCountsStmt ? ($zoneCountsStmt->fetchAll(PDO::FETCH_KEY_PAIR) ?: []) : [];
+} catch (Exception $e) {}
 
 // Helper for WhatsApp
 function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') {

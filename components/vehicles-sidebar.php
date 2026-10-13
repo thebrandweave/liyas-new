@@ -1089,6 +1089,19 @@ function submitQuickLoad(e) {
     e.preventDefault();
     const form = e.target;
     const btn = document.getElementById('btnSubmitQuickLoad');
+    const vId = parseInt(document.getElementById('qlVehicleId')?.value || 0);
+    const cases = parseInt(document.getElementById('qlCasesInput')?.value || 0);
+
+    if (!vId || vId <= 0) {
+        alert('Invalid or missing vehicle. Please re-open the load modal.');
+        return;
+    }
+    if (!cases || cases <= 0) {
+        alert('Please enter a positive number of cases (at least 1 case).');
+        document.getElementById('qlCasesInput')?.focus();
+        return;
+    }
+
     if (btn) btn.disabled = true;
 
     const fd = new FormData(form);
