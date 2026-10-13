@@ -663,10 +663,14 @@ $stepLevel = $statusSteps[$currentStatus] ?? 1;
                             $itQty = (int)$it['quantity'];
                             $itRate = (float)$it['price_at_purchase'];
                             $itTotal = (float)$it['line_total'];
+                            $isExtra = !empty($it['is_extra']) || ($itRate == 0 && $itTotal == 0);
                         ?>
                         <tr style="border-bottom: 1px solid #f1f5f9;">
                             <td style="padding: 10px 4px;">
                                 <strong style="color: #0f172a;"><?= $itName ?></strong>
+                                <?php if ($isExtra): ?>
+                                    <span style="font-size: 10px; font-weight: 800; color: #059669; background: #dcfce7; border: 1px solid #bbf7d0; padding: 1px 5px; border-radius: 4px; margin-left: 4px;">EXTRA CASE</span>
+                                <?php endif; ?>
                                 <?php if (!empty($it['net_content'])): ?>
                                     <div style="font-size: 11px; color: #64748b;">
                                         <?= (float)$it['net_content'] ?> <?= htmlspecialchars($it['net_content_unit'] ?? '') ?>
@@ -677,10 +681,18 @@ $stepLevel = $statusSteps[$currentStatus] ?? 1;
                                 <?= $itQty ?> <span style="font-size: 11px; color: #64748b; font-weight: normal;">cs</span>
                             </td>
                             <td style="padding: 10px 4px; text-align: right; color: #475569;">
-                                <?= formatCurrency($itRate) ?>
+                                <?php if ($isExtra): ?>
+                                    <span style="color: #059669; font-weight: 700;">₹0.00 (FREE)</span>
+                                <?php else: ?>
+                                    <?= formatCurrency($itRate) ?>
+                                <?php endif; ?>
                             </td>
                             <td style="padding: 10px 4px; text-align: right; font-weight: 700; color: #0f172a;">
-                                <?= formatCurrency($itTotal) ?>
+                                <?php if ($isExtra): ?>
+                                    <span style="color: #059669; font-weight: 700;">₹0.00</span>
+                                <?php else: ?>
+                                    <?= formatCurrency($itTotal) ?>
+                                <?php endif; ?>
                             </td>
                         </tr>
                         <?php endforeach; ?>

@@ -82,8 +82,86 @@ if (empty($order_items) && !empty($products)) {
         'name' => $firstP['name'],
         'product_name' => $firstP['product_name'] ?: $firstP['name'],
         'net_content' => $firstP['net_content'],
-        'net_content_unit' => $firstP['net_content_unit']
+        'net_content_unit' => $firstP['net_content_unit'],
+        'is_extra' => 0
     ];
+}
+
+// Determine assigned vehicle
+$assignedVehicleId = (int)($order['vehicle_id'] ?? 0);
+if ($assignedVehicleId <= 0 && $order_id > 0) {
+    $vChk = $pdo->prepare("SELECT vehicle_id FROM vehicle_loads WHERE order_id = ? AND is_active = 1 LIMIT 1");
+    $vChk->execute([$order_id]);
+    $assignedVehicleId = (int)$vChk->fetchColumn();
+}
+$assignedVehicle = null;
+if ($assignedVehicleId > 0) {
+    $vStmt = $pdo->prepare("SELECT id, vehicle_number, vehicle_name, driver_name, driver_phone FROM vehicles WHERE id = ?");
+    $vStmt->execute([$assignedVehicleId]);
+    $assignedVehicle = $vStmt->fetch(PDO::FETCH_ASSOC);
+}
+
+// Build list of extra cases loaded in this vehicle
+$vehicle_extra_products = [];
+// 1. Extra cases attached to this order in order_items (is_extra = 1)
+if ($order_id > 0) {
+    foreach ($order_items as $oi) {
+        if (!empty($oi['is_extra'])) {
+            $pid = (int)$oi['product_id'];
+            $qty = (int)$oi['quantity'];
+            $pInfo = $productsById[$pid] ?? null;
+            $pName = $pInfo ? ($pInfo['product_name'] ?: $pInfo['name']) : ($oi['product_name'] ?: ($oi['name'] ?: 'Product #' . $pid));
+            $pPrice = $pInfo ? (float)($pInfo['case_price'] ?: $pInfo['price']) : (float)($oi['price_at_purchase'] ?: ($oi['case_price'] ?: $oi['price'] ?? 0));
+            if ($pPrice <= 0 && $pInfo) {
+                $pPrice = (float)($pInfo['case_price'] ?: $pInfo['price']);
+            }
+            if (!isset($vehicle_extra_products[$pid])) {
+                $vehicle_extra_products[$pid] = [
+                    'product_id' => $pid,
+                    'product_name' => $pName,
+                    'available_cases' => 0,
+                    'price' => $pPrice,
+                    'net_content' => $pInfo['net_content'] ?? ($oi['net_content'] ?? ''),
+                    'net_content_unit' => $pInfo['net_content_unit'] ?? ($oi['net_content_unit'] ?? '')
+                ];
+            }
+            $vehicle_extra_products[$pid]['available_cases'] += $qty;
+        }
+    }
+}
+
+// 2. Extra storage cases currently in the assigned vehicle from vehicle_loads
+if ($assignedVehicleId > 0) {
+    $vlStmt = $pdo->prepare("
+        SELECT vl.product_id, vl.cases_loaded, p.product_name, p.name, p.case_price, p.price, p.net_content, p.net_content_unit
+        FROM vehicle_loads vl
+        LEFT JOIN products p ON vl.product_id = p.product_id
+        WHERE vl.vehicle_id = ? 
+          AND vl.is_active = 1 
+          AND vl.product_id IS NOT NULL 
+          AND (vl.order_id IS NULL OR vl.order_id != ?)
+    ");
+    $vlStmt->execute([$assignedVehicleId, $order_id]);
+    $vlRows = $vlStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    foreach ($vlRows as $vr) {
+        $pid = (int)$vr['product_id'];
+        $qty = (int)$vr['cases_loaded'];
+        if ($qty > 0) {
+            $pName = $vr['product_name'] ?: ($vr['name'] ?: 'Product #' . $pid);
+            $pPrice = (float)($vr['case_price'] ?: $vr['price']);
+            if (!isset($vehicle_extra_products[$pid])) {
+                $vehicle_extra_products[$pid] = [
+                    'product_id' => $pid,
+                    'product_name' => $pName,
+                    'available_cases' => 0,
+                    'price' => $pPrice,
+                    'net_content' => $vr['net_content'],
+                    'net_content_unit' => $vr['net_content_unit']
+                ];
+            }
+            $vehicle_extra_products[$pid]['available_cases'] += $qty;
+        }
+    }
 }
 
 $error = '';
@@ -109,7 +187,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['generate_receipt'])) 
         foreach ($_POST['items'] as $itemData) {
             $pid = (int)($itemData['product_id'] ?? 0);
             $qty = (int)($itemData['quantity'] ?? 0);
-            $rate = isset($itemData['rate']) ? (float)$itemData['rate'] : -1;
+            $is_extra = !empty($itemData['is_extra']) ? 1 : 0;
+            $submittedRate = isset($itemData['rate']) ? (float)$itemData['rate'] : -1;
+            $submittedOrigRate = isset($itemData['original_rate']) ? (float)$itemData['original_rate'] : 0.0;
 
             if ($pid > 0 && $qty > 0) {
                 $pStmt = $pdo->prepare("SELECT product_id, name, product_name, case_price, price, net_content, net_content_unit FROM products WHERE product_id = ?");
@@ -117,14 +197,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['generate_receipt'])) 
                 $pRow = $pStmt->fetch(PDO::FETCH_ASSOC);
 
                 if ($pRow) {
-                    if ($rate < 0) {
-                        $rate = (float)($pRow['case_price'] ?: $pRow['price']);
+                    $catalogPrice = (float)($pRow['case_price'] ?: $pRow['price']);
+                    $origRate = $submittedOrigRate > 0 ? $submittedOrigRate : $catalogPrice;
+
+                    // Extra cases are billed products (NOT free)
+                    if ($submittedRate < 0) {
+                        $rate = $catalogPrice;
+                    } else {
+                        $rate = $submittedRate;
                     }
                     $lineTotal = $qty * $rate;
+
                     $processed_items[] = [
                         'product_id' => $pid,
                         'quantity' => $qty,
                         'rate' => $rate,
+                        'original_rate' => $origRate,
+                        'is_extra' => $is_extra,
                         'line_total' => $lineTotal,
                         'product_name' => $pRow['product_name'] ?: $pRow['name'],
                         'net_content' => $pRow['net_content'],
@@ -199,30 +288,55 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['generate_receipt'])) 
 
                 $primary_pid = $processed_items[0]['product_id'];
                 $primary_rate = $processed_items[0]['rate'];
+                foreach ($processed_items as $pi) {
+                    if (empty($pi['is_extra']) && $pi['rate'] > 0) {
+                        $primary_pid = $pi['product_id'];
+                        $primary_rate = $pi['rate'];
+                        break;
+                    }
+                }
 
                 if ($order) {
-                    // 1. Stock adjustments based on diff between ordered and delivered quantities
+                    // 1. Stock adjustments based on diff between ordered and delivered regular quantities
                     $oldItems = getOrderItems($pdo, $order_id);
-                    $oldQtyByPid = [];
+                    $oldRegularQtyByPid = [];
+                    $loadedExtraByPid = [];
                     foreach ($oldItems as $oi) {
                         $p_id = (int)$oi['product_id'];
-                        $oldQtyByPid[$p_id] = ($oldQtyByPid[$p_id] ?? 0) + (int)$oi['quantity'];
+                        if (empty($oi['is_extra'])) {
+                            $oldRegularQtyByPid[$p_id] = ($oldRegularQtyByPid[$p_id] ?? 0) + (int)$oi['quantity'];
+                        } else {
+                            $loadedExtraByPid[$p_id] = ($loadedExtraByPid[$p_id] ?? 0) + (int)$oi['quantity'];
+                        }
                     }
 
-                    $newQtyByPid = [];
+                    $newRegularQtyByPid = [];
+                    $deliveredExtraByPid = [];
                     foreach ($processed_items as $pi) {
                         $p_id = (int)$pi['product_id'];
-                        $newQtyByPid[$p_id] = ($newQtyByPid[$p_id] ?? 0) + (int)$pi['quantity'];
+                        if (empty($pi['is_extra'])) {
+                            $newRegularQtyByPid[$p_id] = ($newRegularQtyByPid[$p_id] ?? 0) + (int)$pi['quantity'];
+                        } else {
+                            $deliveredExtraByPid[$p_id] = ($deliveredExtraByPid[$p_id] ?? 0) + (int)$pi['quantity'];
+                        }
                     }
 
-                    $allProductIds = array_unique(array_merge(array_keys($oldQtyByPid), array_keys($newQtyByPid)));
+                    $allProductIds = array_unique(array_merge(array_keys($oldRegularQtyByPid), array_keys($newRegularQtyByPid)));
                     foreach ($allProductIds as $apid) {
-                        $oldQ = $oldQtyByPid[$apid] ?? 0;
-                        $newQ = $newQtyByPid[$apid] ?? 0;
+                        $oldQ = $oldRegularQtyByPid[$apid] ?? 0;
+                        $newQ = $newRegularQtyByPid[$apid] ?? 0;
                         $diff = $newQ - $oldQ;
                         if ($diff !== 0) {
-                            adjustProductStock($pdo, $apid, -$diff, "Order #{$order_id} altered during delivery");
+                            adjustProductStock($pdo, $apid, -$diff, "Order #{$order_id} delivered");
                         }
+                    }
+
+                    // Determine assigned vehicle ID
+                    $assignedVehicleId = (int)($order['vehicle_id'] ?? 0);
+                    if ($assignedVehicleId <= 0) {
+                        $vChk = $pdo->prepare("SELECT vehicle_id FROM vehicle_loads WHERE order_id = ? AND is_active = 1 LIMIT 1");
+                        $vChk->execute([$order_id]);
+                        $assignedVehicleId = (int)$vChk->fetchColumn();
                     }
 
                     // 2. Update orders record
@@ -231,6 +345,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['generate_receipt'])) 
                             shop_name = ?, customer_name = ?, location = ?, 
                             phone = ?, product_id = ?, quantity = ?, 
                             unit_price = ?, total_amount = ?, status = 'delivered', 
+                            vehicle_id = COALESCE(NULLIF(?, 0), vehicle_id),
                             is_zone_read = 1, zone_read_at = COALESCE(zone_read_at, NOW()), updated_at = NOW() 
                         WHERE order_id = ? AND zone_id = ?
                     ");
@@ -243,6 +358,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['generate_receipt'])) 
                         $total_delivered_cases,
                         $primary_rate,
                         $total_amount,
+                        $assignedVehicleId,
                         $order_id,
                         $zone_id
                     ]);
@@ -252,11 +368,55 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['generate_receipt'])) 
                     $delOi->execute([$order_id]);
 
                     $insOi = $pdo->prepare("
-                        INSERT INTO order_items (order_id, product_id, quantity, price_at_purchase, created_at, updated_at) 
-                        VALUES (?, ?, ?, ?, NOW(), NOW())
+                        INSERT INTO order_items (order_id, product_id, quantity, price_at_purchase, is_extra, created_at, updated_at) 
+                        VALUES (?, ?, ?, ?, ?, NOW(), NOW())
                     ");
                     foreach ($processed_items as $pi) {
-                        $insOi->execute([$order_id, $pi['product_id'], $pi['quantity'], $pi['rate']]);
+                        $insOi->execute([$order_id, $pi['product_id'], $pi['quantity'], $pi['rate'], $pi['is_extra']]);
+                    }
+
+                    // 4. Retain any unbilled / remaining extra loaded cases on vehicle as active storage
+                    if ($assignedVehicleId > 0) {
+                        // Deactivate previous order load entries so delivered regular cases leave the vehicle
+                        $pdo->prepare("UPDATE vehicle_loads SET is_active = 0 WHERE order_id = ?")->execute([$order_id]);
+
+                        // Reconcile pre-existing vehicle storage for products that were available
+                        $prevVl = $pdo->prepare("SELECT product_id, SUM(cases_loaded) as qty FROM vehicle_loads WHERE vehicle_id = ? AND is_active = 1 AND product_id IS NOT NULL AND (order_id IS NULL OR order_id != ?) GROUP BY product_id");
+                        $prevVl->execute([$assignedVehicleId, $order_id]);
+                        $prevVlRows = $prevVl->fetchAll(PDO::FETCH_ASSOC) ?: [];
+                        foreach ($prevVlRows as $pvr) {
+                            $pid = (int)$pvr['product_id'];
+                            $loadedExtraByPid[$pid] = ($loadedExtraByPid[$pid] ?? 0) + (int)$pvr['qty'];
+                        }
+
+                        if (!empty($loadedExtraByPid)) {
+                            $inClause = implode(',', array_fill(0, count($loadedExtraByPid), '?'));
+                            $deactStmt = $pdo->prepare("UPDATE vehicle_loads SET is_active = 0 WHERE vehicle_id = ? AND is_active = 1 AND product_id IN ($inClause)");
+                            $deactStmt->execute(array_merge([$assignedVehicleId], array_keys($loadedExtraByPid)));
+                        }
+
+                        // Retain remaining extra cases in vehicle_loads
+                        foreach ($loadedExtraByPid as $epid => $loadedCases) {
+                            $deliveredCases = (int)($deliveredExtraByPid[$epid] ?? 0);
+                            $remainingCases = max(0, $loadedCases - $deliveredCases);
+                            if ($remainingCases > 0) {
+                                $insStorage = $pdo->prepare("
+                                    INSERT INTO vehicle_loads (vehicle_id, zone_id, product_id, order_id, cases_loaded, shop_name, is_active, notes)
+                                    VALUES (?, ?, ?, NULL, ?, ?, 1, ?)
+                                ");
+                                $insStorage->execute([
+                                    $assignedVehicleId,
+                                    $zone_id,
+                                    $epid,
+                                    $remainingCases,
+                                    $shop_name,
+                                    "Vehicle Storage: Remaining extra cases after delivery to " . $shop_name . " (Order #" . ($order['order_number'] ?: $order_id) . ")"
+                                ]);
+                            }
+                        }
+
+                        // Update vehicle delivery stats
+                        $pdo->prepare("UPDATE vehicles SET total_deliveries_done = total_deliveries_done + 1, updated_at = NOW() WHERE id = ?")->execute([$assignedVehicleId]);
                     }
                 } else {
                     // New direct spot delivery without prior order
@@ -291,12 +451,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['generate_receipt'])) 
 
                     // Insert into order_items & deduct stock
                     $insOi = $pdo->prepare("
-                        INSERT INTO order_items (order_id, product_id, quantity, price_at_purchase, created_at, updated_at) 
-                        VALUES (?, ?, ?, ?, NOW(), NOW())
+                        INSERT INTO order_items (order_id, product_id, quantity, price_at_purchase, is_extra, created_at, updated_at) 
+                        VALUES (?, ?, ?, ?, ?, NOW(), NOW())
                     ");
                     foreach ($processed_items as $pi) {
                         adjustProductStock($pdo, $pi['product_id'], -$pi['quantity'], "Direct delivery #{$order_number}");
-                        $insOi->execute([$order_id, $pi['product_id'], $pi['quantity'], $pi['rate']]);
+                        $insOi->execute([$order_id, $pi['product_id'], $pi['quantity'], $pi['rate'], $pi['is_extra']]);
                     }
                 }
 
@@ -359,6 +519,80 @@ $def_customer   = $order['customer_name'] ?? '';
 $def_place      = $order['location'] ?? '';
 $def_phone      = $order['phone'] ?? '';
 $def_discount   = (float)($order['discount'] ?? 0);
+
+// Categorize items into regular billed items
+$regular_items = [];
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['items']) && is_array($_POST['items'])) {
+    foreach ($_POST['items'] as $it) {
+        $pId = (int)($it['product_id'] ?? 0);
+        $pQty = (int)($it['quantity'] ?? 0);
+        $isEx = !empty($it['is_extra']) ? 1 : 0;
+        $prodInfo = $productsById[$pId] ?? null;
+        $pName = $prodInfo ? ($prodInfo['product_name'] ?: $prodInfo['name']) : 'Product #' . $pId;
+        $catPrice = $prodInfo ? (float)($prodInfo['case_price'] ?: $prodInfo['price']) : 0.0;
+        $origRate = isset($it['original_rate']) && (float)$it['original_rate'] > 0 ? (float)$it['original_rate'] : $catPrice;
+        $rate = (isset($it['rate']) && (float)$it['rate'] >= 0) ? (float)$it['rate'] : $catPrice;
+
+        $rowItem = [
+            'order_item_id' => 0,
+            'order_id' => $order_id,
+            'product_id' => $pId,
+            'quantity' => $pQty,
+            'price_at_purchase' => $rate,
+            'original_rate' => $origRate,
+            'is_extra' => $isEx,
+            'max_cases' => (int)($it['max_cases'] ?? ($vehicle_extra_products[$pId]['available_cases'] ?? 999)),
+            'line_total' => $pQty * $rate,
+            'name' => $pName,
+            'product_name' => $pName,
+            'net_content' => $prodInfo['net_content'] ?? null,
+            'net_content_unit' => $prodInfo['net_content_unit'] ?? null,
+        ];
+        $regular_items[] = $rowItem;
+    }
+} else {
+    foreach ($order_items as $it) {
+        $pid = (int)$it['product_id'];
+        $catPrice = isset($productsById[$pid]) ? (float)($productsById[$pid]['case_price'] ?: $productsById[$pid]['price']) : (float)($it['case_price'] ?: $it['price']);
+        $isEx = !empty($it['is_extra']) ? 1 : 0;
+        
+        // On initial load, extra cases loaded in vehicle are available via the vehicle dropdown, NOT pre-added to the customer bill!
+        if ($isEx) {
+            continue;
+        }
+
+        $origRate = isset($it['original_rate']) && (float)$it['original_rate'] > 0 ? (float)$it['original_rate'] : $catPrice;
+        if ($origRate <= 0 && (float)$it['price_at_purchase'] > 0) $origRate = (float)$it['price_at_purchase'];
+        $rate = (float)($it['price_at_purchase'] > 0 ? $it['price_at_purchase'] : $origRate);
+        
+        $rowItem = $it;
+        $rowItem['price_at_purchase'] = $rate;
+        $rowItem['original_rate'] = $origRate;
+        $rowItem['is_extra'] = 0;
+        $rowItem['line_total'] = (int)$it['quantity'] * $rate;
+        $regular_items[] = $rowItem;
+    }
+}
+
+if (empty($regular_items) && !empty($products)) {
+    $firstP = $products[0];
+    $firstRate = (float)($firstP['case_price'] ?: $firstP['price']);
+    $regular_items[] = [
+        'order_item_id' => 0,
+        'order_id' => $order_id,
+        'product_id' => (int)$firstP['product_id'],
+        'quantity' => 1,
+        'price_at_purchase' => $firstRate,
+        'original_rate' => $firstRate,
+        'is_extra' => 0,
+        'line_total' => $firstRate,
+        'name' => $firstP['name'],
+        'product_name' => $firstP['product_name'] ?: $firstP['name'],
+        'net_content' => $firstP['net_content'],
+        'net_content_unit' => $firstP['net_content_unit']
+    ];
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -783,31 +1017,55 @@ $def_discount   = (float)($order['discount'] ?? 0);
 
                 <!-- Product & Quantity -->
                 <div class="section-hdr">
-                    <i class='bx bx-box' style="color: #059669;"></i> Delivered Items &amp; Quantity (<?= count($order_items) ?> <?= count($order_items) === 1 ? 'Product' : 'Products' ?>)
+                    <i class='bx bx-box' style="color: #059669;"></i> Delivered Items &amp; Quantity (<span id="regularCountDisplay"><?= count($regular_items) ?> <?= count($regular_items) === 1 ? 'Product' : 'Products' ?></span>)
                 </div>
 
                 <!-- Interactive Item Delivery Cards -->
                 <div id="itemsContainer" style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 16px;">
-                    <?php foreach ($order_items as $idx => $it): 
+                    <?php foreach ($regular_items as $idx => $it): 
                         $pid = (int)$it['product_id'];
                         $pName = htmlspecialchars($it['product_name'] ?: ($it['name'] ?: 'Liyas Water'));
                         $qty = (int)$it['quantity'];
+                        $isExtra = !empty($it['is_extra']);
                         $rate = (float)$it['price_at_purchase'];
+                        if ($rate <= 0 && isset($productsById[$pid])) {
+                            $rate = (float)($productsById[$pid]['case_price'] ?: $productsById[$pid]['price']);
+                        }
                         $lineTotal = $qty * $rate;
                         $netContentStr = !empty($it['net_content']) ? (float)$it['net_content'] . ' ' . htmlspecialchars($it['net_content_unit'] ?? '') : '';
+                        $maxCases = (int)($it['max_cases'] ?? ($vehicle_extra_products[$pid]['available_cases'] ?? 999));
                     ?>
-                    <div class="item-delivery-card" id="itemRow_<?= $idx ?>" data-idx="<?= $idx ?>">
+                    <div class="item-delivery-card item-regular-card <?= $isExtra ? 'item-vehicle-extra-card' : '' ?>" id="itemRow_<?= $idx ?>" data-idx="<?= $idx ?>" style="<?= $isExtra ? 'border-left: 4px solid #2563eb;' : '' ?>">
                         <input type="hidden" name="items[<?= $idx ?>][product_id]" value="<?= $pid ?>" class="item-pid">
-                        <input type="hidden" name="items[<?= $idx ?>][rate]" value="<?= $rate ?>" class="item-rate">
+                        <input type="hidden" name="items[<?= $idx ?>][original_rate]" value="<?= $rate ?>" class="item-original-rate">
+                        <input type="hidden" name="items[<?= $idx ?>][is_extra]" value="<?= $isExtra ? '1' : '0' ?>" class="item-is-extra">
+                        <?php if ($isExtra): ?>
+                            <input type="hidden" name="items[<?= $idx ?>][max_cases]" value="<?= $maxCases ?>" class="item-max-cases">
+                        <?php endif; ?>
                         
                         <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; margin-bottom: 10px;">
                             <div>
-                                <strong style="font-size: 15px; color: #0f172a;"><?= $pName ?></strong>
-                                <?php if (!empty($netContentStr)): ?>
-                                    <span style="font-size: 11px; color: #64748b; background: #f1f5f9; padding: 2px 6px; border-radius: 4px; margin-left: 6px;"><?= $netContentStr ?></span>
+                                <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                                    <strong style="font-size: 15px; color: #0f172a;"><?= $pName ?></strong>
+                                    <?php if ($isExtra): ?>
+                                        <span style="font-size: 11px; font-weight: 700; color: #1e40af; background: #dbeafe; padding: 2px 7px; border-radius: 4px;">EXTRA VEHICLE CASE</span>
+                                    <?php endif; ?>
+                                    <?php if (!empty($netContentStr)): ?>
+                                        <span style="font-size: 11px; color: #64748b; background: #f1f5f9; padding: 2px 6px; border-radius: 4px;"><?= $netContentStr ?></span>
+                                    <?php endif; ?>
+                                </div>
+                                <?php if ($isExtra): ?>
+                                    <div style="font-size: 11px; color: #64748b; margin-top: 2px;">
+                                        Loaded in vehicle: <strong><?= $maxCases ?> cases</strong>
+                                    </div>
                                 <?php endif; ?>
-                                <div style="font-size: 13px; color: #475569; margin-top: 2px;">
-                                    Rate: <strong style="color: #059669;"><?= formatCurrency($rate) ?></strong> / case
+                                <div style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #475569; margin-top: 4px;">
+                                    <span>Rate: ₹</span>
+                                    <input type="number" step="0.01" min="0" name="items[<?= $idx ?>][rate]" value="<?= $rate ?>" class="form-control item-rate" style="width: 85px; height: 28px; padding: 2px 6px; font-size: 12px; font-weight: 700; border: 1.5px solid #cbd5e1; border-radius: 6px; background: #ffffff;" oninput="recalculate()" title="Edit rate if needed">
+                                    <span>/ case</span>
+                                </div>
+                                <div class="item-calc-text" style="font-size: 12px; color: #64748b; font-weight: 600; margin-top: 3px;">
+                                    Rate × Qty: ₹<span class="calc-rate-val"><?= number_format($rate, 2) ?></span> × <span class="calc-qty-val"><?= $qty ?></span> cs = ₹<span class="calc-sub-val"><?= number_format($lineTotal, 2) ?></span>
                                 </div>
                             </div>
                             <div style="text-align: right;">
@@ -822,7 +1080,7 @@ $def_discount   = (float)($order['discount'] ?? 0);
                             <span style="font-size: 13px; font-weight: 600; color: #475569;">Delivered Cases:</span>
                             <div class="stepper-box">
                                 <button type="button" class="btn-stepper" onclick="stepItemQty(this, -1)" aria-label="Decrease">&minus;</button>
-                                <input type="number" min="0" name="items[<?= $idx ?>][quantity]" value="<?= $qty ?>" class="form-control stepper-input item-qty-input" required oninput="recalculate()">
+                                <input type="number" min="0" <?= $isExtra ? 'max="' . $maxCases . '"' : '' ?> name="items[<?= $idx ?>][quantity]" value="<?= $qty ?>" class="form-control stepper-input item-qty-input" required oninput="checkMaxCases(this); recalculate()">
                                 <button type="button" class="btn-stepper" onclick="stepItemQty(this, 1)" aria-label="Increase">&plus;</button>
                             </div>
                         </div>
@@ -830,8 +1088,46 @@ $def_discount   = (float)($order['discount'] ?? 0);
                     <?php endforeach; ?>
                 </div>
 
-                <!-- Add Extra Product Row -->
-                <div style="background: #f8fafc; border: 1.5px dashed #cbd5e1; border-radius: var(--radius-md); padding: 12px; margin-bottom: 20px;">
+                <?php if (!empty($vehicle_extra_products)): ?>
+                <!-- Add from Extra Cases Loaded in Vehicle Dropdown -->
+                <div style="background: #eff6ff; border: 1.5px solid #bfdbfe; border-radius: var(--radius-md); padding: 14px; margin-bottom: 16px;">
+                    <div style="font-size: 13px; font-weight: 800; color: #1e40af; margin-bottom: 4px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px;">
+                        <span style="display: flex; align-items: center; gap: 6px;">
+                            <i class='bx bxs-truck' style="font-size: 18px; color: #2563eb;"></i>
+                            Extra Cases Loaded in Vehicle <?= !empty($assignedVehicle['vehicle_number']) ? '(' . htmlspecialchars($assignedVehicle['vehicle_number']) . ')' : '' ?>
+                        </span>
+                        <span style="font-size: 11px; font-weight: 700; color: #1d4ed8; background: #dbeafe; padding: 2px 8px; border-radius: 6px;">
+                            Billed to Customer
+                        </span>
+                    </div>
+                    <div style="font-size: 12px; color: #475569; margin-bottom: 10px;">
+                        Select extra cases from the vehicle that the customer/shop wants to buy. Any unselected cases remain stored in the vehicle.
+                    </div>
+                    <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                        <select id="extraVehicleSelect" class="form-control" style="flex: 1; min-width: 220px;">
+                            <option value="">-- Select extra cases loaded in vehicle --</option>
+                            <?php foreach ($vehicle_extra_products as $vep): ?>
+                                <option value="<?= $vep['product_id'] ?>" 
+                                        data-name="<?= htmlspecialchars($vep['product_name']) ?>" 
+                                        data-price="<?= (float)$vep['price'] ?>" 
+                                        data-max="<?= (int)$vep['available_cases'] ?>"
+                                        data-content="<?= htmlspecialchars(($vep['net_content'] ? (float)$vep['net_content'] . ' ' . $vep['net_content_unit'] : '')) ?>">
+                                    <?= htmlspecialchars($vep['product_name']) ?> (<?= (int)$vep['available_cases'] ?> cs in vehicle) &bull; <?= formatCurrency($vep['price']) ?>/case
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                        <button type="button" onclick="addExtraCaseFromVehicle()" style="background: #2563eb; color: #ffffff; border: none; padding: 9px 16px; border-radius: 10px; font-size: 13px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;">
+                            <i class='bx bx-plus-circle'></i> Add Extra to Bill
+                        </button>
+                    </div>
+                </div>
+                <?php endif; ?>
+
+                <!-- Add Regular Product Row -->
+                <div style="background: #f8fafc; border: 1.5px dashed #cbd5e1; border-radius: var(--radius-md); padding: 14px; margin-bottom: 20px;">
+                    <div style="font-size: 12px; font-weight: 700; color: #475569; margin-bottom: 6px; display: flex; align-items: center; gap: 4px;">
+                        <i class='bx bx-plus-circle' style="color: #475569;"></i> Add another catalog product to bill
+                    </div>
                     <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
                         <select id="addProductSelect" class="form-control" style="flex: 1; min-width: 200px;">
                             <option value="">-- Add another product to bill --</option>
@@ -841,8 +1137,8 @@ $def_discount   = (float)($order['discount'] ?? 0);
                                 </option>
                             <?php endforeach; ?>
                         </select>
-                        <button type="button" onclick="addNewProductItem()" style="background: #2563eb; color: #ffffff; border: none; padding: 10px 16px; border-radius: 10px; font-size: 13px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;">
-                            <i class='bx bx-plus'></i> Add
+                        <button type="button" onclick="addNewProductItem()" style="background: #475569; color: #ffffff; border: none; padding: 9px 16px; border-radius: 10px; font-size: 13px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;">
+                            <i class='bx bx-plus'></i> Add to Bill
                         </button>
                     </div>
                 </div>
@@ -940,10 +1236,12 @@ $def_discount   = (float)($order['discount'] ?? 0);
     </main>
 
     <script>
-        let nextItemIdx = <?= count($order_items) + 10 ?>;
+        let nextItemIdx = <?= count($regular_items) + count($vehicle_extra_products) + 10 ?>;
         const discountAmount = <?= (float)$def_discount ?>;
 
         const itemsContainer = document.getElementById('itemsContainer');
+        const regularCountDisplay = document.getElementById('regularCountDisplay');
+
         const enableCash = document.getElementById('enable_cash');
         const cashInput = document.getElementById('cash_amount');
         const boxCash = document.getElementById('boxCash');
@@ -972,21 +1270,42 @@ $def_discount   = (float)($order['discount'] ?? 0);
             if (!card) return;
             const input = card.querySelector('.item-qty-input');
             if (!input) return;
+            const maxVal = input.hasAttribute('max') && input.getAttribute('max') !== '' ? parseInt(input.getAttribute('max')) : Infinity;
             let current = parseInt(input.value) || 0;
             let nextVal = Math.max(0, current + change);
+            if (nextVal > maxVal) {
+                alert(`Maximum cases available in vehicle is ${maxVal}.`);
+                nextVal = maxVal;
+            }
             input.value = nextVal;
             recalculate();
         }
 
+        function checkMaxCases(input) {
+            if (input.hasAttribute('max') && input.getAttribute('max') !== '') {
+                const maxVal = parseInt(input.getAttribute('max'));
+                let val = parseInt(input.value) || 0;
+                if (val > maxVal) {
+                    alert(`Maximum cases available in vehicle is ${maxVal}.`);
+                    input.value = maxVal;
+                }
+            }
+        }
+
         function removeItemRow(btn) {
             const card = btn.closest('.item-delivery-card');
-            const cards = itemsContainer.querySelectorAll('.item-delivery-card');
-            if (cards.length <= 1) {
-                // If only 1 card left, set qty to 0 instead of removing container
-                const input = card.querySelector('.item-qty-input');
-                if (input) input.value = 0;
-            } else {
+            if (!card) return;
+            const isExtra = card.classList.contains('item-vehicle-extra-card') || (card.querySelector('.item-is-extra')?.value === '1');
+            if (isExtra) {
                 card.remove();
+            } else {
+                const cards = itemsContainer.querySelectorAll('.item-delivery-card');
+                if (cards.length <= 1) {
+                    const input = card.querySelector('.item-qty-input');
+                    if (input) input.value = 0;
+                } else {
+                    card.remove();
+                }
             }
             recalculate();
         }
@@ -1001,7 +1320,7 @@ $def_discount   = (float)($order['discount'] ?? 0);
             const price = parseFloat(opt.getAttribute('data-price')) || 0;
             const content = opt.getAttribute('data-content') || '';
 
-            // Check if product already exists in list, if so increment qty
+            // Check if product already exists in regular list, if so increment qty
             const existingCard = itemsContainer.querySelector(`.item-pid[value="${pid}"]`);
             if (existingCard) {
                 const card = existingCard.closest('.item-delivery-card');
@@ -1016,19 +1335,25 @@ $def_discount   = (float)($order['discount'] ?? 0);
             const contentHtml = content ? `<span style="font-size: 11px; color: #64748b; background: #f1f5f9; padding: 2px 6px; border-radius: 4px; margin-left: 6px;">${content}</span>` : '';
 
             const div = document.createElement('div');
-            div.className = 'item-delivery-card';
+            div.className = 'item-delivery-card item-regular-card';
             div.id = 'itemRow_' + idx;
             div.setAttribute('data-idx', idx);
             div.innerHTML = `
                 <input type="hidden" name="items[${idx}][product_id]" value="${pid}" class="item-pid">
-                <input type="hidden" name="items[${idx}][rate]" value="${price}" class="item-rate">
+                <input type="hidden" name="items[${idx}][original_rate]" value="${price}" class="item-original-rate">
+                <input type="hidden" name="items[${idx}][is_extra]" value="0" class="item-is-extra">
                 
                 <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; margin-bottom: 10px;">
                     <div>
                         <strong style="font-size: 15px; color: #0f172a;">${name}</strong>
                         ${contentHtml}
-                        <div style="font-size: 13px; color: #475569; margin-top: 2px;">
-                            Rate: <strong style="color: #059669;">₹${price.toFixed(2)}</strong> / case
+                        <div style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #475569; margin-top: 4px;">
+                            <span>Rate: ₹</span>
+                            <input type="number" step="0.01" min="0" name="items[${idx}][rate]" value="${price.toFixed(2)}" class="form-control item-rate" style="width: 85px; height: 28px; padding: 2px 6px; font-size: 12px; font-weight: 700; border: 1.5px solid #cbd5e1; border-radius: 6px; background: #ffffff;" oninput="recalculate()" title="Edit rate if needed">
+                            <span> / case</span>
+                        </div>
+                        <div class="item-calc-text" style="font-size: 12px; color: #64748b; font-weight: 600; margin-top: 3px;">
+                            Rate × Qty: ₹<span class="calc-rate-val">${price.toFixed(2)}</span> × <span class="calc-qty-val">1</span> cs = ₹<span class="calc-sub-val">${price.toFixed(2)}</span>
                         </div>
                     </div>
                     <div style="text-align: right;">
@@ -1044,6 +1369,90 @@ $def_discount   = (float)($order['discount'] ?? 0);
                     <div class="stepper-box">
                         <button type="button" class="btn-stepper" onclick="stepItemQty(this, -1)" aria-label="Decrease">&minus;</button>
                         <input type="number" min="0" name="items[${idx}][quantity]" value="1" class="form-control stepper-input item-qty-input" required oninput="recalculate()">
+                        <button type="button" class="btn-stepper" onclick="stepItemQty(this, 1)" aria-label="Increase">&plus;</button>
+                    </div>
+                </div>
+            `;
+
+            itemsContainer.appendChild(div);
+            sel.value = '';
+            recalculate();
+        }
+
+        function addExtraCaseFromVehicle() {
+            const sel = document.getElementById('extraVehicleSelect');
+            if (!sel || !sel.value) return;
+            const opt = sel.options[sel.selectedIndex];
+            if (!opt) return;
+
+            const pid = sel.value;
+            const name = opt.getAttribute('data-name');
+            const price = parseFloat(opt.getAttribute('data-price')) || 0;
+            const maxCases = parseInt(opt.getAttribute('data-max')) || 999;
+            const content = opt.getAttribute('data-content') || '';
+
+            // Check if product already exists in items list
+            const existingCard = itemsContainer.querySelector(`.item-pid[value="${pid}"]`);
+            if (existingCard) {
+                const card = existingCard.closest('.item-delivery-card');
+                const qtyInput = card.querySelector('.item-qty-input');
+                let currentQty = parseInt(qtyInput.value) || 0;
+                if (currentQty >= maxCases) {
+                    alert(`Only ${maxCases} cases of ${name} are loaded in this vehicle.`);
+                    return;
+                }
+                qtyInput.value = currentQty + 1;
+                sel.value = '';
+                recalculate();
+                return;
+            }
+
+            const idx = nextItemIdx++;
+            const contentHtml = content ? `<span style="font-size: 11px; color: #64748b; background: #f1f5f9; padding: 2px 6px; border-radius: 4px; margin-left: 6px;">${content}</span>` : '';
+
+            const div = document.createElement('div');
+            div.className = 'item-delivery-card item-regular-card item-vehicle-extra-card';
+            div.id = 'itemRow_' + idx;
+            div.setAttribute('data-idx', idx);
+            div.style.borderLeft = '4px solid #2563eb';
+            div.innerHTML = `
+                <input type="hidden" name="items[${idx}][product_id]" value="${pid}" class="item-pid">
+                <input type="hidden" name="items[${idx}][original_rate]" value="${price}" class="item-original-rate">
+                <input type="hidden" name="items[${idx}][is_extra]" value="1" class="item-is-extra">
+                <input type="hidden" name="items[${idx}][max_cases]" value="${maxCases}" class="item-max-cases">
+                
+                <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; margin-bottom: 10px;">
+                    <div>
+                        <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                            <strong style="font-size: 15px; color: #0f172a;">${name}</strong>
+                            <span style="font-size: 11px; font-weight: 700; color: #1e40af; background: #dbeafe; padding: 2px 7px; border-radius: 4px;">EXTRA VEHICLE CASE</span>
+                            ${contentHtml}
+                        </div>
+                        <div style="font-size: 11px; color: #64748b; margin-top: 2px;">
+                            Loaded in vehicle: <strong>${maxCases} cases</strong>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #475569; margin-top: 4px;">
+                            <span>Rate: ₹</span>
+                            <input type="number" step="0.01" min="0" name="items[${idx}][rate]" value="${price.toFixed(2)}" class="form-control item-rate" style="width: 85px; height: 28px; padding: 2px 6px; font-size: 12px; font-weight: 700; border: 1.5px solid #cbd5e1; border-radius: 6px; background: #ffffff;" oninput="recalculate()" title="Edit rate if needed">
+                            <span>/ case</span>
+                        </div>
+                        <div class="item-calc-text" style="font-size: 12px; color: #64748b; font-weight: 600; margin-top: 3px;">
+                            Rate × Qty: ₹<span class="calc-rate-val">${price.toFixed(2)}</span> × <span class="calc-qty-val">1</span> cs = ₹<span class="calc-sub-val">${price.toFixed(2)}</span>
+                        </div>
+                    </div>
+                    <div style="text-align: right;">
+                        <div class="item-line-total" style="font-size: 16px; font-weight: 800; color: #0f172a;">₹${price.toFixed(2)}</div>
+                        <button type="button" onclick="removeItemRow(this)" style="background: none; border: none; color: #dc2626; font-size: 12px; cursor: pointer; padding: 3px 0; display: inline-flex; align-items: center; gap: 2px;" title="Remove this extra product">
+                            <i class='bx bx-trash'></i> Remove
+                        </button>
+                    </div>
+                </div>
+
+                <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; background: #f8fafc; padding: 8px 12px; border-radius: 8px;">
+                    <span style="font-size: 13px; font-weight: 600; color: #475569;">Delivered Cases:</span>
+                    <div class="stepper-box">
+                        <button type="button" class="btn-stepper" onclick="stepItemQty(this, -1)" aria-label="Decrease">&minus;</button>
+                        <input type="number" min="0" max="${maxCases}" name="items[${idx}][quantity]" value="1" class="form-control stepper-input item-qty-input" required oninput="checkMaxCases(this); recalculate()">
                         <button type="button" class="btn-stepper" onclick="stepItemQty(this, 1)" aria-label="Increase">&plus;</button>
                     </div>
                 </div>
@@ -1076,42 +1485,66 @@ $def_discount   = (float)($order['discount'] ?? 0);
 
         function calculateValues() {
             let totalCases = 0;
+            let regularCases = 0;
+            let extraCases = 0;
             let subtotal = 0;
 
-            const cards = itemsContainer.querySelectorAll('.item-delivery-card');
-            cards.forEach(card => {
+            const allCards = itemsContainer.querySelectorAll('.item-delivery-card');
+            allCards.forEach(card => {
                 const qtyInput = card.querySelector('.item-qty-input');
                 const rateInput = card.querySelector('.item-rate');
+                const isExtraInput = card.querySelector('.item-is-extra');
                 const lineTotalDisplay = card.querySelector('.item-line-total');
+                const calcRateVal = card.querySelector('.calc-rate-val');
+                const calcQtyVal = card.querySelector('.calc-qty-val');
+                const calcSubVal = card.querySelector('.calc-sub-val');
 
                 const qty = Math.max(0, parseInt(qtyInput ? qtyInput.value : 0) || 0);
+                const isExtra = (isExtraInput && isExtraInput.value === '1') || card.classList.contains('item-vehicle-extra-card');
                 const rate = parseFloat(rateInput ? rateInput.value : 0) || 0;
                 const lineTotal = qty * rate;
 
-                if (lineTotalDisplay) {
-                    lineTotalDisplay.textContent = '₹' + lineTotal.toFixed(2);
-                }
+                if (calcRateVal) calcRateVal.textContent = rate.toFixed(2);
+                if (calcQtyVal) calcQtyVal.textContent = qty;
+                if (calcSubVal) calcSubVal.textContent = lineTotal.toFixed(2);
+                if (lineTotalDisplay) lineTotalDisplay.textContent = '₹' + lineTotal.toFixed(2);
 
-                totalCases += qty;
+                if (isExtra) {
+                    extraCases += qty;
+                } else {
+                    regularCases += qty;
+                }
                 subtotal += lineTotal;
             });
 
+            totalCases = regularCases + extraCases;
             const discount = Math.min(subtotal, discountAmount);
             const total = Math.max(0, subtotal - discount);
 
-            return { totalCases, subtotal, discount, total };
+            return { totalCases, regularCases, extraCases, subtotal, discount, total };
         }
 
         function recalculate() {
             updateCheckboxes();
-            const { totalCases, subtotal, discount, total } = calculateValues();
+            const { totalCases, regularCases, extraCases, subtotal, discount, total } = calculateValues();
 
             const cashVal = enableCash.checked ? (parseFloat(cashInput.value) || 0) : 0;
             const creditVal = enableCredit.checked ? (parseFloat(creditInput.value) || 0) : 0;
             const paidSum = cashVal + creditVal;
             const due = Math.max(0, total - paidSum);
 
-            if (dispTotalCases) dispTotalCases.textContent = totalCases + ' Cases';
+            if (dispTotalCases) {
+                if (extraCases > 0) {
+                    dispTotalCases.textContent = `${totalCases} Cases (${regularCases} Ordered + ${extraCases} Extra)`;
+                } else {
+                    dispTotalCases.textContent = `${totalCases} Cases`;
+                }
+            }
+            if (regularCountDisplay) {
+                const regCount = itemsContainer.querySelectorAll('.item-delivery-card').length;
+                regularCountDisplay.textContent = `${regCount} ${regCount === 1 ? 'Product' : 'Products'}`;
+            }
+
             if (dispSubtotal) dispSubtotal.textContent = '₹' + subtotal.toFixed(2);
             if (dispTotal) dispTotal.textContent = '₹' + total.toFixed(2);
             if (dispCash) dispCash.textContent = '₹' + cashVal.toFixed(2);

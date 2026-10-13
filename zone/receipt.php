@@ -62,7 +62,36 @@ $dueAmount = (float)$data['receipt_due'];
 $payType = htmlspecialchars($data['receipt_pay_type'] ?: 'Cash');
 
 // Fetch all order items
-$order_items = getOrderItems($pdo, $order_id);
+$all_order_items = getOrderItems($pdo, $order_id);
+
+// Fetch all delivered & billed order items
+$order_items = [];
+foreach ($all_order_items as $oi) {
+    if ((int)$oi['quantity'] > 0) {
+        $order_items[] = $oi;
+    }
+}
+if (empty($order_items)) {
+    $order_items = $all_order_items;
+}
+
+// Fallback for legacy single-item orders where order_items table was empty
+if (empty($order_items)) {
+    $order_items = [[
+        'order_item_id' => 0,
+        'order_id' => $order_id,
+        'product_id' => (int)($data['product_id'] ?? 0),
+        'quantity' => $deliveredQty,
+        'price_at_purchase' => $rate,
+        'line_total' => $itemAmount,
+        'product_name' => $prodName,
+        'name' => $prodName,
+        'net_content' => $data['net_content'] ?? null,
+        'net_content_unit' => $data['net_content_unit'] ?? null,
+        'is_extra' => 0
+    ]];
+}
+
 $totalDeliveredCases = 0;
 $receiptSubtotal = 0.0;
 $itemsWaLines = [];
@@ -72,7 +101,8 @@ foreach ($order_items as $oi) {
     $iQty = (int)$oi['quantity'];
     $totalDeliveredCases += $iQty;
     $receiptSubtotal += (float)$oi['line_total'];
-    $itemsWaLines[] = "• *{$iName}* ({$iQty} Cases)";
+    $extraTag = !empty($oi['is_extra']) ? ' (Vehicle Extra)' : '';
+    $itemsWaLines[] = "• *{$iName}* ({$iQty} Cases{$extraTag})";
 }
 
 if ($totalDeliveredCases <= 0) {
@@ -779,9 +809,12 @@ if (file_exists($logoPath)) {
                     <td>
                         <strong><?= $pItemName ?></strong>
                         <?php if (!empty($item['net_content'])): ?>
-                            <span style="font-size: 12px; color: var(--text-muted);">
+                            <span style="font-size: 12px; color: var(--text-muted); margin-left: 4px;">
                                 (<?= (float)$item['net_content'] ?> <?= htmlspecialchars($item['net_content_unit'] ?? '') ?>)
                             </span>
+                        <?php endif; ?>
+                        <?php if (!empty($item['is_extra'])): ?>
+                            <span style="font-size: 10px; font-weight: 700; color: #1e40af; background: #eff6ff; border: 1px solid #bfdbfe; padding: 1px 5px; border-radius: 4px; margin-left: 6px;">Extra from Vehicle</span>
                         <?php endif; ?>
                     </td>
                     <td style="text-align: center; font-weight: 700;">

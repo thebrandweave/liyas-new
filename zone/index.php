@@ -52,9 +52,16 @@ if (isset($_GET['mark_all_read']) && $_GET['mark_all_read'] == '1') {
 
 // 1. Unread notifications for this zone
 $unread_stmt = $pdo->prepare("
-    SELECT o.*, p.product_name, p.name as fallback_name
+    SELECT o.*, p.product_name, p.name as fallback_name,
+           veh.vehicle_number AS assigned_vehicle_number,
+           veh.vehicle_name AS assigned_vehicle_name,
+           (SELECT GROUP_CONCAT(CONCAT(COALESCE(p2.product_name, p2.name), ' (', oi2.quantity, 'cs', IF(oi2.is_extra = 1 OR oi2.price_at_purchase = 0, ' - Extra', ''), ')') SEPARATOR ', ') 
+            FROM order_items oi2 
+            JOIN products p2 ON oi2.product_id = p2.product_id 
+            WHERE oi2.order_id = o.order_id) AS items_summary
     FROM orders o
     LEFT JOIN products p ON o.product_id = p.product_id
+    LEFT JOIN vehicles veh ON o.vehicle_id = veh.id
     WHERE o.zone_id = ? AND o.is_zone_read = 0 AND o.status != 'cancelled'
     ORDER BY o.created_at DESC
 ");
@@ -124,14 +131,17 @@ $orders_stmt = $pdo->prepare("
         r.credited_amount as receipt_credit,
         r.due_amount as receipt_due,
         r.payment_type as receipt_pay_type,
+        veh.vehicle_number AS assigned_vehicle_number,
+        veh.vehicle_name AS assigned_vehicle_name,
         (SELECT COUNT(*) FROM order_items oi WHERE oi.order_id = o.order_id) AS items_count,
-        (SELECT GROUP_CONCAT(CONCAT(COALESCE(p2.product_name, p2.name), ' (', oi2.quantity, 'cs)') SEPARATOR ', ') 
+        (SELECT GROUP_CONCAT(CONCAT(COALESCE(p2.product_name, p2.name), ' (', oi2.quantity, 'cs', IF(oi2.is_extra = 1 OR oi2.price_at_purchase = 0, ' - Extra', ''), ')') SEPARATOR ', ') 
          FROM order_items oi2 
          JOIN products p2 ON oi2.product_id = p2.product_id 
          WHERE oi2.order_id = o.order_id) AS items_summary
     FROM orders o
     LEFT JOIN products p ON o.product_id = p.product_id
     LEFT JOIN receipts r ON o.order_id = r.order_id
+    LEFT JOIN vehicles veh ON o.vehicle_id = veh.id
     WHERE $where_sql
     ORDER BY o.created_at DESC
 ");
@@ -1609,12 +1619,18 @@ function buildWhatsAppLink($phone, $shop, $orderNum, $amount, $itemsText = '') {
                     $nOrdId = $notif['order_id'];
                     $nOrdNum = $notif['order_number'] ?: ('#' . $nOrdId);
                     $nPhone = $notif['phone'] ?? '';
-                    $waLink = buildWhatsAppLink($nPhone, $nShop, $nOrdNum, $nAmt);
+                    $nSummary = !empty($notif['items_summary']) ? $notif['items_summary'] : ($nProd . ' &times; ' . $nQty . ' Cases');
+                    $waLink = buildWhatsAppLink($nPhone, $nShop, $nOrdNum, $nAmt, $notif['items_summary'] ?? '');
                 ?>
                 <div class="notif-item" id="notif-card-<?= $nOrdId ?>">
                     <div>
                         <div class="notif-shop">
-                            <?= $nShop ?> &bull; <span style="color: #2563eb; font-weight: 700;"><?= $nProd ?> &times; <?= $nQty ?> Cases</span>
+                            <?= $nShop ?> &bull; <span style="color: #2563eb; font-weight: 700;"><?= htmlspecialchars($nSummary) ?></span>
+                            <?php if (!empty($notif['assigned_vehicle_number'])): ?>
+                                <span style="background: #0f172a; color: #ffffff; font-size: 10px; font-weight: 800; padding: 2px 6px; border-radius: 5px; display: inline-flex; align-items: center; gap: 3px; margin-left: 6px;">
+                                    <i class='bx bxs-truck' style="color: #60a5fa;"></i> <?= htmlspecialchars($notif['assigned_vehicle_number']) ?>
+                                </span>
+                            <?php endif; ?>
                         </div>
                         <div class="notif-meta">
                             <span><i class='bx bx-map-pin' style="color: #ef4444;"></i> <?= htmlspecialchars($notif['location'] ?: 'Zone Area') ?></span>
@@ -1870,6 +1886,11 @@ function buildWhatsAppLink($phone, $shop, $orderNum, $amount, $itemsText = '') {
                                     <i class='bx bx-copy-alt' style="font-size: 12px;"></i>
                                     <?= htmlspecialchars($ordNum) ?>
                                 </span>
+                                <?php if (!empty($order['assigned_vehicle_number'])): ?>
+                                    <span style="background: #0f172a; color: #ffffff; font-size: 11px; font-weight: 800; padding: 2px 8px; border-radius: 6px; display: inline-flex; align-items: center; gap: 4px;" title="Assigned Delivery Vehicle: <?= htmlspecialchars($order['assigned_vehicle_name'] ?? '') ?>">
+                                        <i class='bx bxs-truck' style="color: #60a5fa;"></i> <?= htmlspecialchars($order['assigned_vehicle_number']) ?>
+                                    </span>
+                                <?php endif; ?>
                                 <?php if ((int)$order['is_zone_read'] === 0): ?>
                                     <span class="badge-unread-chip" id="unread-tag-<?= $ordId ?>" title="Not yet checked by zone staff">
                                         <i class='bx bxs-bell-ring'></i> New

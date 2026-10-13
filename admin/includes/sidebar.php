@@ -16,7 +16,8 @@ $base_path = (in_array($current_dir_name, [
     'reviews',
     'social-links',
     'campaigns',
-    'revenue'
+    'revenue',
+    'vehicles'
 ])) ? '../' : './';
 
 // Current page logic
@@ -27,6 +28,7 @@ $current_dir  = basename(dirname($_SERVER['PHP_SELF']));
 // Badge counts
 $products_count = 0;
 $zones_count = 0;
+$vehicles_count = 0;
 $pending_orders_count = 0;
 $users_count = 0;
 $notifications_count = 0;
@@ -41,6 +43,7 @@ try {
     if (isset($pdo)) {
         $products_count = (int)$pdo->query("SELECT COUNT(*) FROM products WHERE status='active'")->fetchColumn();
         $zones_count = (int)$pdo->query("SELECT COUNT(*) FROM zones WHERE status='active'")->fetchColumn();
+        $vehicles_count = (int)$pdo->query("SELECT COUNT(*) FROM vehicles WHERE status != 'inactive'")->fetchColumn();
         $pending_orders_count = (int)$pdo->query("SELECT COUNT(*) FROM orders WHERE status='pending'")->fetchColumn();
         $users_count = (int)$pdo->query("SELECT COUNT(*) FROM admins")->fetchColumn();
         $subs_count = (int)$pdo->query("SELECT COUNT(*) FROM newsletter_subscriptions WHERE status='subscribed'")->fetchColumn();
@@ -144,13 +147,28 @@ $more_badge_total = $ads_count + $reviews_pending_count + $social_count + $subs_
                 <?php endif; ?>
             </a>
 
-     
+            <a href="<?= $base_path ?>vehicles/index.php"
+               class="nav-item <?= ($current_dir=='vehicles'||$current_page==='vehicles')?'active':'' ?>"
+           
+               title="Vehicles, Cases Loaded & Zones">
+                <i class='bx bxs-truck' style="color: #2563eb;"></i>
+                <span>Vehicles</span>
+                <?php if ($vehicles_count > 0): ?>
+                    <span class="nav-badge"><?= $vehicles_count ?></span>
+                <?php endif; ?>
+            </a>
 
             <a href="<?= $base_path ?>revenue/index.php"
                class="nav-item <?= ($current_dir=='revenue'||$current_page==='revenue')?'active':'' ?>">
                 <i class='bx bx-line-chart'></i>
                 <span>Revenue</span>
             </a>
+                <a href="<?= $base_path ?>qr-rewards/shop-rewards.php"
+                   class="nav-item <?= ($current_file=='shop-rewards.php')?'active':'' ?>">
+                    <i class='bx bxs-gift'></i>
+                    <span>Shop Rewards</span>
+                </a>
+
 
             <a href="<?= $base_path ?>products/index.php"
                class="nav-item <?= ($current_dir=='products'||$current_page==='products')?'active':'' ?>">
@@ -235,11 +253,12 @@ $more_badge_total = $ads_count + $reviews_pending_count + $social_count + $subs_
                 </a>
 
                 <a href="<?= $base_path ?>qr-rewards/index.php"
-                   class="nav-item <?= ($current_dir=='qr-rewards'||$current_page==='qr-rewards')?'active':'' ?>">
+                   class="nav-item <?= ($current_dir=='qr-rewards' && $current_file=='index.php')?'active':'' ?>">
                     <i class='bx bx-qr'></i>
                     <span>QR Rewards</span>
                 </a>
 
+            
                 <a href="<?= $base_path ?>activity-logs/index.php"
                    class="nav-item <?= ($current_dir=='activity-logs'||$current_page==='activity-logs')?'active':'' ?>">
                     <i class='bx bx-history'></i>
@@ -286,3 +305,8 @@ $more_badge_total = $ads_count + $reviews_pending_count + $social_count + $subs_
     }
 })();
 </script>
+
+<?php
+// Global Vehicles Slide-Out Drawer Component
+include_once dirname(__DIR__, 2) . '/components/vehicles-sidebar.php';
+?>

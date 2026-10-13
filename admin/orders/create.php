@@ -65,6 +65,36 @@ foreach ($products as $p) {
 
 // Initial items state for form rendering
 $form_items = [];
+$reorder_id = (int)($_GET['reorder_id'] ?? ($_POST['reorder_id'] ?? 0));
+$is_reorder = ($reorder_id > 0) ? 1 : (int)($_POST['is_reorder'] ?? 0);
+$reorder_source = null;
+
+if ($reorder_id > 0 && $_SERVER['REQUEST_METHOD'] !== 'POST') {
+    $rStmt = $pdo->prepare("SELECT * FROM orders WHERE order_id = ?");
+    $rStmt->execute([$reorder_id]);
+    $reorder_source = $rStmt->fetch(PDO::FETCH_ASSOC);
+    if ($reorder_source) {
+        $_POST['shop_name'] = $reorder_source['shop_name'];
+        $_POST['customer_name'] = $reorder_source['customer_name'];
+        $_POST['location'] = $reorder_source['location'];
+        $_POST['phone'] = $reorder_source['phone'];
+        $_POST['address'] = $reorder_source['address'];
+        $_POST['zone_id'] = $reorder_source['zone_id'];
+        $_POST['discount'] = $reorder_source['discount'];
+        
+        // Fetch order items
+        $oiStmt = $pdo->prepare("SELECT product_id, quantity, price_at_purchase as rate FROM order_items WHERE order_id = ?");
+        $oiStmt->execute([$reorder_id]);
+        $form_items = $oiStmt->fetchAll(PDO::FETCH_ASSOC);
+        if (empty($form_items) && !empty($reorder_source['product_id'])) {
+            $form_items = [[
+                'product_id' => (int)$reorder_source['product_id'],
+                'quantity'   => (int)$reorder_source['quantity'],
+                'rate'       => (float)$reorder_source['unit_price']
+            ]];
+        }
+    }
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_order'])) {
     $shop_name     = trim($_POST['shop_name'] ?? '');
@@ -74,6 +104,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_order'])) {
     $address       = trim($_POST['address'] ?? '');
     $zone_id       = (int)($_POST['zone_id'] ?? 0);
     $discount      = (float)($_POST['discount'] ?? 0);
+    $is_reorder    = (int)($_POST['is_reorder'] ?? ($reorder_id > 0 ? 1 : 0));
+    $parent_order_id = ($reorder_id > 0) ? $reorder_id : (!empty($_POST['parent_order_id']) ? (int)$_POST['parent_order_id'] : null);
 
     // Parse multi-product items array
     $raw_items = $_POST['items'] ?? [];
@@ -114,46 +146,46 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_order'])) {
         $error = "Shop / Customer Name is required.";
     } elseif ($zone_id <= 0) {
         $error = "Please select a Delivery Zone.";
-    } elseif (empty($parsed_items)) {
-        $error = "Please select at least one product with quantity of 1 or more.";
     } elseif ($discount < 0) {
         $error = "Discount cannot be negative.";
     } else {
-        $product_ids = array_keys($parsed_items);
-        $placeholders = implode(',', array_fill(0, count($product_ids), '?'));
-        $pStmt = $pdo->prepare("SELECT product_id, name, product_name, case_price, price, case_stock, stock, net_content, net_content_unit FROM products WHERE product_id IN ($placeholders)");
-        $pStmt->execute($product_ids);
-        $dbProducts = $pStmt->fetchAll(PDO::FETCH_ASSOC);
-
-        $dbProductsMap = [];
-        foreach ($dbProducts as $dp) {
-            $dbProductsMap[(int)$dp['product_id']] = $dp;
-        }
-
         $base_total = 0.0;
         $total_cases = 0;
         $valid_order_items = [];
 
-        foreach ($parsed_items as $pid => $itemData) {
-            if (!isset($dbProductsMap[$pid])) {
-                $error = "One or more selected products are invalid or no longer available.";
-                break;
-            }
-            $dp = $dbProductsMap[$pid];
-            $defaultPrice = (float)($dp['case_price'] ?: $dp['price']);
-            $price = ($itemData['rate'] !== null && (float)$itemData['rate'] > 0) ? (float)$itemData['rate'] : $defaultPrice;
-            $qty = (int)$itemData['quantity'];
-            $line_total = $price * $qty;
-            $base_total += $line_total;
-            $total_cases += $qty;
+        if (!empty($parsed_items)) {
+            $product_ids = array_keys($parsed_items);
+            $placeholders = implode(',', array_fill(0, count($product_ids), '?'));
+            $pStmt = $pdo->prepare("SELECT product_id, name, product_name, case_price, price, case_stock, stock, net_content, net_content_unit FROM products WHERE product_id IN ($placeholders)");
+            $pStmt->execute($product_ids);
+            $dbProducts = $pStmt->fetchAll(PDO::FETCH_ASSOC);
 
-            $valid_order_items[] = [
-                'product_id'        => $pid,
-                'quantity'          => $qty,
-                'price_at_purchase' => $price,
-                'line_total'        => $line_total,
-                'name'              => $dp['product_name'] ?: $dp['name']
-            ];
+            $dbProductsMap = [];
+            foreach ($dbProducts as $dp) {
+                $dbProductsMap[(int)$dp['product_id']] = $dp;
+            }
+
+            foreach ($parsed_items as $pid => $itemData) {
+                if (!isset($dbProductsMap[$pid])) {
+                    $error = "One or more selected products are invalid or no longer available.";
+                    break;
+                }
+                $dp = $dbProductsMap[$pid];
+                $defaultPrice = (float)($dp['case_price'] ?: $dp['price']);
+                $price = ($itemData['rate'] !== null && (float)$itemData['rate'] > 0) ? (float)$itemData['rate'] : $defaultPrice;
+                $qty = (int)$itemData['quantity'];
+                $line_total = $price * $qty;
+                $base_total += $line_total;
+                $total_cases += $qty;
+
+                $valid_order_items[] = [
+                    'product_id'        => $pid,
+                    'quantity'          => $qty,
+                    'price_at_purchase' => $price,
+                    'line_total'        => $line_total,
+                    'name'              => $dp['product_name'] ?: $dp['name']
+                ];
+            }
         }
 
         if (empty($error)) {
@@ -170,20 +202,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_order'])) {
             try {
                 $pdo->beginTransaction();
 
-                $primary_pid = $valid_order_items[0]['product_id'];
-                $primary_unit_price = $valid_order_items[0]['price_at_purchase'];
+                $primary_pid = !empty($valid_order_items) ? $valid_order_items[0]['product_id'] : null;
+                $primary_unit_price = !empty($valid_order_items) ? $valid_order_items[0]['price_at_purchase'] : 0.00;
 
                 $stmt = $pdo->prepare("
                     INSERT INTO orders (
                         order_number, zone_id, shop_name, customer_name, 
                         location, phone, address, product_id, 
                         quantity, unit_price, discount, total_amount, 
-                        status, is_zone_read, created_at, updated_at
+                        status, is_zone_read, is_reorder, parent_order_id, created_at, updated_at
                     ) VALUES (
                         ?, ?, ?, ?, 
                         ?, ?, ?, ?, 
                         ?, ?, ?, ?, 
-                        'pending', 0, NOW(), NOW()
+                        'pending', 0, ?, ?, NOW(), NOW()
                     )
                 ");
 
@@ -199,7 +231,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_order'])) {
                     $total_cases,
                     $primary_unit_price,
                     $discount,
-                    $total_amount
+                    $total_amount,
+                    $is_reorder,
+                    $parent_order_id
                 ]);
 
                 $new_order_id = (int)$pdo->lastInsertId();
@@ -259,7 +293,7 @@ if (empty($form_items)) {
     <style>
         body { font-family: 'Poppins', sans-serif; }
         .order-form-container {
-            max-width: 980px;
+            max-width: 1080px;
             background: #fff;
             border: 1px solid var(--border-light);
             border-radius: 14px;
@@ -457,12 +491,38 @@ if (empty($form_items)) {
                 <?php endif; ?>
 
                 <div class="order-form-container">
-                    <h2 style="font-size: 21px; font-weight: 700; margin-bottom: 0.4rem; color: #111827;">Create New Warehouse Order</h2>
+                    <?php if ($is_reorder && !empty($reorder_source)): ?>
+                        <div style="background: #eff6ff; border: 1.5px solid #bfdbfe; border-radius: 10px; padding: 14px 18px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
+                            <div style="display: flex; align-items: center; gap: 10px;">
+                                <span style="background: #2563eb; color: #fff; width: 34px; height: 34px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 18px;">
+                                    🔁
+                                </span>
+                                <div>
+                                    <div style="font-weight: 700; color: #1e3a8a; font-size: 14px;">
+                                        Creating Reorder for: <?= htmlspecialchars($reorder_source['shop_name'] ?: $reorder_source['customer_name']) ?>
+                                    </div>
+                                    <div style="font-size: 12px; color: #3b82f6;">
+                                        Cloned from Previous Order #<?= htmlspecialchars($reorder_source['order_number'] ?: $reorder_source['order_id']) ?> &bull; Review cases or edit items below
+                                    </div>
+                                </div>
+                            </div>
+                            <span style="background: #dbeafe; color: #1e40af; font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 20px;">
+                                Reorder Mode
+                            </span>
+                        </div>
+                    <?php endif; ?>
+
+                    <h2 style="font-size: 21px; font-weight: 700; margin-bottom: 0.4rem; color: #111827;">
+                        <?= $is_reorder ? '🔁 Create Reorder' : 'Create New Warehouse Order' ?>
+                    </h2>
                     <p style="font-size: 13px; color: #64748b; margin-bottom: 1.75rem;">
                         Add single or multiple products in one order. Real-time rates, live warehouse stock, and automated totals calculation.
                     </p>
 
                     <form action="create.php" method="POST" id="orderForm">
+                        <input type="hidden" name="is_reorder" value="<?= $is_reorder ? 1 : 0 ?>">
+                        <input type="hidden" name="reorder_id" value="<?= (int)$reorder_id ?>">
+                        <input type="hidden" name="parent_order_id" value="<?= (int)$reorder_id ?>">
                         <!-- Shop / Customer Information -->
                         <div class="form-section-title">
                             <i class='bx bx-store-alt' style="color: #2563eb; font-size: 20px;"></i>
@@ -514,12 +574,10 @@ if (empty($form_items)) {
                         <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; margin-top: 1.75rem; margin-bottom: 0.5rem; gap: 10px;">
                             <div class="form-section-title" style="margin: 0;">
                                 <i class='bx bx-shopping-bag' style="color: #059669; font-size: 20px;"></i>
-                                Order Products &amp; Quantities
+                                Order Products &amp; Quantities <span style="font-size: 13px; font-weight: 500; color: #64748b; margin-left: 6px;">(Optional)</span>
                             </div>
                             <div style="display: flex; align-items: center; gap: 8px;">
-                                <span id="stockSyncIndicator" style="font-size: 12px; color: #059669; font-weight: 600; display: inline-flex; align-items: center; gap: 4px;">
-                                    <i class='bx bx-check-circle'></i> Stock Synced with Product Inventory
-                                </span>
+                           
                                 <button type="button" onclick="refreshLiveStocks(true)" class="btn-refresh-stock" style="background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 6px; padding: 4px 10px; font-size: 12px; color: #334155; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; font-weight: 500;" title="Refresh available stock from Warehouse Inventory">
                                     <i class='bx bx-refresh' id="refreshStockIcon"></i> Refresh Stock
                                 </button>
@@ -534,10 +592,10 @@ if (empty($form_items)) {
                                 <table class="items-table" id="itemsTable">
                                     <thead>
                                         <tr>
-                                            <th style="min-width: 280px;">Product Item <span style="color: #ef4444;">*</span></th>
+                                            <th style="min-width: 280px;">Product Item (Optional)</th>
                                             <th style="min-width: 150px;">Available Stock (Warehouse)</th>
-                                            <th style="min-width: 130px; text-align: right;">Rate / Case (₹) <span style="color: #ef4444;">*</span></th>
-                                            <th style="min-width: 120px; text-align: center;">Qty (Cases) <span style="color: #ef4444;">*</span></th>
+                                            <th style="min-width: 130px; text-align: right;">Rate / Case (₹)</th>
+                                            <th style="min-width: 120px; text-align: center;">Qty (Cases)</th>
                                             <th style="min-width: 130px; text-align: right;">Line Total (₹)</th>
                                             <th style="width: 50px; text-align: center;"></th>
                                         </tr>
@@ -549,29 +607,44 @@ if (empty($form_items)) {
                                         ?>
                                             <tr class="item-row" data-index="<?= $idx ?>">
                                                 <td>
-                                                    <select name="items[<?= $idx ?>][product_id]" class="form-control item-product-select" onchange="handleProductChange(this)" oninput="handleProductChange(this)" required>
-                                                        <option value="">-- Select Product --</option>
-                                                        <?php foreach ($products as $prod): 
-                                                            $cPrice = (float)($prod['case_price'] ?: $prod['price']);
-                                                            $cStock = (int)($prod['case_stock'] ?: $prod['stock']);
-                                                            $pName = htmlspecialchars($prod['product_name'] ?: $prod['name']);
-                                                            $isSelected = ($fPid === (int)$prod['product_id']);
-                                                            $stockText = $cStock > 0 ? (number_format($cStock) . ' Cases in Stock') : 'Out of Stock (0)';
-                                                        ?>
-                                                            <option value="<?= $prod['product_id'] ?>" 
-                                                                    data-price="<?= $cPrice ?>" 
-                                                                    data-stock="<?= $cStock ?>"
-                                                                    <?= $isSelected ? 'selected' : '' ?>>
-                                                                <?= $pName ?> (₹<?= number_format($cPrice, 2) ?>/cs) &mdash; <?= $stockText ?>
-                                                            </option>
-                                                        <?php endforeach; ?>
-                                                    </select>
+                                                   <select name="items[<?= $idx ?>][product_id]"
+        class="form-control item-product-select"
+        onchange="handleProductChange(this)"
+        oninput="handleProductChange(this)">
+
+    <option value="">-- Select Product (Optional) --</option>
+
+    <?php foreach ($products as $prod):
+        $cPrice = (float)($prod['case_price'] ?: $prod['price']);
+        $cStock = (int)($prod['case_stock'] ?: $prod['stock']);
+        $pName = htmlspecialchars($prod['product_name'] ?: $prod['name']);
+        $isSelected = ($fPid === (int)$prod['product_id']);
+        $isOutOfStock = $cStock <= 0;
+
+        $stockText = $isOutOfStock
+            ? 'Out of Stock (0)'
+            : number_format($cStock) . ' Cases in Stock';
+    ?>
+
+        <option value="<?= $prod['product_id'] ?>"
+                data-price="<?= $cPrice ?>"
+                data-stock="<?= $cStock ?>"
+                <?= $isSelected ? 'selected' : '' ?>
+                <?= $isOutOfStock ? 'disabled' : '' ?>>
+
+            <?= $pName ?> (₹<?= number_format($cPrice, 2) ?>/cs)
+            &mdash; <?= $stockText ?>
+
+        </option>
+
+    <?php endforeach; ?>
+</select>
                                                 </td>
                                                 <td>
                                                     <?php if ($fPid > 0 && isset($products_map[$fPid])): 
                                                         $stk = (int)$products_map[$fPid]['stock'];
                                                         if ($stk <= 0): ?>
-                                                            <span class="badge-stock out-of-stock stock-display"><i class='bx bx-x-circle'></i> Out of Stock (0)</span>
+                                                             <span class="badge-stock out-of-stock stock-display"><i class='bx bx-x-circle'></i> Out of Stock (0)</span>
                                                         <?php elseif ($stk < 20): ?>
                                                             <span class="badge-stock low-stock stock-display"><i class='bx bx-time'></i> Low Stock: <?= $stk ?> cs</span>
                                                         <?php else: ?>
@@ -582,10 +655,10 @@ if (empty($form_items)) {
                                                     <?php endif; ?>
                                                 </td>
                                                 <td style="text-align: right;">
-                                                    <input type="number" step="0.01" min="0" name="items[<?= $idx ?>][rate]" class="form-control item-rate-input" oninput="handleRateOrQtyChange(this)" style="width: 115px; text-align: right; font-weight: 600;" placeholder="0.00" value="<?= ($fRate !== '') ? number_format((float)$fRate, 2, '.', '') : '' ?>" required>
+                                                    <input type="number" step="0.01" min="0" name="items[<?= $idx ?>][rate]" class="form-control item-rate-input" oninput="handleRateOrQtyChange(this)" style="width: 115px; text-align: right; font-weight: 600;" placeholder="0.00" value="<?= ($fRate !== '') ? number_format((float)$fRate, 2, '.', '') : '' ?>">
                                                 </td>
                                                 <td style="text-align: center;">
-                                                    <input type="number" min="1" name="items[<?= $idx ?>][quantity]" class="form-control item-qty-input" oninput="handleRateOrQtyChange(this)" required value="<?= htmlspecialchars($fItem['quantity'] ?? '1') ?>" style="width: 90px; text-align: center; margin: 0 auto; font-weight: 600;">
+                                                    <input type="number" min="1" name="items[<?= $idx ?>][quantity]" class="form-control item-qty-input" oninput="handleRateOrQtyChange(this)" value="<?= htmlspecialchars($fItem['quantity'] ?? '1') ?>" style="width: 90px; text-align: center; margin: 0 auto; font-weight: 600;">
                                                 </td>
                                                 <td style="text-align: right;">
                                                     <span class="linetotal-display" style="font-weight: 700; color: #0f172a; font-size: 15px;">₹0.00</span>
@@ -841,7 +914,7 @@ if (empty($form_items)) {
 
             tr.innerHTML = `
                 <td>
-                    <select name="items[${nextRowIndex}][product_id]" class="form-control item-product-select" onchange="handleProductChange(this)" oninput="handleProductChange(this)" required>
+                    <select name="items[${nextRowIndex}][product_id]" class="form-control item-product-select" onchange="handleProductChange(this)" oninput="handleProductChange(this)">
                         ${getProductOptionsHtml()}
                     </select>
                 </td>
@@ -849,10 +922,10 @@ if (empty($form_items)) {
                     <span class="badge-stock stock-display">-- Select Product --</span>
                 </td>
                 <td style="text-align: right;">
-                    <input type="number" step="0.01" min="0" name="items[${nextRowIndex}][rate]" class="form-control item-rate-input" oninput="handleRateOrQtyChange(this)" style="width: 115px; text-align: right; font-weight: 600;" placeholder="0.00" required>
+                    <input type="number" step="0.01" min="0" name="items[${nextRowIndex}][rate]" class="form-control item-rate-input" oninput="handleRateOrQtyChange(this)" style="width: 115px; text-align: right; font-weight: 600;" placeholder="0.00">
                 </td>
                 <td style="text-align: center;">
-                    <input type="number" min="1" name="items[${nextRowIndex}][quantity]" class="form-control item-qty-input" oninput="handleRateOrQtyChange(this)" required value="1" style="width: 90px; text-align: center; margin: 0 auto; font-weight: 600;">
+                    <input type="number" min="1" name="items[${nextRowIndex}][quantity]" class="form-control item-qty-input" oninput="handleRateOrQtyChange(this)" value="1" style="width: 90px; text-align: center; margin: 0 auto; font-weight: 600;">
                 </td>
                 <td style="text-align: right;">
                     <span class="linetotal-display" style="font-weight: 700; color: #0f172a; font-size: 15px;">₹0.00</span>

@@ -48,41 +48,68 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_order_status']
     }
 }
 
-// Handle clear / settle outstanding due balance
+// Handle clear / settle outstanding due balance with custom inputs
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['settle_due_balance'])) {
     $order_id = (int)($_POST['order_id'] ?? 0);
-    $settle_mode = $_POST['settle_mode'] ?? 'cash';
+    $settle_mode = trim($_POST['settle_mode'] ?? 'cash');
+    $ref_no = trim($_POST['ref_no'] ?? '');
+    $clear_notes = trim($_POST['clear_notes'] ?? '');
+
     if ($order_id > 0) {
         try {
-            $rStmt = $pdo->prepare("SELECT id, due_amount, cash_amount, credited_amount FROM receipts WHERE order_id = ?");
+            $rStmt = $pdo->prepare("SELECT id, due_amount, cash_amount, credited_amount, total_amount, payment_type FROM receipts WHERE order_id = ?");
             $rStmt->execute([$order_id]);
             $rec = $rStmt->fetch(PDO::FETCH_ASSOC);
 
             if ($rec && (float)$rec['due_amount'] > 0) {
-                $dueCleared = (float)$rec['due_amount'];
+                $currentDue = (float)$rec['due_amount'];
+                $inputAmount = isset($_POST['clear_amount']) && is_numeric($_POST['clear_amount']) ? (float)$_POST['clear_amount'] : $currentDue;
+
+                // Validate amount between 0.01 and current outstanding due
+                $dueCleared = min($currentDue, max(0.01, $inputAmount));
+                $newDue = max(0, $currentDue - $dueCleared);
+
+                $auditNote = " | Due of ₹" . number_format($dueCleared, 2) . " settled via " . ucfirst($settle_mode);
+                if (!empty($ref_no)) { $auditNote .= " (Ref: {$ref_no})"; }
+                if (!empty($clear_notes)) { $auditNote .= " - Note: {$clear_notes}"; }
+                $auditNote .= " on " . date('d-m-Y H:i:s');
+
                 if ($settle_mode === 'credit') {
                     $upRec = $pdo->prepare("
                         UPDATE receipts 
-                        SET credited_amount = credited_amount + due_amount,
-                            due_amount = 0,
+                        SET credited_amount = credited_amount + ?,
+                            due_amount = ?,
                             payment_type = CASE WHEN cash_amount > 0 THEN 'Cash + Credited' ELSE 'Credited' END,
-                            notes = CONCAT(COALESCE(notes, ''), ' | Due of ₹{$dueCleared} settled via Credit on ', NOW())
+                            notes = CONCAT(COALESCE(notes, ''), ?)
                         WHERE id = ?
                     ");
+                    $upRec->execute([$dueCleared, $newDue, $auditNote, $rec['id']]);
                 } else {
                     $upRec = $pdo->prepare("
                         UPDATE receipts 
-                        SET cash_amount = cash_amount + due_amount,
-                            due_amount = 0,
+                        SET cash_amount = cash_amount + ?,
+                            due_amount = ?,
                             payment_type = CASE WHEN credited_amount > 0 THEN 'Cash + Credited' ELSE 'Cash' END,
-                            notes = CONCAT(COALESCE(notes, ''), ' | Due of ₹{$dueCleared} settled via Cash on ', NOW())
+                            notes = CONCAT(COALESCE(notes, ''), ?)
                         WHERE id = ?
                     ");
+                    $upRec->execute([$dueCleared, $newDue, $auditNote, $rec['id']]);
                 }
-                $upRec->execute([$rec['id']]);
 
-                quickLog($pdo, 'settle_due', 'receipt', $rec['id'], "Cleared due balance of ₹{$dueCleared} for order #{$order_id} via Revenue module");
-                $success_msg = "Outstanding due of ₹" . number_format($dueCleared, 2) . " for order #{$order_id} was successfully cleared and added to Delivered Sales!";
+                // Record in order_payments audit table
+                try {
+                    $pPay = $pdo->prepare("
+                        INSERT INTO order_payments (order_id, cash_amount, credited_amount, due_amount, payment_type, created_at)
+                        VALUES (?, ?, ?, ?, ?, NOW())
+                    ");
+                    $pCash = ($settle_mode === 'credit') ? 0.00 : $dueCleared;
+                    $pCredit = ($settle_mode === 'credit') ? $dueCleared : 0.00;
+                    $pPayType = ($settle_mode === 'credit') ? 'credit' : 'cash';
+                    $pPay->execute([$order_id, $pCash, $pCredit, $newDue, $pPayType]);
+                } catch (Exception $e) {}
+
+                quickLog($pdo, 'settle_due', 'receipt', $rec['id'], "Cleared ₹{$dueCleared} due for order #{$order_id} via {$settle_mode}. Remaining due: ₹{$newDue}");
+                $success_msg = "Outstanding due of ₹" . number_format($dueCleared, 2) . " for order #{$order_id} was successfully cleared via " . ucfirst($settle_mode) . "! Remaining due balance: ₹" . number_format($newDue, 2);
             } else {
                 $error_msg = "No outstanding due balance found for this order.";
             }
@@ -98,6 +125,10 @@ $payment_filter = $_GET['payment_status'] ?? 'all';
 $status_filter  = $_GET['status'] ?? 'all';
 $period_filter  = $_GET['period'] ?? 'all';
 $search         = trim($_GET['search'] ?? '');
+
+$from_date = $_GET['from_date'] ?? '';
+$to_date   = $_GET['to_date'] ?? '';
+
 $page           = max(1, (int)($_GET['page'] ?? 1));
 $per_page       = 25;
 $offset         = ($page - 1) * $per_page;
@@ -107,20 +138,44 @@ $all_zones = $pdo->query("SELECT id, name, slug, status FROM zones ORDER BY name
 
 // Date condition
 $date_clauses = [];
-if ($period_filter === 'today') {
-    $date_clauses[] = "DATE(o.created_at) = CURDATE()";
-} elseif ($period_filter === 'week') {
-    $date_clauses[] = "o.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)";
-} elseif ($period_filter === 'month') {
-    $date_clauses[] = "o.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)";
+$date_params  = [];
+
+$validDate = function ($date) {
+    $d = DateTime::createFromFormat('!Y-m-d', $date);
+    return $d && $d->format('Y-m-d') === $date;
+};
+
+// Custom date range takes priority over preset periods
+if ($from_date !== '' || $to_date !== '') {
+
+    if ($from_date !== '' && $validDate($from_date)) {
+        $date_clauses[] = "o.created_at >= :from_date";
+        $date_params[':from_date'] = $from_date . ' 00:00:00';
+    }
+
+    if ($to_date !== '' && $validDate($to_date)) {
+        $date_clauses[] = "o.created_at <= :to_date";
+        $date_params[':to_date'] = $to_date . ' 23:59:59';
+    }
+
+} else {
+    if ($period_filter === 'today') {
+        $date_clauses[] = "o.created_at >= CURDATE()
+                           AND o.created_at < CURDATE() + INTERVAL 1 DAY";
+    } elseif ($period_filter === 'week') {
+        $date_clauses[] = "o.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)";
+    } elseif ($period_filter === 'month') {
+        $date_clauses[] = "o.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)";
+    }
 }
 
-// Build query conditions for orders table
+// Build query conditions
 $where_clauses = ["1=1"];
 $params = [];
 
 if (!empty($date_clauses)) {
     $where_clauses[] = implode(" AND ", $date_clauses);
+    $params = array_merge($params, $date_params);
 }
 
 // Zone filter
@@ -194,7 +249,7 @@ if (isset($_GET['export']) && in_array($_GET['export'], ['csv', 'excel'])) {
             r.due_amount as receipt_due,
             r.payment_type as receipt_pay_type,
             (SELECT COUNT(*) FROM order_items oi WHERE oi.order_id = o.order_id) AS items_count,
-            (SELECT GROUP_CONCAT(CONCAT(COALESCE(p2.product_name, p2.name), ' (', oi2.quantity, 'cs)') SEPARATOR ', ') 
+            (SELECT GROUP_CONCAT(CONCAT(COALESCE(p2.product_name, p2.name), ' (', oi2.quantity, 'cs', IF(oi2.is_extra = 1 OR oi2.price_at_purchase = 0, ' - Extra', ''), ')') SEPARATOR ', ') 
              FROM order_items oi2 
              JOIN products p2 ON oi2.product_id = p2.product_id 
              WHERE oi2.order_id = o.order_id) AS items_summary
@@ -291,7 +346,7 @@ if (isset($_GET['export']) && in_array($_GET['export'], ['csv', 'excel'])) {
             td { border: 1px solid #e2e8f0; padding: 6px 10px; }
             .col-due-hdr { background-color: #fee2e2 !important; color: #991b1b !important; font-weight: bold; }
             .col-due-cell { background-color: #fef2f2 !important; color: #b91c1c !important; font-weight: bold; }
-            .num { text-align: right; }
+            .num { text-align: center; }
         </style></head><body>';
         echo '<table border="1">';
         echo '<thead><tr>';
@@ -382,7 +437,17 @@ $zone_breakdown_sql = "
     GROUP BY z.id
     ORDER BY total_sales DESC, z.name ASC
 ";
-$zone_breakdown_stmt = $pdo->query($zone_breakdown_sql);
+$zone_breakdown_stmt = $pdo->prepare($zone_breakdown_sql);
+
+foreach ($date_params as $key => $value) {
+    $zone_breakdown_stmt->bindValue(
+        $key,
+        $value,
+        PDO::PARAM_STR
+    );
+}
+
+$zone_breakdown_stmt->execute();
 $zone_breakdowns = $zone_breakdown_stmt->fetchAll(PDO::FETCH_ASSOC);
 
 // All-Zones Master Aggregation
@@ -437,7 +502,7 @@ $orders_sql = "
         r.payment_type as receipt_pay_type,
         r.created_at as receipt_date,
         (SELECT COUNT(*) FROM order_items oi WHERE oi.order_id = o.order_id) AS items_count,
-        (SELECT GROUP_CONCAT(CONCAT(COALESCE(p2.product_name, p2.name), ' (', oi2.quantity, 'cs)') SEPARATOR ', ') 
+        (SELECT GROUP_CONCAT(CONCAT(COALESCE(p2.product_name, p2.name), ' (', oi2.quantity, 'cs', IF(oi2.is_extra = 1 OR oi2.price_at_purchase = 0, ' - Extra', ''), ')') SEPARATOR ', ') 
          FROM order_items oi2 
          JOIN products p2 ON oi2.product_id = p2.product_id 
          WHERE oi2.order_id = o.order_id) AS items_summary
@@ -1492,6 +1557,37 @@ $cleanBaseUrl = rtrim(BASE_URL, '/');
                             </select>
                         </div>
 
+                        <!-- Custom From Date -->
+<div class="form-group-filter">
+    <label class="form-label-filter" for="f_from_date">
+        From Date
+    </label>
+    <input
+        type="date"
+        name="from_date"
+        id="f_from_date"
+        class="input-filter"
+        value="<?= htmlspecialchars($from_date) ?>"
+        max="<?= date('Y-m-d') ?>"
+    >
+</div>
+
+<!-- Custom To Date -->
+<div class="form-group-filter">
+    <label class="form-label-filter" for="f_to_date">
+        To Date
+    </label>
+    <input
+        type="date"
+        name="to_date"
+        id="f_to_date"
+        class="input-filter"
+        value="<?= htmlspecialchars($to_date) ?>"
+        min="<?= htmlspecialchars($from_date) ?>"
+        max="<?= date('Y-m-d') ?>"
+    >
+</div>
+
                         <!-- Search input -->
                         <div class="form-group-filter">
                             <label class="form-label-filter" for="f_search">Search</label>
@@ -1513,6 +1609,8 @@ $cleanBaseUrl = rtrim(BASE_URL, '/');
                 <!-- ACTIVE FILTER CHIPS BAR (WHEN FILTERS ARE APPLIED) -->
                 <?php
                 $active_filters_list = [];
+
+                
                 if ($zone_filter !== 'all' && !empty($zone_filter)) {
                     $zoneDispName = !empty($selected_zone_obj['zone_name']) ? $selected_zone_obj['zone_name'] : ucfirst($zone_filter);
                     $active_filters_list[] = [
@@ -1557,6 +1655,13 @@ $cleanBaseUrl = rtrim(BASE_URL, '/');
                         'icon'       => 'bx-search'
                     ];
                 }
+                if ($from_date !== '' || $to_date !== '') {
+                    $active_filters_list[] = [
+                        'label'      => 'Date Range: ' . ($from_date ? htmlspecialchars($from_date) : 'Start') . ' to ' . ($to_date ? htmlspecialchars($to_date) : 'End'),
+                        'remove_url' => buildFilterUrl(['from_date' => null, 'to_date' => null]),
+                        'icon'       => 'bx-calendar'
+                    ];
+                }
                 ?>
 
                 <?php if (!empty($active_filters_list)): ?>
@@ -1598,10 +1703,10 @@ $cleanBaseUrl = rtrim(BASE_URL, '/');
                                     <th>Zone</th>
                                     <th>Customer / Shop</th>
                                     <th>Product &amp; Qty</th>
-                                    <th style="text-align: right;">Total Amount</th>
-                                    <th style="text-align: right;">Cash Paid</th>
-                                    <th style="text-align: right;">Credited</th>
-                                    <th class="col-due" style="text-align: right;">Due Balance</th>
+                                    <th style="text-align: center;">Total Amount</th>
+                                    <th style="text-align: center;">Cash Paid</th>
+                                    <th style="text-align: center;">Credited</th>
+                                    <th class="col-due" style="text-align: center;">Due Balance</th>
                                     <th>Delivery Status</th>
                                     <th>Actions</th>
                                 </tr>
@@ -1661,9 +1766,10 @@ $cleanBaseUrl = rtrim(BASE_URL, '/');
                                         <!-- Customer / Shop -->
                                         <td>
                                             <div style="font-weight: 700; color: #0f172a;"><?= $shop ?></div>
-                                            <div style="font-size: 12px; color: #64748b; margin-top: 2px;">
-                                                <i class='bx bx-map'></i> <?= htmlspecialchars($o['location'] ?: 'Area') ?>
-                                            </div>
+                                         <div style="font-size: 12px; color: #64748b; margin-top: 2px;">
+    <i class='bx bx-map'></i>
+    <?= nl2br(htmlspecialchars(wordwrap($o['location'] ?: 'Area', 30, "\n", true))) ?>
+</div>
                                             <?php if (!empty($phone)): ?>
                                                 <div style="display: flex; gap: 8px; margin-top: 4px; font-size: 12px;">
                                                     <a href="tel:<?= htmlspecialchars($phone) ?>" style="color: #2563eb; text-decoration: none; font-weight: 600;">
@@ -1703,7 +1809,7 @@ $cleanBaseUrl = rtrim(BASE_URL, '/');
                                         </td>
 
                                         <!-- Total Amount -->
-                                        <td style="text-align: right;">
+                                        <td style="text-align: center;">
                                             <?php if ($status === 'cancelled'): ?>
                                                 <div style="font-size: 15px; font-weight: 700; color: #94a3b8; text-decoration: line-through;">
                                                     <?= formatCurrency($totAmt) ?>
@@ -1720,7 +1826,7 @@ $cleanBaseUrl = rtrim(BASE_URL, '/');
                                         </td>
 
                                         <!-- Cash Paid -->
-                                        <td style="text-align: right;">
+                                        <td style="text-align: center;">
                                             <?php if ($status === 'cancelled'): ?>
                                                 <?php if ($cash > 0): ?>
                                                     <span style="color: #94a3b8; text-decoration: line-through; font-size: 12px;" title="Cancelled order — cash voided">
@@ -1740,7 +1846,7 @@ $cleanBaseUrl = rtrim(BASE_URL, '/');
                                         </td>
 
                                         <!-- Credited -->
-                                        <td style="text-align: right;">
+                                        <td style="text-align: center;">
                                             <?php if ($status === 'cancelled'): ?>
                                                 <?php if ($credit > 0): ?>
                                                     <span style="color: #94a3b8; text-decoration: line-through; font-size: 12px;" title="Cancelled order — credit voided">
@@ -1760,7 +1866,7 @@ $cleanBaseUrl = rtrim(BASE_URL, '/');
                                         </td>
 
                                         <!-- Due Balance -->
-                                        <td class="col-due" style="text-align: right;">
+                                        <td class="col-due" style="text-align: center;">
                                             <?php if ($status === 'cancelled'): ?>
                                                 <span style="color: #94a3b8; font-size: 11px;">Voided</span>
                                             <?php elseif ($due > 0): ?>
@@ -1769,14 +1875,9 @@ $cleanBaseUrl = rtrim(BASE_URL, '/');
                                                         <?= formatCurrency($due) ?>
                                                     </a>
                                                 </div>
-                                                <form action="index.php" method="POST" style="margin-top: 4px;" onsubmit="return confirm('Clear due balance of <?= formatCurrency($due) ?> for order <?= htmlspecialchars($ordNum) ?> via Cash?\n\nThis will transfer the due amount into Cash and add <?= formatCurrency($due) ?> directly to Delivered Sales.');">
-                                                    <input type="hidden" name="settle_due_balance" value="1">
-                                                    <input type="hidden" name="order_id" value="<?= $ordId ?>">
-                                                    <input type="hidden" name="settle_mode" value="cash">
-                                                    <button type="submit" class="btn-tbl" style="padding: 2px 6px; font-size: 11px; background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; cursor: pointer; border-radius: 4px; display: inline-flex; align-items: center; gap: 3px; font-weight: 700; white-space: nowrap;" title="Clear due and add to Delivered Sales">
-                                                        <i class='bx bx-check-circle'></i> Clear Due
-                                                    </button>
-                                                </form>
+                                                <button type="button" class="btn-tbl" onclick="openRevenueDueModal(<?= $ordId ?>, '<?= htmlspecialchars($ordNum, ENT_QUOTES) ?>', '<?= htmlspecialchars($shopName, ENT_QUOTES) ?>', <?= (float)$due ?>)" style="margin-top: 4px; padding: 2px 6px; font-size: 11px; background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; cursor: pointer; border-radius: 4px; display: inline-flex; align-items: center; gap: 3px; font-weight: 700; white-space: nowrap;" title="Custom Due Clearance">
+                                                    <i class='bx bx-check-circle'></i> Clear Due
+                                                </button>
                                             <?php elseif (!empty($billNum)): ?>
                                                 <span class="badge-settled">Settled (₹0)</span>
                                             <?php else: ?>
@@ -1819,14 +1920,9 @@ $cleanBaseUrl = rtrim(BASE_URL, '/');
                                                 <?php endif; ?>
 
                                                 <?php if ($due > 0): ?>
-                                                    <form action="index.php" method="POST" style="margin: 0; display: inline;" onsubmit="return confirm('Settle due balance of <?= formatCurrency($due) ?> via Cash?');">
-                                                        <input type="hidden" name="settle_due_balance" value="1">
-                                                        <input type="hidden" name="order_id" value="<?= $ordId ?>">
-                                                        <input type="hidden" name="settle_mode" value="cash">
-                                                        <button type="submit" class="btn-tbl" style="background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; cursor: pointer;" title="Settle Due (<?= formatCurrency($due) ?>)">
-                                                            <i class='bx bx-money'></i>
-                                                        </button>
-                                                    </form>
+                                                    <button type="button" class="btn-tbl" onclick="openRevenueDueModal(<?= $ordId ?>, '<?= htmlspecialchars($ordNum, ENT_QUOTES) ?>', '<?= htmlspecialchars($shopName, ENT_QUOTES) ?>', <?= (float)$due ?>)" style="background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; cursor: pointer;" title="Custom Due Clearance (<?= formatCurrency($due) ?>)">
+                                                        <i class='bx bx-money'></i>
+                                                    </button>
                                                 <?php endif; ?>
 
                                                 <a href="<?= $cleanBaseUrl ?>/<?= $zSlug ?>/order?id=<?= $ordId ?>" target="_blank" class="btn-tbl btn-tbl-view" title="Open in Zone Portal">
@@ -1896,7 +1992,107 @@ $cleanBaseUrl = rtrim(BASE_URL, '/');
         }
     });
 
+    let activeModalDueVal = 0;
 
+    function openRevenueDueModal(orderId, orderNum, shopName, dueAmount) {
+        activeModalDueVal = parseFloat(dueAmount) || 0;
+        document.getElementById('revModalOrderId').value = orderId;
+        document.getElementById('revModalSubtitle').textContent = 'Order #' + orderNum;
+        document.getElementById('revModalShopName').textContent = shopName || 'Customer';
+        document.getElementById('revModalDueDisplay').textContent = '₹' + activeModalDueVal.toFixed(2);
+        
+        const clearAmtInput = document.getElementById('revModalClearAmount');
+        clearAmtInput.value = activeModalDueVal.toFixed(2);
+        clearAmtInput.max = activeModalDueVal.toFixed(2);
+
+        const modal = document.getElementById('revenueDueModal');
+        modal.style.display = 'flex';
+    }
+
+    function closeRevenueDueModal() {
+        document.getElementById('revenueDueModal').style.display = 'none';
+    }
+
+    function setRevModalFullDue() {
+        document.getElementById('revModalClearAmount').value = activeModalDueVal.toFixed(2);
+    }
     </script>
+
+    <!-- Custom Due Clearance Modal Dialog -->
+    <div id="revenueDueModal" style="display: none; position: fixed; inset: 0; background: rgba(15, 23, 42, 0.6); backdrop-filter: blur(4px); z-index: 9999; align-items: center; justify-content: center; padding: 20px;">
+        <div style="background: #fff; border-radius: 14px; max-width: 480px; width: 100%; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25); border: 1px solid #e2e8f0; overflow: hidden;">
+            <div style="background: linear-gradient(135deg, #1e3a8a 0%, #1e40af 100%); color: #fff; padding: 16px 20px; display: flex; align-items: center; justify-content: space-between;">
+                <div>
+                    <h3 style="font-size: 16px; font-weight: 700; margin: 0; color: #fff; display: flex; align-items: center; gap: 6px;">
+                        <i class='bx bx-money-withdraw'></i> Custom Due Clearance
+                    </h3>
+                    <div style="font-size: 12px; color: #bfdbfe; margin-top: 2px;" id="revModalSubtitle">Order #...</div>
+                </div>
+                <button type="button" onclick="closeRevenueDueModal()" style="background: rgba(255,255,255,0.2); border: none; color: #fff; width: 28px; height: 28px; border-radius: 50%; cursor: pointer; font-size: 18px; display: flex; align-items: center; justify-content: center;">&times;</button>
+            </div>
+            <form action="index.php<?= !empty($_SERVER['QUERY_STRING']) ? '?' . htmlspecialchars($_SERVER['QUERY_STRING']) : '' ?>" method="POST" style="padding: 20px;" onsubmit="return confirm('Confirm clearing custom due amount?');">
+                <input type="hidden" name="settle_due_balance" value="1">
+                <input type="hidden" name="order_id" id="revModalOrderId" value="0">
+
+                <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 10px 14px; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <div style="font-size: 11px; text-transform: uppercase; color: #991b1b; font-weight: 700;">Customer / Shop</div>
+                        <div style="font-size: 13px; font-weight: 700; color: #0f172a;" id="revModalShopName">-</div>
+                    </div>
+                    <div style="text-align: right;">
+                        <div style="font-size: 11px; text-transform: uppercase; color: #991b1b; font-weight: 700;">Current Due</div>
+                        <div style="font-size: 16px; font-weight: 800; color: #dc2626;" id="revModalDueDisplay">₹0.00</div>
+                    </div>
+                </div>
+
+                <div style="margin-bottom: 12px;">
+                    <label style="display: block; font-size: 12px; font-weight: 700; color: #374151; margin-bottom: 4px;">
+                        Clearance Amount (₹) <span style="color: #ef4444;">*</span>
+                    </label>
+                    <div style="display: flex; gap: 8px;">
+                        <input type="number" step="0.01" min="0.01" name="clear_amount" id="revModalClearAmount" required style="flex: 1; padding: 8px 12px; border: 1.5px solid #d1d5db; border-radius: 8px; font-size: 14px; font-weight: 700; color: #0f172a;">
+                        <button type="button" onclick="setRevModalFullDue()" style="padding: 6px 12px; font-size: 12px; font-weight: 700; background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; border-radius: 8px; cursor: pointer; white-space: nowrap;">
+                            Full Due
+                        </button>
+                    </div>
+                </div>
+
+                <div style="margin-bottom: 12px;">
+                    <label style="display: block; font-size: 12px; font-weight: 700; color: #374151; margin-bottom: 4px;">
+                        Payment Mode <span style="color: #ef4444;">*</span>
+                    </label>
+                    <select name="settle_mode" id="revModalSettleMode" required style="width: 100%; padding: 8px 12px; border: 1.5px solid #d1d5db; border-radius: 8px; font-size: 13px; background: #fff;">
+                        <option value="cash" selected>💵 Cash Payment</option>
+                        <option value="upi">📱 UPI / Online Transfer</option>
+                        <option value="bank">🏦 Bank Transfer / NEFT / Cheque</option>
+                        <option value="credit">📑 Credit Adjustment</option>
+                    </select>
+                </div>
+
+                <div style="margin-bottom: 12px;">
+                    <label style="display: block; font-size: 12px; font-weight: 600; color: #374151; margin-bottom: 4px;">
+                        Transaction / Reference No. (Optional)
+                    </label>
+                    <input type="text" name="ref_no" placeholder="e.g. UPI-987654 / Chq-1234" style="width: 100%; padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 13px; box-sizing: border-box;">
+                </div>
+
+                <div style="margin-bottom: 18px;">
+                    <label style="display: block; font-size: 12px; font-weight: 600; color: #374151; margin-bottom: 4px;">
+                        Remarks / Settlement Notes (Optional)
+                    </label>
+                    <input type="text" name="clear_notes" placeholder="e.g. Cleared by shopkeeper" style="width: 100%; padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 13px; box-sizing: border-box;">
+                </div>
+
+                <div style="display: flex; gap: 10px; justify-content: flex-end;">
+                    <button type="button" onclick="closeRevenueDueModal()" style="padding: 8px 16px; background: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer;">
+                        Cancel
+                    </button>
+                    <button type="submit" style="padding: 8px 18px; background: #059669; color: #fff; border: none; border-radius: 8px; font-weight: 700; font-size: 13px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;">
+                        <i class='bx bx-check-shield'></i> Confirm Clearance
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
 </body>
 </html>

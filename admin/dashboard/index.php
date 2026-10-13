@@ -330,11 +330,7 @@ try {
                             Multi-Zone Order, Delivery & Financial Summary &bull; <strong><?= $period_label ?></strong>
                         </p>
                     </div>
-                    <div>
-                        <a href="../orders/create.php" class="btn-action btn-add noselect" style="text-decoration: none; padding: 0.5rem 1rem;">
-                            <span class="text">+ Add New Order</span>
-                        </a>
-                    </div>
+    
                 </div>
 
                 <!-- 1. DASHBOARD CARDS -->
@@ -414,9 +410,7 @@ try {
                             <div class="table-title" style="font-size: 17px; font-weight: 700; color: #0f172a;">
                                 <i class='bx bx-map-pin' style="color: #2563eb;"></i> Zone Financial Summary
                             </div>
-                            <div style="font-size: 13px; color: #64748b; margin-top: 2px;">
-                                Dynamic financial tracking across delivery zones &bull; <?= $period_label ?>
-                            </div>
+                           
                         </div>
                         <div>
                             <a href="../zones/index.php" style="font-size: 13px; color: #2563eb; text-decoration: none; font-weight: 500;">

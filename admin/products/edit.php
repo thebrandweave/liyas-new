@@ -192,11 +192,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_product'])) {
                         <div class="grid-2">
                             <div class="form-group">
                                 <label class="form-label" for="case_stock">Case Stocks (Available Cases) <span style="color: #ef4444;">*</span></label>
-                                <input type="number" min="0" name="case_stock" id="case_stock" class="form-control" required value="<?= htmlspecialchars($_POST['case_stock'] ?? ($product['case_stock'] ?: $product['stock'])) ?>">
+                                <input type="text" min="0" name="case_stock" id="case_stock" class="form-control" required value="<?= htmlspecialchars($_POST['case_stock'] ?? ($product['case_stock'] ?: $product['stock'])) ?>">
                             </div>
                             <div class="form-group">
                                 <label class="form-label" for="case_price">Case Price (₹) <span style="color: #ef4444;">*</span></label>
-                                <input type="number" step="0.01" min="0" name="case_price" id="case_price" class="form-control" required value="<?= htmlspecialchars($_POST['case_price'] ?? ($product['case_price'] ?: $product['price'])) ?>">
+                                <input type="text" step="0.01" min="0" name="case_price" id="case_price" class="form-control" required value="<?= htmlspecialchars($_POST['case_price'] ?? ($product['case_price'] ?: $product['price'])) ?>">
                             </div>
                         </div>
 

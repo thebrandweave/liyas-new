@@ -46,7 +46,11 @@ try {
             o.quantity,
             o.total_amount,
             o.created_at,
-            COALESCE(p.product_name, p.name, 'Drinking Water') AS product_name
+            COALESCE(p.product_name, p.name, 'Drinking Water') AS product_name,
+            (SELECT GROUP_CONCAT(CONCAT(COALESCE(p2.product_name, p2.name), ' (', oi2.quantity, 'cs', IF(oi2.is_extra = 1 OR oi2.price_at_purchase = 0, ' - Extra', ''), ')') SEPARATOR ', ') 
+             FROM order_items oi2 
+             JOIN products p2 ON oi2.product_id = p2.product_id 
+             WHERE oi2.order_id = o.order_id) AS items_summary
         FROM orders o
         LEFT JOIN products p ON o.product_id = p.product_id
         WHERE o.zone_id = ? AND o.is_zone_read = 0 AND o.status != 'cancelled'

@@ -32,15 +32,21 @@ function ensureWarehouseSchema(PDO $pdo): bool {
             } catch (Exception $e) {}
         }
 
-        // If both exist, check orders.zone_id as well
+        // If both exist, check orders.zone_id, orders.is_reorder, and vehicles table
         $hasZoneId = false;
+        $hasReorder = false;
+        $hasVehicles = false;
+        $hasVlProduct = false;
         if ($hasCaseStock) {
             try {
                 $hasZoneId = (bool)$pdo->query("SHOW COLUMNS FROM orders LIKE 'zone_id'")->fetchColumn();
+                $hasReorder = (bool)$pdo->query("SHOW COLUMNS FROM orders LIKE 'is_reorder'")->fetchColumn();
+                $hasVehicles = (bool)$pdo->query("SHOW TABLES LIKE 'vehicles'")->fetchColumn();
+                $hasVlProduct = (bool)$pdo->query("SHOW COLUMNS FROM vehicle_loads LIKE 'product_id'")->fetchColumn();
             } catch (Exception $e) {}
         }
 
-        if ($hasZones && $hasCaseStock && $hasZoneId) {
+        if ($hasZones && $hasCaseStock && $hasZoneId && $hasReorder && $hasVehicles && $hasVlProduct) {
             if (session_status() === PHP_SESSION_ACTIVE) {
                 $_SESSION['warehouse_schema_v2'] = true;
             }
@@ -168,6 +174,18 @@ function ensureWarehouseSchema(PDO $pdo): bool {
         if (!isset($orderColsMap['zone_read_at'])) {
             $orderAlters[] = "ADD COLUMN `zone_read_at` DATETIME NULL AFTER `is_zone_read`";
         }
+        if (!isset($orderColsMap['is_reorder'])) {
+            $orderAlters[] = "ADD COLUMN `is_reorder` TINYINT(1) NOT NULL DEFAULT 0 AFTER `zone_read_at`";
+        }
+        if (!isset($orderColsMap['parent_order_id'])) {
+            $orderAlters[] = "ADD COLUMN `parent_order_id` INT NULL AFTER `is_reorder`";
+        }
+        if (!isset($orderColsMap['vehicle_id'])) {
+            $orderAlters[] = "ADD COLUMN `vehicle_id` INT NULL AFTER `parent_order_id`";
+        }
+        if (!isset($orderColsMap['in_yard'])) {
+            $orderAlters[] = "ADD COLUMN `in_yard` TINYINT(1) NOT NULL DEFAULT 1 AFTER `vehicle_id`";
+        }
 
         if (!empty($orderAlters)) {
             $pdo->exec("ALTER TABLE `orders` " . implode(", ", $orderAlters));
@@ -256,6 +274,68 @@ function ensureWarehouseSchema(PDO $pdo): bool {
                 ('company_address', 'Website, Mangalore, Karnataka'),
                 ('zone_orders_access_code', 'ZONE2026');
         ");
+
+        // ============================================
+        // 8. VEHICLES TABLE
+        // ============================================
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS `vehicles` (
+                `id` INT AUTO_INCREMENT PRIMARY KEY,
+                `vehicle_number` VARCHAR(50) NOT NULL UNIQUE,
+                `vehicle_name` VARCHAR(100) NULL,
+                `driver_name` VARCHAR(100) NULL,
+                `driver_phone` VARCHAR(20) NULL,
+                `zone_id` INT NULL,
+                `status` ENUM('active', 'loading', 'dispatched', 'inactive') NOT NULL DEFAULT 'active',
+                `capacity_cases` INT NOT NULL DEFAULT 0,
+                `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                INDEX `idx_vehicles_zone` (`zone_id`),
+                INDEX `idx_vehicles_status` (`status`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+        ");
+
+        // Ensure persistent delivery and loading stats in vehicles
+        $vCols = $pdo->query("SHOW COLUMNS FROM `vehicles`")->fetchAll(PDO::FETCH_COLUMN);
+        $vColsMap = array_flip($vCols);
+        if (!isset($vColsMap['total_deliveries_done'])) {
+            $pdo->exec("ALTER TABLE `vehicles` ADD COLUMN `total_deliveries_done` INT NOT NULL DEFAULT 0 AFTER `capacity_cases`");
+        }
+        if (!isset($vColsMap['total_loads_delivered'])) {
+            $pdo->exec("ALTER TABLE `vehicles` ADD COLUMN `total_loads_delivered` INT NOT NULL DEFAULT 0 AFTER `total_deliveries_done`");
+        }
+
+        // ============================================
+        // 9. VEHICLE LOADS TABLE
+        // ============================================
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS `vehicle_loads` (
+                `id` INT AUTO_INCREMENT PRIMARY KEY,
+                `vehicle_id` INT NOT NULL,
+                `zone_id` INT NULL,
+                `order_id` INT NULL,
+                `cases_loaded` INT NOT NULL DEFAULT 0,
+                `shop_name` VARCHAR(255) NULL,
+                `is_active` TINYINT(1) NOT NULL DEFAULT 1,
+                `notes` VARCHAR(255) NULL,
+                `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                INDEX `idx_vl_vehicle` (`vehicle_id`),
+                INDEX `idx_vl_zone` (`zone_id`),
+                INDEX `idx_vl_order` (`order_id`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+        ");
+
+        $vlCols = $pdo->query("SHOW COLUMNS FROM `vehicle_loads`")->fetchAll(PDO::FETCH_COLUMN);
+        $vlColsMap = array_flip($vlCols);
+        if (!isset($vlColsMap['product_id'])) {
+            $pdo->exec("ALTER TABLE `vehicle_loads` ADD COLUMN `product_id` INT NULL AFTER `zone_id`");
+        }
+        if (!isset($vlColsMap['shop_name'])) {
+            $pdo->exec("ALTER TABLE `vehicle_loads` ADD COLUMN `shop_name` VARCHAR(255) NULL AFTER `cases_loaded`");
+        }
+        if (!isset($vlColsMap['is_active'])) {
+            $pdo->exec("ALTER TABLE `vehicle_loads` ADD COLUMN `is_active` TINYINT(1) NOT NULL DEFAULT 1 AFTER `shop_name`");
+        }
 
         if (session_status() === PHP_SESSION_ACTIVE) {
             $_SESSION['warehouse_schema_v2'] = true;

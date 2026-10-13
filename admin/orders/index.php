@@ -10,6 +10,7 @@ $page_title   = "Warehouse Orders";
 // Filters from request
 $status_filter = $_GET['filter'] ?? 'all';
 $zone_filter   = $_GET['zone'] ?? 'all';
+$shop_filter   = trim($_GET['shop'] ?? 'all');
 $search        = trim($_GET['search'] ?? '');
 $page          = max(1, (int)($_GET['page'] ?? 1));
 $per_page      = 25;
@@ -80,6 +81,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_status'])) {
 // Load zones for filter dropdown
 $zones_list = $pdo->query("SELECT id, name, slug FROM zones ORDER BY name ASC")->fetchAll(PDO::FETCH_ASSOC);
 
+// Load all active shops for dropdown
+$shops_list = getAllShopsList($pdo);
+
 // Build query
 $where_params = [];
 $where_clauses = [];
@@ -101,6 +105,11 @@ if ($zone_filter !== 'all' && !empty($zone_filter)) {
     }
 }
 
+if (!empty($shop_filter) && $shop_filter !== 'all') {
+    $where_clauses[] = "(TRIM(o.shop_name) = :shop_filter OR (COALESCE(TRIM(o.shop_name), '') = '' AND TRIM(o.customer_name) = :shop_filter))";
+    $where_params[':shop_filter'] = $shop_filter;
+}
+
 if (!empty($search)) {
     $where_clauses[] = "(
         o.shop_name LIKE :search 
@@ -112,6 +121,19 @@ if (!empty($search)) {
     )";
     $where_params[':search'] = "%$search%";
     $where_params[':order_id_search'] = is_numeric($search) ? (int)$search : -1;
+}
+
+// Calculate Shop Delivery Stats Summary if a shop is filtered or searched
+$shopSummary = null;
+if (!empty($shop_filter) && $shop_filter !== 'all') {
+    $shopSummary = getShopDeliveredCasesSummary($pdo, $shop_filter);
+} elseif (!empty($search)) {
+    foreach ($shops_list as $sh) {
+        if (strcasecmp($sh['shop_name'], $search) === 0) {
+            $shopSummary = getShopDeliveredCasesSummary($pdo, $sh['shop_name']);
+            break;
+        }
+    }
 }
 
 $where_sql = !empty($where_clauses) ? "WHERE " . implode(" AND ", $where_clauses) : "";
@@ -148,7 +170,7 @@ $orders_query = "
         u.name as web_user_name,
         r.bill_number,
         (SELECT COUNT(*) FROM order_items oi WHERE oi.order_id = o.order_id) AS items_count,
-        (SELECT GROUP_CONCAT(CONCAT(COALESCE(p2.product_name, p2.name), ' (', oi2.quantity, 'cs)') SEPARATOR ', ') 
+        (SELECT GROUP_CONCAT(CONCAT(COALESCE(p2.product_name, p2.name), ' (', oi2.quantity, 'cs', IF(oi2.is_extra = 1 OR oi2.price_at_purchase = 0, ' - Extra', ''), ')') SEPARATOR ', ') 
          FROM order_items oi2 
          JOIN products p2 ON oi2.product_id = p2.product_id 
          WHERE oi2.order_id = o.order_id) AS items_summary
@@ -214,10 +236,15 @@ function renderOrdersTbodyRows(array $orders, string $status_filter = 'all', str
             ?>
             <tr data-order-id="<?= (int)$order['order_id'] ?>">
                 <td>
-                    <div style="display: flex; align-items: center; gap: 4px;">
+                    <div style="display: flex; align-items: center; gap: 4px; flex-wrap: wrap;">
                         <a href="view.php?id=<?= (int)$order['order_id'] ?>" style="font-weight: 600; color: #2563eb; text-decoration: none;">
                             <?= htmlspecialchars($displayOrderNum) ?>
                         </a>
+                        <?php if ((int)($order['is_reorder'] ?? 0) === 1): ?>
+                            <span style="background: #eff6ff; color: #2563eb; border: 1px solid #bfdbfe; font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 4px; display: inline-flex; align-items: center; gap: 2px;" title="Reorder">
+                                🔁 Reorder
+                            </span>
+                        <?php endif; ?>
                         <?php if (!empty($order['zone_name'])): ?>
                             <?php if ((int)$order['is_zone_read'] === 1): ?>
                                 <i class='bx bx-check-double' id="zone-check-icon-<?= (int)$order['order_id'] ?>" style="color: #059669; font-size: 16px;" title="<?= !empty($order['zone_read_at']) ? 'Checked by ' . $zoneDisplay . ' on ' . date('d M, h:i A', strtotime($order['zone_read_at'])) : 'Checked by ' . $zoneDisplay ?>"></i>
@@ -236,11 +263,12 @@ function renderOrdersTbodyRows(array $orders, string $status_filter = 'all', str
                     <div style="font-weight: 600; color: #1e293b;">
                         <?= $shopName ?>
                     </div>
-                    <?php if (!empty($order['location'])): ?>
-                        <div style="font-size: 12px; color: #64748b;">
-                            <i class='bx bx-map-pin' style="font-size: 11px;"></i> <?= htmlspecialchars($order['location']) ?>
-                        </div>
-                    <?php endif; ?>
+                  <?php if (!empty($order['location'])): ?>
+    <div style="font-size: 12px; color: #64748b;">
+        <i class='bx bx-map-pin' style="font-size: 11px;"></i>
+        <?= nl2br(htmlspecialchars(wordwrap($order['location'], 30, "\n", true))) ?>
+    </div>
+<?php endif; ?>
                     <?php if (!empty($order['phone'])): ?>
                         <div style="font-size: 12px; color: #64748b;">
                             <i class='bx bx-phone' style="font-size: 11px;"></i> <?= htmlspecialchars($order['phone']) ?>
@@ -336,9 +364,12 @@ function renderOrdersTbodyRows(array $orders, string $status_filter = 'all', str
                     </div>
                 </td>
                 <td>
-                    <div style="display: flex; gap: 6px; align-items: center;">
+                    <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
                         <a href="view.php?id=<?= (int)$order['order_id'] ?>" class="btn-action" style="padding: 5px 8px; background: #f1f5f9; color: #334155; border-radius: 6px; text-decoration: none; font-size: 12px; display: inline-flex; align-items: center; gap: 3px;" title="View Order">
                             <i class='bx bx-show'></i> View
+                        </a>
+                        <a href="create.php?reorder_id=<?= (int)$order['order_id'] ?>" class="btn-action" style="padding: 5px 8px; background: #eff6ff; color: #2563eb; border-radius: 6px; text-decoration: none; font-size: 12px; display: inline-flex; align-items: center; gap: 3px; font-weight: 600;" title="Reorder for this Shop">
+                            <i class='bx bx-refresh'></i> Reorder
                         </a>
                         <a href="edit.php?id=<?= (int)$order['order_id'] ?>" class="btn-action" style="padding: 5px 8px; background: #e0f2fe; color: #0284c7; border-radius: 6px; text-decoration: none; font-size: 12px; display: inline-flex; align-items: center; gap: 3px;" title="Edit Order">
                             <i class='bx bx-edit'></i> Edit
@@ -356,15 +387,16 @@ function renderOrdersTbodyRows(array $orders, string $status_filter = 'all', str
 }
 
 // Helper to render pagination HTML
-function renderOrdersPagination(int $page, int $total_pages, string $status_filter = 'all', string $zone_filter = 'all', string $search = ''): string {
+function renderOrdersPagination(int $page, int $total_pages, string $status_filter = 'all', string $zone_filter = 'all', string $search = '', string $shop_filter = 'all'): string {
     if ($total_pages <= 1) {
         return '';
     }
+    $extraShop = (!empty($shop_filter) && $shop_filter !== 'all') ? ('&shop=' . urlencode($shop_filter)) : '';
     ob_start();
     ?>
     <div style="padding: 1.25rem; display: flex; justify-content: center; gap: 6px; border-top: 1px solid var(--border-light);">
         <?php for ($i = 1; $i <= $total_pages; $i++): ?>
-            <a href="index.php?page=<?= $i ?>&filter=<?= urlencode($status_filter) ?>&zone=<?= urlencode($zone_filter) ?>&search=<?= urlencode($search) ?>" 
+            <a href="index.php?page=<?= $i ?>&filter=<?= urlencode($status_filter) ?>&zone=<?= urlencode($zone_filter) ?>&search=<?= urlencode($search) ?><?= $extraShop ?>" 
                style="padding: 6px 12px; border-radius: 6px; text-decoration: none; font-size: 13px; font-weight: 500; <?= ($i === $page) ? 'background: #2563eb; color: #fff;' : 'background: #f1f5f9; color: #334155;' ?>">
                 <?= $i ?>
             </a>
@@ -391,7 +423,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
             'cancelled'  => (int)($counts_data['cancelled'] ?? 0),
         ],
         'tbody_html'         => renderOrdersTbodyRows($orders, $status_filter, $zone_filter),
-        'pagination_html'    => renderOrdersPagination($page, $total_pages, $status_filter, $zone_filter, $search),
+        'pagination_html'    => renderOrdersPagination($page, $total_pages, $status_filter, $zone_filter, $search, $shop_filter),
         'max_order_id'       => !empty($orders) ? (int)$orders[0]['order_id'] : 0,
     ]);
     exit;
@@ -646,11 +678,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
         <div class="main-content">
             <div class="header">
                 <div class="breadcrumb"><i class='bx bx-cart'></i> <span>Warehouse Orders</span></div>
-                <div class="header-actions">
-                    <a href="create.php" class="btn-action btn-add noselect" style="text-decoration: none; padding: 0.5rem 1rem;">
-                        <span class="text">+ Add Order</span>
-                    </a>
-                </div>
+           
             </div>
             
             <div class="content-area">
@@ -661,31 +689,31 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
                 <div class="filter-bar">
                     <!-- Status Filter Pills -->
                     <div class="status-pill-group">
-                        <a href="index.php?filter=all&zone=<?= urlencode($zone_filter) ?>&search=<?= urlencode($search) ?>" class="status-pill <?= ($status_filter === 'all') ? 'active' : '' ?>">
+                        <a href="index.php?filter=all&zone=<?= urlencode($zone_filter) ?>&shop=<?= urlencode($shop_filter) ?>&search=<?= urlencode($search) ?>" class="status-pill <?= ($status_filter === 'all') ? 'active' : '' ?>">
                             All Orders <span class="badge-count-pill" id="badge-count-all"><?= (int)($counts_data['total'] ?? 0) ?></span>
                         </a>
-                        <a href="index.php?filter=unchecked&zone=<?= urlencode($zone_filter) ?>&search=<?= urlencode($search) ?>" id="pill-unchecked" class="status-pill <?= ($status_filter === 'unchecked') ? 'active' : '' ?>" style="<?= ($unchecked_count > 0 && $status_filter !== 'unchecked') ? 'border: 1px solid #fde68a; background: #fffbeb; color: #b45309;' : '' ?>" title="Orders assigned to zones that have not yet been checked by delivery staff">
+                        <a href="index.php?filter=unchecked&zone=<?= urlencode($zone_filter) ?>&shop=<?= urlencode($shop_filter) ?>&search=<?= urlencode($search) ?>" id="pill-unchecked" class="status-pill <?= ($status_filter === 'unchecked') ? 'active' : '' ?>" style="<?= ($unchecked_count > 0 && $status_filter !== 'unchecked') ? 'border: 1px solid #fde68a; background: #fffbeb; color: #b45309;' : '' ?>" title="Orders assigned to zones that have not yet been checked by delivery staff">
                             <i class='bx bx-bell' style="font-size: 14px;"></i> Unchecked <span class="badge-count-pill" id="badge-count-unchecked" style="<?= ($unchecked_count > 0 && $status_filter !== 'unchecked') ? 'background: #d97706; color: #fff;' : '' ?>"><?= $unchecked_count ?></span>
                         </a>
-                        <a href="index.php?filter=pending&zone=<?= urlencode($zone_filter) ?>&search=<?= urlencode($search) ?>" class="status-pill <?= ($status_filter === 'pending') ? 'active' : '' ?>">
+                        <a href="index.php?filter=pending&zone=<?= urlencode($zone_filter) ?>&shop=<?= urlencode($shop_filter) ?>&search=<?= urlencode($search) ?>" class="status-pill <?= ($status_filter === 'pending') ? 'active' : '' ?>">
                             Pending <span class="badge-count-pill" id="badge-count-pending"><?= (int)($counts_data['pending'] ?? 0) ?></span>
                         </a>
-                        <a href="index.php?filter=processing&zone=<?= urlencode($zone_filter) ?>&search=<?= urlencode($search) ?>" class="status-pill <?= ($status_filter === 'processing') ? 'active' : '' ?>">
+                        <a href="index.php?filter=processing&zone=<?= urlencode($zone_filter) ?>&shop=<?= urlencode($shop_filter) ?>&search=<?= urlencode($search) ?>" class="status-pill <?= ($status_filter === 'processing') ? 'active' : '' ?>">
                             Processing <span class="badge-count-pill" id="badge-count-processing"><?= (int)($counts_data['processing'] ?? 0) ?></span>
                         </a>
-                        <a href="index.php?filter=shipped&zone=<?= urlencode($zone_filter) ?>&search=<?= urlencode($search) ?>" class="status-pill <?= ($status_filter === 'shipped') ? 'active' : '' ?>">
+                        <a href="index.php?filter=shipped&zone=<?= urlencode($zone_filter) ?>&shop=<?= urlencode($shop_filter) ?>&search=<?= urlencode($search) ?>" class="status-pill <?= ($status_filter === 'shipped') ? 'active' : '' ?>">
                             Shipped <span class="badge-count-pill" id="badge-count-shipped"><?= (int)($counts_data['shipped'] ?? 0) ?></span>
                         </a>
-                        <a href="index.php?filter=delivered&zone=<?= urlencode($zone_filter) ?>&search=<?= urlencode($search) ?>" class="status-pill <?= ($status_filter === 'delivered') ? 'active' : '' ?>">
+                        <a href="index.php?filter=delivered&zone=<?= urlencode($zone_filter) ?>&shop=<?= urlencode($shop_filter) ?>&search=<?= urlencode($search) ?>" class="status-pill <?= ($status_filter === 'delivered') ? 'active' : '' ?>">
                             Delivered <span class="badge-count-pill" id="badge-count-delivered"><?= (int)($counts_data['delivered'] ?? 0) ?></span>
                         </a>
-                        <a href="index.php?filter=cancelled&zone=<?= urlencode($zone_filter) ?>&search=<?= urlencode($search) ?>" class="status-pill <?= ($status_filter === 'cancelled') ? 'active' : '' ?>">
+                        <a href="index.php?filter=cancelled&zone=<?= urlencode($zone_filter) ?>&shop=<?= urlencode($shop_filter) ?>&search=<?= urlencode($search) ?>" class="status-pill <?= ($status_filter === 'cancelled') ? 'active' : '' ?>">
                             Cancelled <span class="badge-count-pill" id="badge-count-cancelled"><?= (int)($counts_data['cancelled'] ?? 0) ?></span>
                         </a>
                     </div>
 
-                    <!-- Zone Filter & Search -->
-                    <form action="index.php" method="GET" style="display: flex; gap: 8px; align-items: center;">
+                    <!-- Zone, Shop Filter & Search -->
+                    <form action="index.php" method="GET" style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
                         <input type="hidden" name="filter" value="<?= htmlspecialchars($status_filter) ?>">
                         
                         <select name="zone" class="zone-select-filter" onchange="this.form.submit()">
@@ -697,10 +725,61 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
                             <?php endforeach; ?>
                         </select>
 
-                        <input type="search" name="search" placeholder="Search orders..." value="<?= htmlspecialchars($search) ?>" class="form-input" style="width: 200px;">
+                        <select name="shop" class="zone-select-filter" onchange="this.form.submit()" style="max-width: 190px;">
+                            <option value="all" <?= ($shop_filter === 'all') ? 'selected' : '' ?>>All Shops</option>
+                            <?php foreach ($shops_list as $sh): ?>
+                                <option value="<?= htmlspecialchars($sh['shop_name']) ?>" <?= ($shop_filter === $sh['shop_name']) ? 'selected' : '' ?>>
+                                    <?= htmlspecialchars($sh['shop_name']) ?> (<?= (int)$sh['order_count'] ?>)
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+
+                        <input type="search" name="search" placeholder="Search orders..." value="<?= htmlspecialchars($search) ?>" class="form-input" style="width: 180px;">
                         <button type="submit" class="header-btn" style="padding: 0.5rem;"><i class='bx bx-search'></i></button>
+                        <?php if ($shop_filter !== 'all' || $zone_filter !== 'all' || !empty($search)): ?>
+                            <a href="index.php?filter=<?= urlencode($status_filter) ?>" class="header-btn" style="text-decoration: none; padding: 0.5rem 0.75rem; background: #f1f5f9; color: #64748b;" title="Reset filters">
+                                <i class='bx bx-x'></i> Reset
+                            </a>
+                        <?php endif; ?>
                     </form>
                 </div>
+
+                <!-- Shop Delivered Cases History Banner -->
+                <?php if (!empty($shopSummary) && !empty($shopSummary['shop_name'])): ?>
+                    <div class="shop-delivery-banner" style="background: linear-gradient(135deg, #1e3a8a 0%, #1e40af 100%); color: #fff; padding: 18px 22px; border-radius: 12px; margin-bottom: 1.5rem; box-shadow: 0 4px 15px rgba(30, 64, 175, 0.15); animation: fadeIn 0.3s ease;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 14px;">
+                            <div>
+                                <div style="display: flex; align-items: center; gap: 8px;">
+                                    <span style="font-size: 22px;">🏪</span>
+                                    <h3 style="font-size: 18px; font-weight: 700; margin: 0; color: #fff;"><?= htmlspecialchars($shopSummary['shop_name']) ?></h3>
+                                    <span style="background: rgba(255,255,255,0.2); padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 600;">Delivery History</span>
+                                </div>
+                                <div style="font-size: 12px; color: #bfdbfe; margin-top: 4px;">
+                                    Delivered Orders: <strong><?= $shopSummary['total_delivered_orders'] ?></strong> of <?= $shopSummary['total_all_orders'] ?> total orders
+                                    <?php if ($shopSummary['last_order_date']): ?> &bull; Last Order: <?= date('d M Y', strtotime($shopSummary['last_order_date'])) ?><?php endif; ?>
+                                    <?php if ($shopSummary['total_due'] > 0): ?> &bull; <span style="color: #fca5a5; font-weight: 700;">Outstanding Due: <?= formatCurrency($shopSummary['total_due']) ?></span><?php endif; ?>
+                                </div>
+                            </div>
+                            <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                                <div style="background: rgba(255,255,255,0.12); padding: 8px 14px; border-radius: 8px; text-align: center; min-width: 110px;">
+                                    <div style="font-size: 11px; text-transform: uppercase; color: #93c5fd; font-weight: 600;">Previous Orders</div>
+                                    <div style="font-size: 20px; font-weight: 800;"><?= number_format($shopSummary['previous_cases']) ?> <span style="font-size: 11px; font-weight: 500;">cases</span></div>
+                                    <div style="font-size: 10px; color: #bfdbfe;"><?= $shopSummary['previous_orders_count'] ?> initial order<?= $shopSummary['previous_orders_count'] === 1 ? '' : 's' ?></div>
+                                </div>
+                                <div style="background: rgba(255,255,255,0.12); padding: 8px 14px; border-radius: 8px; text-align: center; min-width: 110px;">
+                                    <div style="font-size: 11px; text-transform: uppercase; color: #a7f3d0; font-weight: 600;">🔁 Reorders</div>
+                                    <div style="font-size: 20px; font-weight: 800; color: #6ee7b7;"><?= number_format($shopSummary['reorder_cases']) ?> <span style="font-size: 11px; font-weight: 500;">cases</span></div>
+                                    <div style="font-size: 10px; color: #bfdbfe;"><?= $shopSummary['reorders_count'] ?> reorder<?= $shopSummary['reorders_count'] === 1 ? '' : 's' ?></div>
+                                </div>
+                                <div style="background: rgba(16, 185, 129, 0.3); border: 1.5px solid rgba(16, 185, 129, 0.5); padding: 8px 16px; border-radius: 8px; text-align: center; min-width: 130px;">
+                                    <div style="font-size: 11px; text-transform: uppercase; color: #a7f3d0; font-weight: 700;">Total Delivered</div>
+                                    <div style="font-size: 22px; font-weight: 800; color: #fff;"><?= number_format($shopSummary['total_cases']) ?> <span style="font-size: 12px; font-weight: 600;">Cases</span></div>
+                                    <div style="font-size: 10px; color: #d1fae5;">Previous + Reorders</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                <?php endif; ?>
 
                 <!-- Orders Table Card -->
                 <div class="table-card">

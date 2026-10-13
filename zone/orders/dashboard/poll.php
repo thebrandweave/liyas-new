@@ -96,22 +96,286 @@ try {
                 }
             }
 
+            // If delivered, auto-reset assigned vehicle while preserving lifetime delivery count
+            $vehicleReset = false;
+            if ($new_status === 'delivered') {
+                $vStmt = $pdo->prepare("SELECT vehicle_id FROM orders WHERE order_id = ?");
+                $vStmt->execute([$order_id]);
+                $currVehId = (int)$vStmt->fetchColumn();
+                if ($currVehId > 0) {
+                    $pdo->prepare("UPDATE vehicles SET total_deliveries_done = total_deliveries_done + 1 WHERE id = ?")->execute([$currVehId]);
+                    $pdo->prepare("UPDATE orders SET vehicle_id = NULL WHERE order_id = ?")->execute([$order_id]);
+                    $vehicleReset = true;
+                }
+            }
+
             // Return fresh metrics
             $freshMetrics = getLiveMetrics($pdo, $selectedZone);
 
             echo json_encode([
-                'success'     => true,
-                'order_id'    => $order_id,
-                'old_status'  => $old_status,
-                'new_status'  => $new_status,
-                'badge_class' => getStatusBadgeClass($new_status),
-                'message'     => "Order #{$order_id} status updated to " . ucfirst($new_status),
-                'metrics'     => $freshMetrics
+                'success'       => true,
+                'order_id'      => $order_id,
+                'old_status'    => $old_status,
+                'new_status'    => $new_status,
+                'badge_class'   => getStatusBadgeClass($new_status),
+                'vehicle_reset' => $vehicleReset,
+                'message'       => "Order #{$order_id} status updated to " . ucfirst($new_status),
+                'metrics'       => $freshMetrics
             ]);
             exit;
         }
         echo json_encode(['success' => false, 'error' => 'Invalid status or order ID.']);
         exit;
+    }
+
+    // ----------------------------------------------------
+    // Action 3b: Toggle In-Yard Status for Order
+    // ----------------------------------------------------
+    if ($action === 'toggle_in_yard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+        $order_id = (int)($_POST['order_id'] ?? 0);
+        if ($order_id <= 0) {
+            echo json_encode(['success' => false, 'error' => 'Invalid order ID.']);
+            exit;
+        }
+
+        $curStmt = $pdo->prepare("SELECT in_yard, vehicle_id FROM orders WHERE order_id = ?");
+        $curStmt->execute([$order_id]);
+        $row = $curStmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$row) {
+            echo json_encode(['success' => false, 'error' => 'Order not found.']);
+            exit;
+        }
+
+        $newInYard = ((int)$row['in_yard'] === 1) ? 0 : 1;
+        $pdo->prepare("UPDATE orders SET in_yard = ?, updated_at = NOW() WHERE order_id = ?")->execute([$newInYard, $order_id]);
+
+        // Synchronize vehicle status if vehicle is assigned
+        $vehId = (int)($row['vehicle_id'] ?? 0);
+        if ($vehId > 0) {
+            $newVehStatus = ($newInYard === 1) ? 'active' : 'dispatched';
+            $pdo->prepare("UPDATE vehicles SET status = ? WHERE id = ?")->execute([$newVehStatus, $vehId]);
+        }
+
+        echo json_encode([
+            'success'  => true,
+            'order_id' => $order_id,
+            'in_yard'  => $newInYard,
+            'label'    => ($newInYard === 1 ? 'In Yard' : 'Not in Yard')
+        ]);
+        exit;
+    }
+
+    // ----------------------------------------------------
+    // Action 3c: Add Products & Quantities for Order
+    // ----------------------------------------------------
+    if ($action === 'add_order_products' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+        $order_id = (int)($_POST['order_id'] ?? 0);
+        $raw_items = $_POST['items'] ?? [];
+
+        if ($order_id <= 0) {
+            echo json_encode(['success' => false, 'error' => 'Invalid order ID.']);
+            exit;
+        }
+
+        if (!is_array($raw_items) || empty($raw_items)) {
+            echo json_encode(['success' => false, 'error' => 'Please select at least one product with quantity of 1 or more.']);
+            exit;
+        }
+
+        $oStmt = $pdo->prepare("SELECT order_id, order_number, shop_name, customer_name, discount FROM orders WHERE order_id = ?");
+        $oStmt->execute([$order_id]);
+        $orderInfo = $oStmt->fetch(PDO::FETCH_ASSOC);
+        if (!$orderInfo) {
+            echo json_encode(['success' => false, 'error' => 'Order not found.']);
+            exit;
+        }
+
+        $parsed_items = [];
+        foreach ($raw_items as $it) {
+            $pid = (int)($it['product_id'] ?? 0);
+            $qty = (int)($it['quantity'] ?? 0);
+            $rate = (isset($it['rate']) && is_numeric($it['rate']) && (float)$it['rate'] >= 0) ? (float)$it['rate'] : null;
+            $is_extra = (!empty($it['is_extra']) && (string)$it['is_extra'] !== '0' && (string)$it['is_extra'] !== 'false') ? 1 : 0;
+
+            if ($pid > 0 && $qty > 0) {
+                // Key by product_id and is_extra so regular and extra items don't collide
+                $itemKey = $pid . '_' . $is_extra;
+                if (isset($parsed_items[$itemKey])) {
+                    $parsed_items[$itemKey]['quantity'] += $qty;
+                    if ($rate !== null) $parsed_items[$itemKey]['rate'] = $rate;
+                } else {
+                    $parsed_items[$itemKey] = [
+                        'product_id' => $pid,
+                        'quantity'   => $qty,
+                        'rate'       => $rate,
+                        'is_extra'   => $is_extra
+                    ];
+                }
+            }
+        }
+
+        if (empty($parsed_items)) {
+            echo json_encode(['success' => false, 'error' => 'Please select at least one valid product and quantity.']);
+            exit;
+        }
+
+        $pids = array_unique(array_column($parsed_items, 'product_id'));
+        $placeholders = implode(',', array_fill(0, count($pids), '?'));
+        $pStmt = $pdo->prepare("SELECT product_id, name, product_name, case_price, price, case_stock, stock FROM products WHERE product_id IN ($placeholders)");
+        $pStmt->execute(array_values($pids));
+        $dbProds = $pStmt->fetchAll(PDO::FETCH_ASSOC);
+        $dbProdsMap = [];
+        foreach ($dbProds as $dp) {
+            $dbProdsMap[(int)$dp['product_id']] = $dp;
+        }
+
+        // Validate that combined quantity across all rows (regular + extra) does not exceed available stock
+        $totalReqQty = [];
+        foreach ($parsed_items as $itemData) {
+            $p = $itemData['product_id'];
+            $totalReqQty[$p] = ($totalReqQty[$p] ?? 0) + $itemData['quantity'];
+        }
+        foreach ($totalReqQty as $p => $reqQty) {
+            if (!isset($dbProdsMap[$p])) continue;
+            $dp = $dbProdsMap[$p];
+            $pName = $dp['product_name'] ?: $dp['name'];
+            $availStock = max(0, (int)($dp['case_stock'] !== null ? $dp['case_stock'] : ($dp['stock'] ?? 0)));
+            if ($reqQty > $availStock) {
+                echo json_encode([
+                    'success' => false,
+                    'error'   => "Quantity for '{$pName}' ({$reqQty} cases) exceeds available stock of {$availStock} cases."
+                ]);
+                exit;
+            }
+        }
+
+        $base_total = 0.0;
+        $total_cases = 0;
+        $valid_order_items = [];
+
+        foreach ($parsed_items as $itemData) {
+            $pid = $itemData['product_id'];
+            if (!isset($dbProdsMap[$pid])) continue;
+            $dp = $dbProdsMap[$pid];
+            $pName = $dp['product_name'] ?: $dp['name'];
+            $defaultPrice = (float)($dp['case_price'] ?: $dp['price']);
+            $isExtra = (int)$itemData['is_extra'];
+            
+            if ($isExtra === 1) {
+                $price = 0.00;
+                $line_total = 0.00;
+            } else {
+                $price = ($itemData['rate'] !== null && (float)$itemData['rate'] > 0) ? (float)$itemData['rate'] : $defaultPrice;
+                $line_total = $price * $qty;
+                $base_total += $line_total;
+            }
+            $total_cases += $qty;
+
+            $valid_order_items[] = [
+                'product_id'        => $pid,
+                'quantity'          => $qty,
+                'price_at_purchase' => $price,
+                'is_extra'          => $isExtra,
+                'line_total'        => $line_total,
+                'name'              => $pName
+            ];
+        }
+
+        if (empty($valid_order_items)) {
+            echo json_encode(['success' => false, 'error' => 'Selected products could not be resolved.']);
+            exit;
+        }
+
+        $discount = (float)($orderInfo['discount'] ?? 0);
+        if ($discount > $base_total) $discount = $base_total;
+        $total_amount = max(0, $base_total - $discount);
+
+        try {
+            $pdo->beginTransaction();
+
+            $pdo->prepare("DELETE FROM order_items WHERE order_id = ?")->execute([$order_id]);
+
+            // Check if is_extra column exists in order_items table
+            $hasIsExtraCol = false;
+            try {
+                $chkCol = $pdo->query("SHOW COLUMNS FROM order_items LIKE 'is_extra'")->fetch();
+                if ($chkCol) $hasIsExtraCol = true;
+            } catch (Exception $e) {}
+
+            if ($hasIsExtraCol) {
+                $insItem = $pdo->prepare("
+                    INSERT INTO order_items (order_id, product_id, quantity, price_at_purchase, is_extra, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, NOW(), NOW())
+                ");
+                foreach ($valid_order_items as $voi) {
+                    $insItem->execute([
+                        $order_id,
+                        $voi['product_id'],
+                        $voi['quantity'],
+                        $voi['price_at_purchase'],
+                        $voi['is_extra']
+                    ]);
+                    adjustProductStock($pdo, $voi['product_id'], -$voi['quantity'], "Zone added products for order #{$order_id}");
+                }
+            } else {
+                $insItem = $pdo->prepare("
+                    INSERT INTO order_items (order_id, product_id, quantity, price_at_purchase, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, NOW(), NOW())
+                ");
+                foreach ($valid_order_items as $voi) {
+                    $insItem->execute([
+                        $order_id,
+                        $voi['product_id'],
+                        $voi['quantity'],
+                        $voi['price_at_purchase']
+                    ]);
+                    adjustProductStock($pdo, $voi['product_id'], -$voi['quantity'], "Zone added products for order #{$order_id}");
+                }
+            }
+
+            // Pick primary non-extra item if available
+            $primaryItem = $valid_order_items[0];
+            foreach ($valid_order_items as $voi) {
+                if (empty($voi['is_extra'])) {
+                    $primaryItem = $voi;
+                    break;
+                }
+            }
+            $primary_pid = $primaryItem['product_id'];
+            $primary_rate = $primaryItem['price_at_purchase'];
+
+            $upOrder = $pdo->prepare("
+                UPDATE orders 
+                SET product_id = ?, quantity = ?, unit_price = ?, total_amount = ?, updated_at = NOW() 
+                WHERE order_id = ?
+            ");
+            $upOrder->execute([$primary_pid, $total_cases, $primary_rate, $total_amount, $order_id]);
+
+            $pdo->commit();
+
+            $itemsSummaryArr = [];
+            foreach ($valid_order_items as $voi) {
+                $extraTag = !empty($voi['is_extra']) ? ' [Extra]' : '';
+                $itemsSummaryArr[] = "{$voi['name']} ({$voi['quantity']}cs{$extraTag})";
+            }
+            $itemsSummary = implode(', ', $itemsSummaryArr);
+
+            echo json_encode([
+                'success'       => true,
+                'order_id'      => $order_id,
+                'items_summary' => $itemsSummary,
+                'total_cases'   => $total_cases,
+                'total_amount'  => number_format($total_amount, 2, '.', ''),
+                'formatted_amt' => '₹' . number_format($total_amount, 2),
+                'message'       => "Products & quantities added successfully for Order #{$order_id}."
+            ]);
+            exit;
+        } catch (Exception $e) {
+            if ($pdo->inTransaction()) $pdo->rollBack();
+            echo json_encode(['success' => false, 'error' => 'Database error: ' . $e->getMessage()]);
+            exit;
+        }
     }
 
     // ----------------------------------------------------
@@ -160,6 +424,36 @@ try {
         $order['items'] = $items;
         $order['formatted_date'] = formatIST($order['created_at']);
         $order['badge_class'] = getStatusBadgeClass($order['status']);
+
+        // Fetch assigned vehicle & any remaining storage
+        $order['vehicle_number'] = '';
+        $order['vehicle_name'] = '';
+        $order['vehicle_storage'] = [];
+
+        $vId = (int)($order['vehicle_id'] ?? 0);
+        if ($vId <= 0) {
+            $vChk = $pdo->prepare("SELECT vehicle_id FROM vehicle_loads WHERE order_id = ? LIMIT 1");
+            $vChk->execute([$order_id]);
+            $vId = (int)$vChk->fetchColumn();
+        }
+
+        if ($vId > 0) {
+            $vStmt = $pdo->prepare("SELECT vehicle_number, vehicle_name FROM vehicles WHERE id = ?");
+            $vStmt->execute([$vId]);
+            $vehInfo = $vStmt->fetch(PDO::FETCH_ASSOC);
+            if ($vehInfo) {
+                $order['vehicle_number'] = $vehInfo['vehicle_number'];
+                $order['vehicle_name'] = $vehInfo['vehicle_name'];
+            }
+            $stStmt = $pdo->prepare("
+                SELECT vl.cases_loaded, COALESCE(p.product_name, p.name) as product_name 
+                FROM vehicle_loads vl
+                LEFT JOIN products p ON vl.product_id = p.product_id
+                WHERE vl.vehicle_id = ? AND vl.order_id = ? AND vl.is_active = 1
+            ");
+            $stStmt->execute([$vId, $order_id]);
+            $order['vehicle_storage'] = $stStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        }
 
         echo json_encode(['success' => true, 'order' => $order]);
         exit;

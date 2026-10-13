@@ -46,6 +46,7 @@ if (!$order) {
 // Check reward progress for shop
 $shopName = $order['shop_name'] ?: ($order['customer_name'] ?: 'Customer');
 $rewardInfo = getShopRewardInfo($pdo, $shopName);
+$shopDeliverySummary = getShopDeliveredCasesSummary($pdo, $shopName);
 
 // Update status if submitted
 $msg = '';
@@ -70,45 +71,72 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_status'])) {
     }
 }
 
-// Settle / Clear Due Balance
+// Custom Due Clearance with Inputs (Amount, Payment Mode, Ref No, Notes)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['settle_due_balance'])) {
-    $rStmt = $pdo->prepare("SELECT id, due_amount, cash_amount, credited_amount FROM receipts WHERE order_id = ?");
+    $rStmt = $pdo->prepare("SELECT id, due_amount, cash_amount, credited_amount, total_amount, payment_type FROM receipts WHERE order_id = ?");
     $rStmt->execute([$order_id]);
     $rec = $rStmt->fetch(PDO::FETCH_ASSOC);
 
     if ($rec && (float)$rec['due_amount'] > 0) {
-        $dueCleared = (float)$rec['due_amount'];
-        $settle_mode = $_POST['settle_mode'] ?? 'cash';
+        $currentDue = (float)$rec['due_amount'];
+        $inputAmount = isset($_POST['clear_amount']) && is_numeric($_POST['clear_amount']) ? (float)$_POST['clear_amount'] : $currentDue;
+        
+        // Validate amount between 0.01 and current outstanding due
+        $dueCleared = min($currentDue, max(0.01, $inputAmount));
+        $newDue = max(0, $currentDue - $dueCleared);
+        $settle_mode = trim($_POST['settle_mode'] ?? 'cash');
+        $ref_no = trim($_POST['ref_no'] ?? '');
+        $clear_notes = trim($_POST['clear_notes'] ?? '');
+
+        $auditNote = " | Due of ₹" . number_format($dueCleared, 2) . " settled via " . ucfirst($settle_mode);
+        if (!empty($ref_no)) { $auditNote .= " (Ref: {$ref_no})"; }
+        if (!empty($clear_notes)) { $auditNote .= " - Note: {$clear_notes}"; }
+        $auditNote .= " on " . date('d-m-Y H:i:s');
 
         if ($settle_mode === 'credit') {
             $upRec = $pdo->prepare("
                 UPDATE receipts 
-                SET credited_amount = credited_amount + due_amount,
-                    due_amount = 0,
+                SET credited_amount = credited_amount + ?,
+                    due_amount = ?,
                     payment_type = CASE WHEN cash_amount > 0 THEN 'Cash + Credited' ELSE 'Credited' END,
-                    notes = CONCAT(COALESCE(notes, ''), ' | Due of ₹{$dueCleared} settled via Credit on ', NOW())
+                    notes = CONCAT(COALESCE(notes, ''), ?)
                 WHERE id = ?
             ");
+            $upRec->execute([$dueCleared, $newDue, $auditNote, $rec['id']]);
         } else {
             $upRec = $pdo->prepare("
                 UPDATE receipts 
-                SET cash_amount = cash_amount + due_amount,
-                    due_amount = 0,
+                SET cash_amount = cash_amount + ?,
+                    due_amount = ?,
                     payment_type = CASE WHEN credited_amount > 0 THEN 'Cash + Credited' ELSE 'Cash' END,
-                    notes = CONCAT(COALESCE(notes, ''), ' | Due of ₹{$dueCleared} settled via Cash on ', NOW())
+                    notes = CONCAT(COALESCE(notes, ''), ?)
                 WHERE id = ?
             ");
+            $upRec->execute([$dueCleared, $newDue, $auditNote, $rec['id']]);
         }
-        $upRec->execute([$rec['id']]);
 
-        quickLog($pdo, 'settle_due', 'receipt', $rec['id'], "Cleared due balance of ₹{$dueCleared} for order #{$order_id}");
-        header("Location: view.php?id={$order_id}&due_cleared=1");
+        // Record in order_payments audit table
+        try {
+            $pPay = $pdo->prepare("
+                INSERT INTO order_payments (order_id, cash_amount, credited_amount, due_amount, payment_type, created_at)
+                VALUES (?, ?, ?, ?, ?, NOW())
+            ");
+            $pCash = ($settle_mode === 'credit') ? 0.00 : $dueCleared;
+            $pCredit = ($settle_mode === 'credit') ? $dueCleared : 0.00;
+            $pPayType = ($settle_mode === 'credit') ? 'credit' : 'cash';
+            $pPay->execute([$order_id, $pCash, $pCredit, $newDue, $pPayType]);
+        } catch (Exception $e) {}
+
+        quickLog($pdo, 'settle_due', 'receipt', $rec['id'], "Cleared ₹{$dueCleared} due for order #{$order_id} via {$settle_mode}. Remaining due: ₹{$newDue}");
+        header("Location: view.php?id={$order_id}&due_cleared=" . urlencode(number_format($dueCleared, 2)) . "&remaining=" . urlencode(number_format($newDue, 2)));
         exit;
     }
 }
 
 if (isset($_GET['due_cleared'])) {
-    $msg = "Outstanding due has been successfully cleared and added to Delivered Sales!";
+    $clearedVal = htmlspecialchars($_GET['due_cleared']);
+    $remVal = htmlspecialchars($_GET['remaining'] ?? '0.00');
+    $msg = "Outstanding due of ₹{$clearedVal} settled successfully! Remaining due balance: ₹{$remVal}.";
 }
 
 $displayOrderNum = $order['order_number'] ?: ('#' . $order['order_id']);
@@ -204,8 +232,16 @@ $baseAmount = $itemsBaseTotal;
                     <a href="index.php" style="color: inherit; text-decoration: none;">Orders</a>
                     <i class='bx bx-chevron-right'></i>
                     <span>Order <?= htmlspecialchars($displayOrderNum) ?></span>
+                    <?php if ((int)($order['is_reorder'] ?? 0) === 1): ?>
+                        <span style="background: #eff6ff; color: #2563eb; border: 1px solid #bfdbfe; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 4px; margin-left: 6px;">
+                            🔁 Reorder
+                        </span>
+                    <?php endif; ?>
                 </div>
-                <div class="header-actions" style="display: flex; gap: 8px;">
+                <div class="header-actions" style="display: flex; gap: 8px; flex-wrap: wrap;">
+                    <a href="create.php?reorder_id=<?= $order_id ?>" class="header-btn" style="text-decoration: none; background: #2563eb; color: #fff; font-weight: 600;">
+                        <i class='bx bx-refresh'></i> Place Reorder
+                    </a>
                     <a href="edit.php?id=<?= $order_id ?>" class="header-btn" style="text-decoration: none;">
                         <i class='bx bx-edit'></i> Edit Order
                     </a>
@@ -219,6 +255,37 @@ $baseAmount = $itemsBaseTotal;
                 <?php if (!empty($msg)): ?>
                     <div class="alert alert-success" style="padding: 12px 16px; background: #d1fae5; color: #065f46; border-radius: 8px; margin-bottom: 1.5rem;">
                         <?= htmlspecialchars($msg) ?>
+                    </div>
+                <?php endif; ?>
+
+                <!-- Shop Historical Delivery Cases Summary Banner -->
+                <?php if (!empty($shopDeliverySummary) && $shopDeliverySummary['shop_name'] !== ''): ?>
+                    <div style="background: linear-gradient(135deg, #1e3a8a 0%, #1e40af 100%); color: #fff; padding: 14px 20px; border-radius: 10px; margin-bottom: 1.5rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; box-shadow: 0 4px 12px rgba(30, 64, 175, 0.15);">
+                        <div>
+                            <div style="font-size: 13px; font-weight: 700; color: #93c5fd; text-transform: uppercase; letter-spacing: 0.03em; display: flex; align-items: center; gap: 6px;">
+                                <span>🏪</span> Shop Historical Delivery Cases (<?= htmlspecialchars($shopName) ?>)
+                            </div>
+                            <div style="font-size: 12px; color: #bfdbfe; margin-top: 3px;">
+                                Fulfilled Delivered Orders: <strong><?= (int)$shopDeliverySummary['total_delivered_orders'] ?></strong> of <?= (int)$shopDeliverySummary['total_all_orders'] ?> total orders
+                            </div>
+                        </div>
+                        <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                            <div style="background: rgba(255,255,255,0.12); padding: 6px 12px; border-radius: 6px; text-align: center; min-width: 95px;">
+                                <div style="font-size: 10px; text-transform: uppercase; color: #93c5fd; font-weight: 600;">Previous Orders</div>
+                                <div style="font-size: 16px; font-weight: 800;"><?= number_format($shopDeliverySummary['previous_cases']) ?> <span style="font-size: 10px;">cases</span></div>
+                                <div style="font-size: 9px; color: #bfdbfe;"><?= (int)$shopDeliverySummary['previous_orders_count'] ?> order(s)</div>
+                            </div>
+                            <div style="background: rgba(255,255,255,0.12); padding: 6px 12px; border-radius: 6px; text-align: center; min-width: 95px;">
+                                <div style="font-size: 10px; text-transform: uppercase; color: #a7f3d0; font-weight: 600;">🔁 Reorders</div>
+                                <div style="font-size: 16px; font-weight: 800; color: #6ee7b7;"><?= number_format($shopDeliverySummary['reorder_cases']) ?> <span style="font-size: 10px;">cases</span></div>
+                                <div style="font-size: 9px; color: #bfdbfe;"><?= (int)$shopDeliverySummary['reorders_count'] ?> reorder(s)</div>
+                            </div>
+                            <div style="background: rgba(16, 185, 129, 0.3); border: 1.5px solid rgba(16, 185, 129, 0.5); padding: 6px 14px; border-radius: 6px; text-align: center; min-width: 110px;">
+                                <div style="font-size: 10px; text-transform: uppercase; color: #a7f3d0; font-weight: 700;">Total Delivered</div>
+                                <div style="font-size: 18px; font-weight: 800; color: #fff;"><?= number_format($shopDeliverySummary['total_cases']) ?> <span style="font-size: 11px;">Cases</span></div>
+                                <div style="font-size: 9px; color: #d1fae5;">Previous + Reorders</div>
+                            </div>
+                        </div>
                     </div>
                 <?php endif; ?>
 
@@ -445,18 +512,56 @@ $baseAmount = $itemsBaseTotal;
                                 </div>
 
                                 <?php if ((float)$order['receipt_due'] > 0): ?>
-                                    <div style="margin-top: 12px; padding: 12px; background: #fef2f2; border: 1.5px solid #fecaca; border-radius: 8px;">
-                                        <div style="font-size: 12px; font-weight: 700; color: #991b1b; margin-bottom: 6px;">
-                                            <i class='bx bx-info-circle'></i> Pending Receivables: <?= formatCurrency($order['receipt_due']) ?>
+                                    <div style="margin-top: 14px; padding: 14px; background: #fef2f2; border: 1.5px solid #fecaca; border-radius: 10px;">
+                                        <div style="font-size: 13px; font-weight: 700; color: #991b1b; margin-bottom: 4px; display: flex; align-items: center; gap: 5px;">
+                                            <i class='bx bx-money-withdraw' style="font-size: 16px;"></i> Custom Due Clearance
                                         </div>
-                                        <div style="font-size: 11px; color: #64748b; margin-bottom: 8px;">
-                                            Once settled, this amount is added to Delivered Sales.
+                                        <div style="font-size: 11px; color: #64748b; margin-bottom: 12px;">
+                                            Current outstanding due: <strong style="color: #b91c1c;"><?= formatCurrency($order['receipt_due']) ?></strong>. Enter custom partial or full amount to clear.
                                         </div>
-                                        <form action="view.php?id=<?= $order_id ?>" method="POST" onsubmit="return confirm('Settle outstanding due of <?= formatCurrency($order['receipt_due']) ?> via Cash?');">
+                                        <form action="view.php?id=<?= $order_id ?>" method="POST" onsubmit="return confirm('Confirm clearing custom due amount?');">
                                             <input type="hidden" name="settle_due_balance" value="1">
-                                            <input type="hidden" name="settle_mode" value="cash">
-                                            <button type="submit" style="width: 100%; padding: 7px 12px; background: #059669; color: #fff; border: none; border-radius: 6px; font-weight: 700; font-size: 12px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;">
-                                                <i class='bx bx-check-shield'></i> Settle Due via Cash (+<?= formatCurrency($order['receipt_due']) ?>)
+                                            
+                                            <div style="margin-bottom: 8px;">
+                                                <label style="display: block; font-size: 11px; font-weight: 600; color: #374151; margin-bottom: 3px;">
+                                                    Amount to Clear (₹) <span style="color: #ef4444;">*</span>
+                                                </label>
+                                                <div style="display: flex; gap: 6px;">
+                                                    <input type="number" step="0.01" min="0.01" max="<?= (float)$order['receipt_due'] ?>" name="clear_amount" id="clear_amount" value="<?= number_format((float)$order['receipt_due'], 2, '.', '') ?>" required style="flex: 1; padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; font-weight: 700; color: #0f172a; box-sizing: border-box;">
+                                                    <button type="button" onclick="document.getElementById('clear_amount').value='<?= number_format((float)$order['receipt_due'], 2, '.', '') ?>'" style="padding: 4px 8px; font-size: 11px; font-weight: 600; background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; border-radius: 6px; cursor: pointer; white-space: nowrap;">
+                                                        Full Due
+                                                    </button>
+                                                </div>
+                                            </div>
+
+                                            <div style="margin-bottom: 8px;">
+                                                <label style="display: block; font-size: 11px; font-weight: 600; color: #374151; margin-bottom: 3px;">
+                                                    Payment Mode <span style="color: #ef4444;">*</span>
+                                                </label>
+                                                <select name="settle_mode" required style="width: 100%; padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 12px; background: #fff; box-sizing: border-box;">
+                                                    <option value="cash" selected>💵 Cash</option>
+                                                    <option value="upi">📱 UPI / Online Transfer</option>
+                                                    <option value="bank">🏦 Bank Transfer / Cheque</option>
+                                                    <option value="credit">📑 Credit Adjustment</option>
+                                                </select>
+                                            </div>
+
+                                            <div style="margin-bottom: 8px;">
+                                                <label style="display: block; font-size: 11px; font-weight: 600; color: #374151; margin-bottom: 3px;">
+                                                    Reference / Transaction No. (Optional)
+                                                </label>
+                                                <input type="text" name="ref_no" placeholder="e.g. UPI-123456 / Chq #890" style="width: 100%; padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 12px; box-sizing: border-box;">
+                                            </div>
+
+                                            <div style="margin-bottom: 12px;">
+                                                <label style="display: block; font-size: 11px; font-weight: 600; color: #374151; margin-bottom: 3px;">
+                                                    Settlement Notes / Remarks
+                                                </label>
+                                                <input type="text" name="clear_notes" placeholder="e.g. Cleared by shop owner" style="width: 100%; padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 12px; box-sizing: border-box;">
+                                            </div>
+
+                                            <button type="submit" style="width: 100%; padding: 8px 12px; background: #059669; color: #fff; border: none; border-radius: 6px; font-weight: 700; font-size: 12px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;">
+                                                <i class='bx bx-check-shield'></i> Confirm Due Clearance
                                             </button>
                                         </form>
                                     </div>

@@ -24,6 +24,7 @@ foreach ($allZones as $z) {
 $selectedZone = trim($_GET['zone'] ?? 'all');
 $filter = trim($_GET['filter'] ?? 'all');
 $search = trim($_GET['search'] ?? '');
+$shopFilter = trim($_GET['shop'] ?? '');
 $dateFilter = trim($_GET['date'] ?? 'all');
 
 // Build SQL conditions
@@ -67,7 +68,13 @@ if (!empty($search)) {
     $params[':search'] = "%{$search}%";
 }
 
-// 4. Date filter
+// 4. Shop filter
+if (!empty($shopFilter)) {
+    $whereClauses[] = "(TRIM(o.shop_name) = :shop_filter OR (COALESCE(TRIM(o.shop_name), '') = '' AND TRIM(o.customer_name) = :shop_filter))";
+    $params[':shop_filter'] = $shopFilter;
+}
+
+// 5. Date filter
 if ($dateFilter === 'today') {
     $whereClauses[] = "DATE(o.created_at) = CURDATE()";
 } elseif ($dateFilter === 'yesterday') {
@@ -80,7 +87,7 @@ if ($dateFilter === 'today') {
 
 $whereSql = implode(" AND ", $whereClauses);
 
-// Fetch all zone orders
+// Fetch all zone orders with vehicle details
 $ordersSql = "
     SELECT 
         o.*,
@@ -98,8 +105,10 @@ $ordersSql = "
         r.credited_amount AS receipt_credit,
         r.due_amount AS receipt_due,
         r.payment_type AS receipt_pay_type,
+        veh.vehicle_number AS assigned_vehicle_number,
+        veh.vehicle_name AS assigned_vehicle_name,
         (SELECT COUNT(*) FROM order_items oi WHERE oi.order_id = o.order_id) AS items_count,
-        (SELECT GROUP_CONCAT(CONCAT(COALESCE(p2.product_name, p2.name), ' (', oi2.quantity, 'cs)') SEPARATOR ', ') 
+        (SELECT GROUP_CONCAT(CONCAT(COALESCE(p2.product_name, p2.name), ' (', oi2.quantity, 'cs', IF(oi2.price_at_purchase = 0, ' - Extra', ''), ')') SEPARATOR ', ') 
          FROM order_items oi2 
          JOIN products p2 ON oi2.product_id = p2.product_id 
          WHERE oi2.order_id = o.order_id) AS items_summary
@@ -107,12 +116,31 @@ $ordersSql = "
     LEFT JOIN zones z ON o.zone_id = z.id
     LEFT JOIN products p ON o.product_id = p.product_id
     LEFT JOIN receipts r ON o.order_id = r.order_id
+    LEFT JOIN vehicles veh ON o.vehicle_id = veh.id
     WHERE {$whereSql}
     ORDER BY o.created_at DESC
 ";
 $stmtOrders = $pdo->prepare($ordersSql);
 $stmtOrders->execute($params);
 $orders = $stmtOrders->fetchAll(PDO::FETCH_ASSOC);
+
+// Shop delivery statistics summary for delivery breakdown
+$shopSummary = null;
+if (!empty($shopFilter)) {
+    $shopSummary = getShopDeliveredCasesSummary($pdo, $shopFilter);
+} elseif (!empty($search)) {
+    $shopSummary = getShopDeliveredCasesSummary($pdo, $search);
+}
+
+// Fetch all distinct shops for filter dropdown
+$allShopsList = getAllShopsList($pdo);
+
+// Fetch all active vehicles for assigning orders
+$allActiveVehicles = $pdo->query("SELECT id, vehicle_number, vehicle_name, driver_name FROM vehicles WHERE status != 'inactive' ORDER BY vehicle_number ASC")->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+// Fetch all active products for the Add Products modal
+$allProductsList = $pdo->query("SELECT product_id, name, product_name, case_price, price, case_stock, stock, net_content, net_content_unit FROM products WHERE status != 'inactive' OR status IS NULL ORDER BY case_price ASC, name ASC")->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
 
 // Fetch unread incoming orders for initial notification list
 $unreadStmt = $pdo->query("
@@ -896,7 +924,7 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
         }
 
         .status-select {
-            padding: 6px 10px;
+            padding: 6px 2px;
             border-radius: 8px;
             font-size: 12px;
             font-weight: 700;
@@ -960,6 +988,32 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
         .btn-card-primary:hover {
             background: #1d4ed8;
             color: #ffffff;
+        }
+
+        .btn-yard-toggle {
+            transition: all 0.2s ease;
+            font-size: 11px;
+            padding: 4px 9px;
+            cursor: pointer;
+        }
+        .btn-yard-toggle.yard-in {
+            background: #ecfdf5;
+            color: #065f46;
+            border-color: #a7f3d0;
+            font-weight: 700;
+        }
+        .btn-yard-toggle.yard-in:hover {
+            background: #d1fae5;
+        }
+        .btn-yard-toggle.yard-out {
+            background: #f8fafc;
+            color: #64748b;
+            border-color: #cbd5e1;
+            font-weight: 600;
+        }
+        .btn-yard-toggle.yard-out:hover {
+            background: #f1f5f9;
+            color: #0f172a;
         }
 
         /* Empty state */
@@ -1204,6 +1258,20 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
              
 
                
+                <button type="button" class="btn-header" onclick="openVehiclesSidebar('<?= htmlspecialchars($selectedZone) ?>')" style="color: #1e40af; background: #eff6ff; border-color: #bfdbfe; font-weight: 700;" title="Vehicles Loading Hub & Fleet">
+                    <i class='bx bxs-truck' style="color: #2563eb; font-size: 16px;"></i>
+                    <span>Vehicles</span>
+                </button>
+
+                <button type="button" class="btn-header" onclick="toggleRewardsSidebar(true)" style="color: #6b21a8; background: #faf5ff; border-color: #e9d5ff; font-weight: 700;" title="Shop Reward Status">
+                    <i class='bx bxs-gift' style="color: #7c3aed; font-size: 16px;"></i>
+                    <span>Rewards</span>
+                </button>
+
+                <a href="<?= BASE_URL ?>/admin/orders/create.php" class="btn-header" style="color: #047857; background: #ecfdf5; border-color: #a7f3d0; font-weight: 700;" title="Place New Order or Reorder">
+                    <i class='bx bx-plus-circle' style="color: #059669; font-size: 16px;"></i>
+                    <span> New Order</span>
+                </a>
 
                 <a href="<?= BASE_URL ?>/zone/orders/dashboard/products/" class="btn-header" title="Products & Inventory Management">
                     <i class='bx bx-cube'></i>
@@ -1358,10 +1426,20 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
                        class="chip-filter chip-due <?= ($filter === 'due') ? 'active' : '' ?>">Due</a>
                 </div>
 
-                <form action="" method="GET" class="search-form">
+                <form action="" method="GET" class="search-form" style="display: flex; gap: 8px; flex-wrap: wrap;">
                     <input type="hidden" name="zone" value="<?= htmlspecialchars($selectedZone) ?>">
                     <input type="hidden" name="filter" value="<?= htmlspecialchars($filter) ?>">
                     <input type="hidden" name="date" value="<?= htmlspecialchars($dateFilter) ?>">
+
+                    <select name="shop" class="search-input" style="max-width: 170px; cursor: pointer;" onchange="this.form.submit()">
+                        <option value="">-- Filter by Shop --</option>
+                        <?php foreach ($allShopsList as $sh): ?>
+                            <option value="<?= htmlspecialchars($sh['shop_name']) ?>" <?= ($shopFilter === $sh['shop_name']) ? 'selected' : '' ?>>
+                                <?= htmlspecialchars($sh['shop_name']) ?> (<?= $sh['order_count'] ?>)
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+
                     <div class="search-input-wrap">
                         <i class='bx bx-search'></i>
                         <input 
@@ -1373,14 +1451,88 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
                         >
                     </div>
                     <button type="submit" class="btn-search">Search</button>
-                    <?php if (!empty($search)): ?>
-                        <a href="?zone=<?= urlencode($selectedZone) ?>&filter=<?= urlencode($filter) ?>" class="btn-card-action" title="Clear Search">
+                    <?php if (!empty($search) || !empty($shopFilter)): ?>
+                        <a href="?zone=<?= urlencode($selectedZone) ?>&filter=<?= urlencode($filter) ?>" class="btn-card-action" title="Clear Search & Shop Filter">
                             <i class='bx bx-x'></i>
                         </a>
                     <?php endif; ?>
                 </form>
             </div>
         </section>
+
+        <!-- Shop Delivery Breakdown Banner (When filtered or searched) -->
+        <?php if ($shopSummary && ($shopSummary['total_all_orders'] > 0)): ?>
+            <div style="background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); color: #ffffff; border-radius: var(--radius-lg); padding: 18px 22px; margin-bottom: 24px; box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.25); border: 1px solid rgba(255, 255, 255, 0.1);">
+                <div style="display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 14px;">
+                    <div style="display: flex; align-items: center; gap: 12px;">
+                        <div style="width: 44px; height: 44px; background: rgba(37, 99, 235, 0.25); border: 1px solid rgba(96, 165, 250, 0.3); border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 22px; color: #60a5fa;">
+                            <i class='bx bx-store-alt'></i>
+                        </div>
+                        <div>
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <h3 style="font-size: 17px; font-weight: 800; color: #ffffff; margin: 0;"><?= htmlspecialchars($shopSummary['shop_name']) ?></h3>
+                                <span style="background: #2563eb; color: #ffffff; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 12px;">Delivery History</span>
+                            </div>
+                            <div style="font-size: 12px; color: #94a3b8; margin-top: 2px;">
+                                Total Orders: <strong><?= $shopSummary['total_all_orders'] ?></strong> (<?= $shopSummary['total_delivered_orders'] ?> Delivered) 
+                                <?= $shopSummary['last_order_date'] ? '• Last Order: ' . date('d M Y', strtotime($shopSummary['last_order_date'])) : '' ?>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <a href="<?= BASE_URL ?>/admin/orders/create.php?reorder_id=<?= !empty($orders[0]['order_id']) ? $orders[0]['order_id'] : '' ?>&shop_name=<?= urlencode($shopSummary['shop_name']) ?>" 
+                           class="btn-header" style="background: #2563eb; color: #ffffff; border: none; font-weight: 700; padding: 8px 16px;">
+                            <i class='bx bx-refresh'></i> Place Reorder
+                        </a>
+                        <button type="button" class="btn-header" onclick="openVehiclesSidebar('<?= htmlspecialchars($selectedZone) ?>')" style="background: rgba(255, 255, 255, 0.1); color: #60a5fa; border-color: rgba(96, 165, 250, 0.3);">
+                            <i class='bx bxs-truck'></i> Check Vehicle Load
+                        </button>
+                        <?php if (!empty($shopFilter) || !empty($search)): ?>
+                            <a href="?zone=<?= urlencode($selectedZone) ?>&filter=<?= urlencode($filter) ?>" 
+                               class="btn-header" style="background: rgba(255, 255, 255, 0.1); color: #e2e8f0; border-color: rgba(255, 255, 255, 0.2);" title="Clear Filter">
+                                <i class='bx bx-x'></i> Clear
+                            </a>
+                        <?php endif; ?>
+                    </div>
+                </div>
+
+                <!-- Cases Delivered Metric Grid: Previous vs Reorder vs Total -->
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; background: rgba(255, 255, 255, 0.06); padding: 14px 16px; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.08);">
+                    <div style="border-left: 3px solid #3b82f6; padding-left: 10px;">
+                        <div style="font-size: 11px; text-transform: uppercase; font-weight: 700; color: #93c5fd; letter-spacing: 0.04em;">Previous Order Cases</div>
+                        <div style="font-size: 22px; font-weight: 800; color: #ffffff; margin-top: 2px;">
+                            <?= number_format($shopSummary['previous_cases']) ?> <span style="font-size: 12px; font-weight: 500; color: #94a3b8;">Cases</span>
+                        </div>
+                        <div style="font-size: 11px; color: #94a3b8;"><?= $shopSummary['previous_orders_count'] ?> initial orders</div>
+                    </div>
+
+                    <div style="border-left: 3px solid #10b981; padding-left: 10px;">
+                        <div style="font-size: 11px; text-transform: uppercase; font-weight: 700; color: #6ee7b7; letter-spacing: 0.04em;">🔁 Reorder Cases</div>
+                        <div style="font-size: 22px; font-weight: 800; color: #ffffff; margin-top: 2px;">
+                            <?= number_format($shopSummary['reorder_cases']) ?> <span style="font-size: 12px; font-weight: 500; color: #94a3b8;">Cases</span>
+                        </div>
+                        <div style="font-size: 11px; color: #94a3b8;"><?= $shopSummary['reorders_count'] ?> reorders</div>
+                    </div>
+
+                    <div style="border-left: 3px solid #f59e0b; padding-left: 10px; background: rgba(245, 158, 11, 0.1); border-radius: 0 8px 8px 0;">
+                        <div style="font-size: 11px; text-transform: uppercase; font-weight: 800; color: #fde68a; letter-spacing: 0.04em;">Total Cases Delivered</div>
+                        <div style="font-size: 24px; font-weight: 900; color: #fbbf24; margin-top: 2px;">
+                            <?= number_format($shopSummary['total_cases']) ?> <span style="font-size: 12px; font-weight: 600; color: #fde68a;">Cases</span>
+                        </div>
+                        <div style="font-size: 11px; color: #e2e8f0;">Lifetime fulfillment</div>
+                    </div>
+
+                    <div style="border-left: 3px solid #ef4444; padding-left: 10px;">
+                        <div style="font-size: 11px; text-transform: uppercase; font-weight: 700; color: #fca5a5; letter-spacing: 0.04em;">Outstanding Due</div>
+                        <div style="font-size: 22px; font-weight: 800; color: <?= $shopSummary['total_due'] > 0 ? '#f87171' : '#ffffff' ?>; margin-top: 2px;">
+                            ₹<?= number_format($shopSummary['total_due'], 2) ?>
+                        </div>
+                        <div style="font-size: 11px; color: #94a3b8;">Total Rev: ₹<?= number_format($shopSummary['total_amount'], 2) ?></div>
+                    </div>
+                </div>
+            </div>
+        <?php endif; ?>
 
         <!-- Orders Stream & Cards Feed -->
         <section class="orders-feed" id="ordersFeed">
@@ -1401,6 +1553,7 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
                     $zColor = getZoneColorConfig($zoneSlug);
                     $totalAmt = (float)$order['total_amount'];
                     $badgeClass = getStatusBadgeClass($order['status']);
+                    $hasNoProducts = ((int)($order['items_count'] ?? 0) === 0 && (empty($order['product_id']) || (int)$order['quantity'] === 0));
                     $itemsText = !empty($order['items_summary']) ? $order['items_summary'] : ($order['product_name'] ?: 'Drinking Water');
                     $waLink = getZoneWhatsAppLink($order['phone'], $shopName, $orderNum, $totalAmt, $zoneName);
                 ?>
@@ -1414,6 +1567,14 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
                                         <span class="zone-dot" style="background: <?= $zColor['dot'] ?>;"></span>
                                         <?= htmlspecialchars($zoneName) ?>
                                     </span>
+                                    <?php if (!empty($order['is_reorder'])): ?>
+                                        <span style="background: #eff6ff; color: #2563eb; border: 1px solid #bfdbfe; font-size: 10px; font-weight: 800; padding: 2px 7px; border-radius: 6px; letter-spacing: 0.02em;">🔁 REORDER</span>
+                                    <?php endif; ?>
+                                    <?php if (!empty($order['assigned_vehicle_number'])): ?>
+                                        <span style="background: #0f172a; color: #ffffff; font-size: 10px; font-weight: 800; padding: 2px 7px; border-radius: 6px; display: inline-flex; align-items: center; gap: 3px;" title="Assigned Delivery Vehicle">
+                                            <i class='bx bxs-truck' style="color: #60a5fa;"></i> <?= htmlspecialchars($order['assigned_vehicle_number']) ?>
+                                        </span>
+                                    <?php endif; ?>
                                     <?php if ($isUnread): ?>
                                         <span class="badge-unread" id="unreadBadge_<?= $orderId ?>">NEW</span>
                                     <?php endif; ?>
@@ -1456,19 +1617,33 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
                         </div>
 
                         <!-- Ordered Items Breakdown -->
-                        <div class="items-summary-box">
-                            <div>
-                                <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: #64748b; font-weight: 700;">Items</div>
-                                <div class="items-desc"><?= htmlspecialchars($itemsText) ?></div>
-                            </div>
-                            <div style="text-align: right;">
-                                <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: #64748b; font-weight: 700;">Total</div>
-                                <div class="order-total-amount">₹<?= number_format($totalAmt, 2) ?></div>
-                            </div>
+                        <div class="items-summary-box" id="itemsSummaryBox_<?= $orderId ?>">
+                            <?php if ($hasNoProducts): ?>
+                                <div>
+                                    <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: #b45309; font-weight: 700;">Items</div>
+                                    <div class="items-desc" style="color: #b45309; font-weight: 600; display: flex; align-items: center; gap: 4px;">
+                                        <i class='bx bx-error-circle'></i> No products &amp; quantities added
+                                    </div>
+                                </div>
+                                <div style="text-align: right;">
+                                    <button type="button" class="btn-card-action" style="background: #059669; color: #ffffff; border-color: #059669; font-weight: 700; padding: 4px 10px; font-size: 12px;" onclick="openAddOrderProductsModal(<?= $orderId ?>, '<?= htmlspecialchars(addslashes($orderNum)) ?>', '<?= htmlspecialchars(addslashes($shopName)) ?>')">
+                                        <i class='bx bx-plus-circle'></i> Add Products
+                                    </button>
+                                </div>
+                            <?php else: ?>
+                                <div>
+                                    <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: #64748b; font-weight: 700;">Items</div>
+                                    <div class="items-desc"><?= htmlspecialchars($itemsText) ?></div>
+                                </div>
+                                <div style="text-align: right;">
+                                    <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: #64748b; font-weight: 700;">Total</div>
+                                    <div class="order-total-amount">₹<?= number_format($totalAmt, 2) ?></div>
+                                </div>
+                            <?php endif; ?>
                         </div>
 
                         <!-- Card Action Buttons -->
-                        <div class="card-actions-row">
+                        <div class="card-actions-row" style="flex-wrap: wrap; gap: 8px;">
                             <!-- Quick Status Update Dropdown -->
                             <select class="status-select" onchange="updateOrderStatus(<?= $orderId ?>, this.value, this)">
                                 <option value="pending" <?= ($order['status'] === 'pending') ? 'selected' : '' ?>>Pending</option>
@@ -1478,7 +1653,39 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
                                 <option value="cancelled" <?= ($order['status'] === 'cancelled') ? 'selected' : '' ?>>Cancelled</option>
                             </select>
 
-                            <div style="display: flex; gap: 6px;">
+                            <!-- Quick Vehicle Assignment Selector -->
+                            <select class="status-select order-vehicle-select" id="orderVehSelect_<?= $orderId ?>" style="max-width: 135px; font-size: 11px; border-color: #cbd5e1;" onchange="assignOrderToVehicleFromCard(<?= $orderId ?>, this.value)" title="Assign to Vehicle">
+                                <option value="">🚚 Assign Vehicle</option>
+                                <?php foreach ($allActiveVehicles as $veh): ?>
+                                    <option value="<?= $veh['id'] ?>" <?= ($order['status'] !== 'delivered' && (int)($order['vehicle_id'] ?? 0) === (int)$veh['id']) ? 'selected' : '' ?>>
+                                        <?= htmlspecialchars($veh['vehicle_number']) ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+
+                            <!-- In Yard Check / Uncheck Toggle Button -->
+                            <?php $isInYard = !empty($order['in_yard']); ?>
+                            <button type="button" 
+                                    class="btn-card-action btn-yard-toggle <?= $isInYard ? 'yard-in' : 'yard-out' ?>" 
+                                    id="btnInYard_<?= $orderId ?>" 
+                                    onclick="toggleOrderInYard(<?= $orderId ?>, this)" 
+                                    title="Check/Uncheck whether order is in yard">
+                                <i class='bx <?= $isInYard ? 'bx-checkbox-checked' : 'bx-checkbox' ?>'></i>
+                                <span class="yard-text"><?= $isInYard ? 'In Yard' : 'Not in Yard' ?></span>
+                            </button>
+
+                            <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                                <!-- <?php if ($hasNoProducts): ?>
+                                    <button type="button" class="btn-card-action" style="background: #ecfdf5; color: #047857; border-color: #a7f3d0; font-weight: 700;" onclick="openAddOrderProductsModal(<?= $orderId ?>, '<?= htmlspecialchars(addslashes($orderNum)) ?>', '<?= htmlspecialchars(addslashes($shopName)) ?>')" title="Add Products & Quantities">
+                                        <i class='bx bx-plus-circle'></i> Add Products
+                                    </button>
+                                <?php endif; ?> -->
+<!-- 
+                                <a href="<?= BASE_URL ?>/admin/orders/create.php?reorder_id=<?= $orderId ?>" 
+                                   class="btn-card-action" style="color: #2563eb; background: #eff6ff; border-color: #bfdbfe; font-weight: 700;" title="Place Reorder for this Shop">
+                                    <i class='bx bx-refresh'></i> Reorder
+                                </a> -->
+
                                 <button type="button" class="btn-card-action" onclick="viewOrderModal(<?= $orderId ?>)" title="View Order Details">
                                     <i class='bx bx-show'></i> Details
                                 </button>
@@ -1525,6 +1732,64 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
                 <div style="text-align: center; padding: 40px 0;">
                     <i class='bx bx-loader-alt bx-spin' style="font-size: 32px; color: #2563eb;"></i>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Products to Order Modal (when created without products) -->
+    <div class="modal-backdrop" id="modalAddOrderProductsBackdrop" style="z-index: 1050;">
+        <div class="modal-box" style="max-width: 700px; width: 95%;">
+            <div class="modal-header" style="border-bottom: 1px solid #e2e8f0; padding-bottom: 14px;">
+                <div>
+                    <h3 style="font-size: 18px; font-weight: 800; color: #0f172a; margin: 0; display: flex; align-items: center; gap: 8px;">
+                        <i class='bx bx-cart-add' style="color: #059669; font-size: 22px;"></i>
+                        <span id="aopModalTitle">Add Products &amp; Quantities</span>
+                    </h3>
+                    <div style="font-size: 12px; color: #64748b; margin-top: 2px;" id="aopModalSubtitle">Specify products for this order</div>
+                </div>
+                <button type="button" class="modal-close" onclick="closeAddOrderProductsModal()">&times;</button>
+            </div>
+            <div style="padding: 18px 0 0 0;">
+                <form id="formAddOrderProducts" onsubmit="event.preventDefault(); submitAddOrderProducts();">
+                    <input type="hidden" id="aopOrderId" name="order_id" value="">
+                    
+                    <div style="margin-bottom: 14px; max-height: 280px; overflow-y: auto;">
+                        <table style="width: 100%; border-collapse: collapse;">
+                            <thead>
+                                <tr style="border-bottom: 2px solid #e2e8f0; text-align: left; font-size: 11px; text-transform: uppercase; color: #64748b; font-weight: 700;">
+                                    <th style="padding: 6px 8px;">Product</th>
+                                    <th style="padding: 6px 8px; width: 95px;">Rate (₹)</th>
+                                    <th style="padding: 6px 8px; width: 95px;">Qty (cs)</th>
+                                    <th style="padding: 6px 8px; width: 90px; text-align: center;">Extra Cases</th>
+                                    <th style="padding: 6px 8px; width: 95px; text-align: right;">Total</th>
+                                    <th style="padding: 6px 4px; width: 36px;"></th>
+                                </tr>
+                            </thead>
+                            <tbody id="aopItemsTableBody">
+                                <!-- Dynamic product rows -->
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; padding-top: 10px; border-top: 1px dashed #cbd5e1;">
+                        <button type="button" class="btn-card-action" onclick="addAopRow()" style="font-size: 12px; font-weight: 700; color: #2563eb; background: #eff6ff; border-color: #bfdbfe;">
+                            <i class='bx bx-plus'></i> Add Another Product
+                        </button>
+                        <div style="text-align: right;">
+                            <span style="font-size: 12px; color: #64748b; font-weight: 600;">Total Order Amount: </span>
+                            <span id="aopGrandTotal" style="font-size: 18px; font-weight: 800; color: #059669;">₹0.00</span>
+                        </div>
+                    </div>
+
+                    <div id="aopErrorMsg" style="display: none; padding: 10px 14px; background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; color: #b91c1c; font-size: 13px; margin-bottom: 14px;"></div>
+
+                    <div style="display: flex; justify-content: flex-end; gap: 10px;">
+                        <button type="button" class="btn-card-action" onclick="closeAddOrderProductsModal()" style="padding: 8px 18px;">Cancel</button>
+                        <button type="submit" id="btnAopSubmit" class="btn-card-action btn-card-primary" style="padding: 8px 22px; font-weight: 700; background: #059669; border-color: #059669;">
+                            <i class='bx bx-check-circle'></i> Save &amp; Update Order
+                        </button>
+                    </div>
+                </form>
             </div>
         </div>
     </div>
@@ -1635,9 +1900,11 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
             function pollOrders() {
                 if (isRefreshing) return;
 
-                // Check if order details modal is currently open
+                // Check if either modal is currently open
                 const modalBackdrop = document.getElementById('orderModalBackdrop');
-                const isModalOpen = modalBackdrop && modalBackdrop.classList.contains('open');
+                const aopModalBackdrop = document.getElementById('modalAddOrderProductsBackdrop');
+                const isModalOpen = (modalBackdrop && modalBackdrop.classList.contains('open')) ||
+                                    (aopModalBackdrop && aopModalBackdrop.classList.contains('open'));
 
                 // Check if user is actively interacting with an input or select
                 const activeEl = document.activeElement;
@@ -1778,6 +2045,12 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
                             const unread = document.getElementById('unreadBadge_' + orderId);
                             if (unread) unread.remove();
 
+                            // Auto reset vehicle selection dropdown if status is delivered
+                            if (newStatus === 'delivered' || res.vehicle_reset) {
+                                const vs = document.getElementById('orderVehSelect_' + orderId);
+                                if (vs) vs.value = '';
+                            }
+
                             showToast('Status Updated', res.message);
                             setTimeout(pollOrders, 300);
                         } else {
@@ -1862,12 +2135,19 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
                             o.items.forEach(it => {
                                 const pName = it.product_name || it.name || 'Drinking Water';
                                 const q = it.quantity || 1;
+                                const isExtra = parseInt(it.is_extra || 0) === 1;
                                 const rate = parseFloat(it.price_at_purchase || 0).toFixed(2);
                                 const lTot = parseFloat(it.line_total || 0).toFixed(2);
+                                const extraBadge = isExtra 
+                                    ? `<span style="font-size:10px; color:#059669; font-weight:800; background:#dcfce7; border:1px solid #bbf7d0; padding:1px 5px; border-radius:4px; margin-left:4px;">EXTRA</span>`
+                                    : '';
+                                const rateText = isExtra 
+                                    ? '<span style="color:#059669; font-weight:700;"></span>' 
+                                    : `₹${lTot} <span style="color:#64748b; font-size:11px;">(@ ₹${rate})</span>`;
                                 itemsHtml += `
                                     <div style="display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid #f1f5f9; font-size:13px;">
-                                        <div><strong>${pName}</strong> &times; ${q} Cases</div>
-                                        <div>₹${lTot} <span style="color:#64748b; font-size:11px;">(@ ₹${rate})</span></div>
+                                        <div><strong>${pName}</strong> &times; ${q} Cases ${extraBadge}</div>
+                                        <div>${rateText}</div>
                                     </div>
                                 `;
                             });
@@ -1894,6 +2174,20 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
                                     ${itemsHtml}
                                 </div>
 
+                                ${o.vehicle_number ? `
+                                    <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:10px 14px; margin-bottom:16px;">
+                                        <div style="font-size:12px; font-weight:700; color:#334155; display:flex; align-items:center; gap:6px;">
+                                            <i class='bx bxs-truck' style="color:#2563eb;"></i> Assigned Vehicle: <strong>${o.vehicle_number}</strong> ${o.vehicle_name ? '(' + o.vehicle_name + ')' : ''}
+                                        </div>
+                                        ${Array.isArray(o.vehicle_storage) && o.vehicle_storage.length > 0 ? `
+                                            <div style="margin-top:6px; font-size:12px; color:#b45309; background:#fef3c7; border:1px solid #fde68a; padding:6px 10px; border-radius:6px;">
+                                                <i class='bx bx-archive'></i> <strong>In Vehicle Storage:</strong>
+                                                ${o.vehicle_storage.map(s => s.product_name + ' (' + s.cases_loaded + ' cs)').join(', ')}
+                                            </div>
+                                        ` : ''}
+                                    </div>
+                                ` : ''}
+
                                 ${o.bill_number ? `
                                     <div style="background:#ecfdf5; border:1px solid #a7f3d0; border-radius:10px; padding:10px 14px; margin-bottom:16px; font-size:13px; color:#065f46;">
                                         <strong>Receipt Generated:</strong> Bill #${o.bill_number} (Cash: ₹${parseFloat(o.receipt_cash || 0).toFixed(2)}, Due: ₹${parseFloat(o.receipt_due || 0).toFixed(2)})
@@ -1918,14 +2212,505 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
                 if (backdrop) backdrop.classList.remove('open');
             };
 
-            // Close modal on escape or clicking outside
+            // 5. Toggle In Yard Status for Order
+            window.toggleOrderInYard = function(orderId, btn) {
+                if (!btn) btn = document.getElementById('btnInYard_' + orderId);
+                if (btn) btn.disabled = true;
+
+                const fd = new FormData();
+                fd.append('action', 'toggle_in_yard');
+                fd.append('order_id', orderId);
+
+                fetch(pollApiUrl, { method: 'POST', body: fd })
+                    .then(r => r.json())
+                    .then(res => {
+                        if (btn) btn.disabled = false;
+                        if (res.success) {
+                            const inYard = (res.in_yard === 1);
+                            if (inYard) {
+                                btn.className = 'btn-card-action btn-yard-toggle yard-in';
+                                btn.innerHTML = "<i class='bx bx-checkbox-checked'></i> <span class='yard-text'>In Yard</span>";
+                            } else {
+                                btn.className = 'btn-card-action btn-yard-toggle yard-out';
+                                btn.innerHTML = "<i class='bx bx-checkbox'></i> <span class='yard-text'>Not in Yard</span>";
+                            }
+                            showToast('Yard Status Updated', `Order #${orderId} marked as ${res.label}.`);
+                        } else {
+                            alert(res.error || 'Failed to update yard status.');
+                        }
+                    })
+                    .catch(e => {
+                        if (btn) btn.disabled = false;
+                        console.error('Yard toggle failed:', e);
+                    });
+            };
+
+            // 6. Add Products Modal Controls & Logic (When Order has no items)
+            const AOP_PRODUCTS = <?= json_encode($allProductsList) ?>;
+
+            function getAopProductOptionsHtml(selectedPid = 0) {
+                let html = '<option value="">-- Choose Product Item --</option>';
+                AOP_PRODUCTS.forEach(p => {
+                    const pid = parseInt(p.product_id);
+                    const pName = p.product_name || p.name || 'Product';
+                    const rate = parseFloat(p.case_price || p.price || 0);
+                    const stock = Math.max(0, parseInt(p.case_stock !== null && p.case_stock !== undefined ? p.case_stock : (p.stock || 0)));
+                    const sel = (pid === parseInt(selectedPid)) ? 'selected' : '';
+                    if (stock <= 0) {
+                        html += `<option value="${pid}" data-rate="${rate}" data-stock="0" disabled style="color: #94a3b8;">${pName} (₹${rate.toFixed(2)}/cs - Out of stock)</option>`;
+                    } else {
+                        html += `<option value="${pid}" data-rate="${rate}" data-stock="${stock}" ${sel}>${pName} (₹${rate.toFixed(2)}/cs, Stock: ${stock})</option>`;
+                    }
+                });
+                return html;
+            }
+
+            window.openAddOrderProductsModal = function(orderId, orderNum, shopName) {
+                const backdrop = document.getElementById('modalAddOrderProductsBackdrop');
+                if (!backdrop) return;
+
+                document.getElementById('aopOrderId').value = orderId;
+                document.getElementById('aopModalTitle').textContent = `Add Products: #${orderNum}`;
+                document.getElementById('aopModalSubtitle').textContent = `Shop: ${shopName}`;
+                
+                const errBox = document.getElementById('aopErrorMsg');
+                if (errBox) {
+                    errBox.textContent = '';
+                    errBox.style.display = 'none';
+                }
+
+                const tbody = document.getElementById('aopItemsTableBody');
+                tbody.innerHTML = '';
+                addAopRow();
+
+                backdrop.classList.add('open');
+            };
+
+            window.closeAddOrderProductsModal = function() {
+                const backdrop = document.getElementById('modalAddOrderProductsBackdrop');
+                if (backdrop) backdrop.classList.remove('open');
+            };
+
+            window.addAopRow = function(selectedPid = 0, defaultQty = 1, defaultRate = '', isExtra = false) {
+                const tbody = document.getElementById('aopItemsTableBody');
+                if (!tbody) return;
+
+                const tr = document.createElement('tr');
+                tr.className = 'aop-row';
+                tr.style.borderBottom = '1px solid #f1f5f9';
+                tr.innerHTML = `
+                    <td style="padding: 6px 8px;">
+                        <select class="form-input-v aop-prod-select" style="width: 100%; font-size: 13px; padding: 6px 8px; border-radius: 6px; border: 1px solid #cbd5e1;" onchange="handleAopProductChange(this)">
+                            ${getAopProductOptionsHtml(selectedPid)}
+                        </select>
+                    </td>
+                    <td style="padding: 6px 8px;">
+                        <input type="text" step="0.01" min="0" class="form-input-v aop-rate-input" style="width: 100%; font-size: 13px; padding: 6px 8px; border-radius: 6px; border: 1px solid #cbd5e1;" placeholder="0.00" value="${defaultRate}" oninput="calculateAopTotals()">
+                    </td>
+                    <td style="padding: 6px 8px;">
+                        <input type="text" min="1" max="9999" class="form-input-v aop-qty-input" style="width: 100%; font-size: 13px; padding: 6px 8px; border-radius: 6px; border: 1px solid #cbd5e1;" value="${defaultQty}" oninput="handleAopQtyInput(this)">
+                        <div class="aop-stock-hint" style="font-size: 10px; color: #64748b; margin-top: 2px; font-weight: 600;"></div>
+                    </td>
+                    <td style="padding: 6px 8px; text-align: center;">
+                        <label style="display: inline-flex; align-items: center; justify-content: center; gap: 4px; cursor: pointer; font-size: 11px; font-weight: 600; color: #475569; user-select: none;">
+                            <input type="checkbox" class="aop-extra-checkbox" ${isExtra ? 'checked' : ''} onchange="handleAopExtraChange(this)" style="width: 16px; height: 16px; accent-color: #059669; cursor: pointer;">
+                            <span class="aop-extra-label" style="${isExtra ? 'color:#059669; font-weight:700;' : ''}">Extra</span>
+                        </label>
+                    </td>
+                    <td style="padding: 6px 8px; text-align: right;">
+                        <span class="aop-line-total" style="font-weight: 700; color: #0f172a; font-size: 13px;">₹0.00</span>
+                    </td>
+                    <td style="padding: 6px 4px; text-align: center;">
+                        <button type="button" class="btn-card-action" onclick="removeAopRow(this)" style="color: #ef4444; border-color: #fca5a5; padding: 4px 6px; border-radius: 6px;" title="Remove row">
+                            <i class='bx bx-trash'></i>
+                        </button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+
+                const sel = tr.querySelector('.aop-prod-select');
+                if (sel && sel.value) {
+                    handleAopProductChange(sel);
+                } else {
+                    calculateAopTotals();
+                }
+            };
+
+            window.handleAopExtraChange = function(checkboxElem) {
+                const row = checkboxElem.closest('tr');
+                if (!row) return;
+                const label = row.querySelector('.aop-extra-label');
+                const rateInput = row.querySelector('.aop-rate-input');
+                if (checkboxElem.checked) {
+                    if (label) {
+                        label.style.color = '#059669';
+                        label.style.fontWeight = '700';
+                    }
+                    if (rateInput) {
+                        rateInput.style.backgroundColor = '#f8fafc';
+                    }
+                } else {
+                    if (label) {
+                        label.style.color = '#475569';
+                        label.style.fontWeight = '600';
+                    }
+                    if (rateInput) {
+                        rateInput.style.backgroundColor = '#ffffff';
+                    }
+                }
+                calculateAopTotals();
+            };
+
+            window.removeAopRow = function(btn) {
+                const tbody = document.getElementById('aopItemsTableBody');
+                const row = btn.closest('tr');
+                if (row) row.remove();
+                if (tbody && tbody.children.length === 0) {
+                    addAopRow();
+                }
+                calculateAopTotals();
+            };
+
+            window.handleAopProductChange = function(selectElem) {
+                const row = selectElem.closest('tr');
+                if (!row) return;
+                const opt = selectElem.options[selectElem.selectedIndex];
+                const rateInput = row.querySelector('.aop-rate-input');
+                const qtyInput = row.querySelector('.aop-qty-input');
+                const stockHint = row.querySelector('.aop-stock-hint');
+
+                const pid = parseInt(selectElem.value || 0);
+                if (!pid || !opt) {
+                    if (rateInput) rateInput.value = '';
+                    if (qtyInput) {
+                        qtyInput.removeAttribute('max');
+                        qtyInput.disabled = false;
+                    }
+                    if (stockHint) stockHint.textContent = '';
+                    calculateAopTotals();
+                    return;
+                }
+
+                const rate = parseFloat(opt.dataset.rate || 0);
+                const stock = parseInt(opt.dataset.stock || 0);
+
+                if (rateInput) {
+                    rateInput.value = rate.toFixed(2);
+                }
+
+                if (qtyInput) {
+                    if (stock <= 0) {
+                        qtyInput.max = 0;
+                        qtyInput.value = 0;
+                        qtyInput.disabled = true;
+                        if (stockHint) {
+                            stockHint.textContent = 'Out of stock (0 cs)';
+                            stockHint.style.color = '#dc2626';
+                        }
+                    } else {
+                        qtyInput.disabled = false;
+                        qtyInput.max = stock;
+                        let curVal = parseInt(qtyInput.value || 1);
+                        if (curVal > stock) {
+                            qtyInput.value = stock;
+                        } else if (curVal < 1) {
+                            qtyInput.value = 1;
+                        }
+                        if (stockHint) {
+                            stockHint.textContent = `Max: ${stock} cs`;
+                            stockHint.style.color = '#059669';
+                        }
+                    }
+                }
+
+                calculateAopTotals();
+            };
+
+            window.handleAopQtyInput = function(qtyInput) {
+                const row = qtyInput.closest('tr');
+                if (!row) return;
+                const sel = row.querySelector('.aop-prod-select');
+                const stockHint = row.querySelector('.aop-stock-hint');
+                const opt = sel ? sel.options[sel.selectedIndex] : null;
+
+                if (opt && opt.value) {
+                    const stock = parseInt(opt.dataset.stock || 0);
+                    let val = parseInt(qtyInput.value);
+
+                    if (stock <= 0) {
+                        qtyInput.value = 0;
+                        if (stockHint) {
+                            stockHint.textContent = 'Out of stock (0 cs)';
+                            stockHint.style.color = '#dc2626';
+                        }
+                    } else if (val > stock) {
+                        // Strictly clamp quantity to available stock!
+                        qtyInput.value = stock;
+                        if (stockHint) {
+                            stockHint.textContent = `Cannot exceed stock! Capped to ${stock} cs`;
+                            stockHint.style.color = '#dc2626';
+                        }
+                    } else if (val < 1 && qtyInput.value !== '') {
+                        qtyInput.value = 1;
+                        if (stockHint) {
+                            stockHint.textContent = `Max: ${stock} cs`;
+                            stockHint.style.color = '#059669';
+                        }
+                    } else {
+                        if (stockHint) {
+                            stockHint.textContent = `Max: ${stock} cs`;
+                            stockHint.style.color = '#059669';
+                        }
+                    }
+                }
+
+                calculateAopTotals();
+            };
+
+            window.calculateAopTotals = function() {
+                let grandTotal = 0;
+                const productUsage = {};
+                let stockExceededError = '';
+
+                document.querySelectorAll('.aop-row').forEach(row => {
+                    const sel = row.querySelector('.aop-prod-select');
+                    const rateIn = row.querySelector('.aop-rate-input');
+                    const qtyIn = row.querySelector('.aop-qty-input');
+                    const extraIn = row.querySelector('.aop-extra-checkbox');
+                    const totalSpan = row.querySelector('.aop-line-total');
+                    const opt = sel ? sel.options[sel.selectedIndex] : null;
+
+                    const pid = parseInt(sel ? sel.value : 0);
+                    const stock = opt ? parseInt(opt.dataset.stock || 0) : 0;
+                    const rate = parseFloat(rateIn ? rateIn.value : 0) || 0;
+                    let qty = parseInt(qtyIn ? qtyIn.value : 0) || 0;
+                    const isExtra = extraIn ? extraIn.checked : false;
+
+                    if (pid > 0) {
+                        if (stock > 0 && qty > stock) {
+                            qty = stock;
+                            if (qtyIn) qtyIn.value = stock;
+                        }
+
+                        productUsage[pid] = (productUsage[pid] || 0) + qty;
+                        if (stock > 0 && productUsage[pid] > stock) {
+                            const prodName = opt ? (opt.text.split('(')[0].trim()) : 'Product';
+                            stockExceededError = `Total quantity for "${prodName}" across items (${productUsage[pid]}) exceeds available stock (${stock} cs).`;
+                            if (qtyIn) qtyIn.style.borderColor = '#dc2626';
+                        } else {
+                            if (qtyIn) qtyIn.style.borderColor = '#cbd5e1';
+                        }
+                    }
+
+                    let lineTotal = 0;
+                    if (pid > 0 && qty > 0) {
+                        lineTotal = rate * qty;
+                    }
+
+                    if (totalSpan) {
+                        if (isExtra && pid > 0 && qty > 0) {
+                            totalSpan.innerHTML = `<span style="text-decoration:line-through; color:#94a3b8; font-size:11px; margin-right:4px;">₹${lineTotal.toFixed(2)}</span>₹0.00 <span style="font-size:10px; color:#059669; font-weight:700;"></span>`;
+                        } else {
+                            totalSpan.textContent = '₹' + lineTotal.toFixed(2);
+                        }
+                    }
+                    if (!isExtra) grandTotal += lineTotal;
+                });
+
+                const gtSpan = document.getElementById('aopGrandTotal');
+                if (gtSpan) gtSpan.textContent = '₹' + grandTotal.toFixed(2);
+
+                const errBox = document.getElementById('aopErrorMsg');
+                const submitBtn = document.getElementById('btnAopSubmit');
+                if (stockExceededError) {
+                    if (errBox) {
+                        errBox.textContent = stockExceededError;
+                        errBox.style.display = 'block';
+                    }
+                    if (submitBtn) submitBtn.disabled = true;
+                } else {
+                    if (errBox && errBox.textContent.includes('exceeds available stock')) {
+                        errBox.textContent = '';
+                        errBox.style.display = 'none';
+                    }
+                    if (submitBtn) submitBtn.disabled = false;
+                }
+            };
+
+            window.submitAddOrderProducts = function() {
+                const orderId = document.getElementById('aopOrderId').value;
+                const errBox = document.getElementById('aopErrorMsg');
+                const submitBtn = document.getElementById('btnAopSubmit');
+
+                if (errBox) {
+                    errBox.textContent = '';
+                    errBox.style.display = 'none';
+                }
+
+                const rows = document.querySelectorAll('.aop-row');
+                const items = [];
+                const productTotals = {};
+                let hasError = false;
+
+                rows.forEach((row, idx) => {
+                    const sel = row.querySelector('.aop-prod-select');
+                    const rateIn = row.querySelector('.aop-rate-input');
+                    const qtyIn = row.querySelector('.aop-qty-input');
+                    const extraIn = row.querySelector('.aop-extra-checkbox');
+                    const opt = sel ? sel.options[sel.selectedIndex] : null;
+
+                    const pid = parseInt(sel ? sel.value : 0);
+                    const rate = parseFloat(rateIn ? rateIn.value : 0);
+                    const qty = parseInt(qtyIn ? qtyIn.value : 0);
+                    const isExtra = extraIn ? (extraIn.checked ? 1 : 0) : 0;
+                    const stock = opt ? parseInt(opt.dataset.stock || 0) : 0;
+                    const pName = opt ? (opt.text.split('(')[0].trim()) : 'Product';
+
+                    if (pid > 0) {
+                        if (stock <= 0) {
+                            hasError = true;
+                            if (errBox) {
+                                errBox.textContent = `"${pName}" is currently out of stock. Cannot add to order.`;
+                                errBox.style.display = 'block';
+                            }
+                            return;
+                        }
+
+                        if (qty <= 0) {
+                            hasError = true;
+                            if (errBox) {
+                                errBox.textContent = 'Please enter a valid quantity of 1 or more for each selected product.';
+                                errBox.style.display = 'block';
+                            }
+                            return;
+                        }
+
+                        if (qty > stock) {
+                            hasError = true;
+                            if (errBox) {
+                                errBox.textContent = `Quantity for "${pName}" (${qty} cs) exceeds available stock (${stock} cs).`;
+                                errBox.style.display = 'block';
+                            }
+                            if (qtyIn) {
+                                qtyIn.value = stock;
+                                qtyIn.focus();
+                            }
+                            return;
+                        }
+
+                        productTotals[pid] = (productTotals[pid] || 0) + qty;
+                        if (productTotals[pid] > stock) {
+                            hasError = true;
+                            if (errBox) {
+                                errBox.textContent = `Total quantity for "${pName}" across rows (${productTotals[pid]} cs) exceeds available stock (${stock} cs).`;
+                                errBox.style.display = 'block';
+                            }
+                            return;
+                        }
+
+                        items.push({
+                            product_id: pid,
+                            rate: isNaN(rate) ? 0 : rate,
+                            quantity: qty,
+                            is_extra: isExtra
+                        });
+                    }
+                });
+
+                if (hasError) return;
+
+                if (items.length === 0) {
+                    if (errBox) {
+                        errBox.textContent = 'Please select at least one product with quantity.';
+                        errBox.style.display = 'block';
+                    }
+                    return;
+                }
+
+                if (submitBtn) {
+                    submitBtn.disabled = true;
+                    submitBtn.innerHTML = "<i class='bx bx-loader-alt bx-spin'></i> Saving...";
+                }
+
+                const fd = new FormData();
+                fd.append('action', 'add_order_products');
+                fd.append('order_id', orderId);
+                items.forEach((it, i) => {
+                    fd.append(`items[${i}][product_id]`, it.product_id);
+                    fd.append(`items[${i}][rate]`, it.rate);
+                    fd.append(`items[${i}][quantity]`, it.quantity);
+                    fd.append(`items[${i}][is_extra]`, it.is_extra);
+                });
+
+                fetch(pollApiUrl, { method: 'POST', body: fd })
+                    .then(r => r.json())
+                    .then(res => {
+                        if (submitBtn) {
+                            submitBtn.disabled = false;
+                            submitBtn.innerHTML = "<i class='bx bx-check-circle'></i> Save &amp; Update Order";
+                        }
+                        if (res.success) {
+                            closeAddOrderProductsModal();
+                            showToast('Products Added', res.message || 'Products successfully added to order.');
+
+                            // Update card DOM directly
+                            const card = document.getElementById('orderCard_' + orderId);
+                            if (card) {
+                                const summaryBox = document.getElementById('itemsSummaryBox_' + orderId);
+                                if (summaryBox) {
+                                    summaryBox.innerHTML = `
+                                        <div>
+                                            <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: #64748b; font-weight: 700;">Items</div>
+                                            <div class="items-desc">${res.items_summary || ''}</div>
+                                        </div>
+                                        <div style="text-align: right;">
+                                            <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: #64748b; font-weight: 700;">Total</div>
+                                            <div class="order-total-amount">${res.formatted_total || ('₹' + parseFloat(res.total_amount).toFixed(2))}</div>
+                                        </div>
+                                    `;
+                                }
+                                card.querySelectorAll("button[onclick*='openAddOrderProductsModal']").forEach(b => b.remove());
+                            }
+                            setTimeout(pollOrders, 500);
+                        } else {
+                            if (errBox) {
+                                errBox.textContent = res.error || 'Failed to save products.';
+                                errBox.style.display = 'block';
+                            } else {
+                                alert(res.error || 'Failed to save products.');
+                            }
+                        }
+                    })
+                    .catch(e => {
+                        if (submitBtn) {
+                            submitBtn.disabled = false;
+                            submitBtn.innerHTML = "<i class='bx bx-check-circle'></i> Save &amp; Update Order";
+                        }
+                        console.error('Failed to add products:', e);
+                        if (errBox) {
+                            errBox.textContent = 'Network or server error occurred while adding products.';
+                            errBox.style.display = 'block';
+                        }
+                    });
+            };
+
+            // Close modals on escape or clicking outside
             document.addEventListener('keydown', function(e) {
-                if (e.key === 'Escape') closeOrderModal();
+                if (e.key === 'Escape') {
+                    closeOrderModal();
+                    closeAddOrderProductsModal();
+                }
             });
             const backdrop = document.getElementById('orderModalBackdrop');
             if (backdrop) {
                 backdrop.addEventListener('click', function(e) {
                     if (e.target === backdrop) closeOrderModal();
+                });
+            }
+            const aopBackdrop = document.getElementById('modalAddOrderProductsBackdrop');
+            if (aopBackdrop) {
+                aopBackdrop.addEventListener('click', function(e) {
+                    if (e.target === aopBackdrop) closeAddOrderProductsModal();
                 });
             }
         })();
@@ -1939,5 +2724,11 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
     btn.setAttribute('aria-expanded', isOpen);
 }
     </script>
+
+    <!-- Slide-Out Vehicles Sidebar Drawer -->
+    <?php include dirname(dirname(dirname(__DIR__))) . '/components/vehicles-sidebar.php'; ?>
+
+    <!-- Slide-Out Shop Rewards Sidebar Drawer -->
+    <?php include dirname(dirname(dirname(__DIR__))) . '/components/rewards-sidebar.php'; ?>
 </body>
 </html>

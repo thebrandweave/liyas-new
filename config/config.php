@@ -224,6 +224,17 @@ function getOrderItems(PDO $pdo, int $orderId): array {
         return [];
     }
 
+    static $hasIsExtra = null;
+    if ($hasIsExtra === null) {
+        try {
+            $chk = $pdo->query("SHOW COLUMNS FROM order_items LIKE 'is_extra'")->fetch();
+            $hasIsExtra = !empty($chk);
+        } catch (Exception $e) {
+            $hasIsExtra = false;
+        }
+    }
+    $extraCol = $hasIsExtra ? "oi.is_extra," : "0 AS is_extra,";
+
     $stmt = $pdo->prepare("
         SELECT 
             oi.order_item_id,
@@ -231,6 +242,7 @@ function getOrderItems(PDO $pdo, int $orderId): array {
             oi.product_id,
             oi.quantity,
             oi.price_at_purchase,
+            {$extraCol}
             (oi.quantity * oi.price_at_purchase) AS line_total,
             p.name,
             p.product_name,

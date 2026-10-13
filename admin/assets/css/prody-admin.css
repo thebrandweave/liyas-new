@@ -554,11 +554,11 @@ table .btn-add .icon {
 }
 
 .btn-add:hover {
-    background: #10b981;
+    background: #080b0a;
 }
 
 .btn-add:hover .text {
-    color: transparent;
+    color: white;
 }
 
 .btn-add:hover .icon {
