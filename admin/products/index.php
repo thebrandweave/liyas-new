@@ -114,7 +114,6 @@ $total_in_transit = 0;
 $total_delivered = 0;
 
 foreach ($products as $p) {
-
     // Original warehouse stock
     $cStock = (int)($p['case_stock'] ?? $p['stock'] ?? 0);
 
@@ -131,6 +130,54 @@ foreach ($products as $p) {
     $total_available_stock += $availableStock;
     $total_in_transit += $inTransit;
     $total_delivered += $delivered;
+}
+
+// If pagination exists across multiple pages and no search query, ensure overall totals reflect the entire inventory
+if ($total_records > count($products) && empty($search)) {
+    try {
+        $overallStmt = $pdo->query("
+            SELECT 
+                COALESCE(SUM(COALESCE(p.case_stock, p.stock, 0)), 0) as total_stock,
+                (
+                    COALESCE((
+                        SELECT SUM(oi.quantity)
+                        FROM order_items oi
+                        JOIN orders ord ON oi.order_id = ord.order_id
+                        WHERE ord.status IN ('pending', 'processing', 'shipped')
+                    ), 0) + COALESCE((
+                        SELECT SUM(ord2.quantity)
+                        FROM orders ord2
+                        WHERE ord2.status IN ('pending', 'processing', 'shipped')
+                          AND NOT EXISTS (SELECT 1 FROM order_items oi2 WHERE oi2.order_id = ord2.order_id)
+                    ), 0) + COALESCE((
+                        SELECT SUM(vl.cases_loaded)
+                        FROM vehicle_loads vl
+                        WHERE vl.is_active = 1 AND vl.order_id IS NULL
+                    ), 0)
+                ) as total_in_transit,
+                (
+                    COALESCE((
+                        SELECT SUM(oi.quantity)
+                        FROM order_items oi
+                        JOIN orders ord ON oi.order_id = ord.order_id
+                        WHERE ord.status = 'delivered'
+                    ), 0) + COALESCE((
+                        SELECT SUM(ord2.quantity)
+                        FROM orders ord2
+                        WHERE ord2.status = 'delivered'
+                          AND NOT EXISTS (SELECT 1 FROM order_items oi2 WHERE oi2.order_id = ord2.order_id)
+                    ), 0)
+                ) as total_delivered
+            FROM products p
+        ");
+        if ($overallData = $overallStmt->fetch(PDO::FETCH_ASSOC)) {
+            $total_in_transit = (int)$overallData['total_in_transit'];
+            $total_delivered = (int)$overallData['total_delivered'];
+            $total_available_stock = max(0, (int)$overallData['total_stock'] - $total_in_transit);
+        }
+    } catch (Exception $e) {
+        // Fallback to loop totals on error
+    }
 }
 ?>
 <!DOCTYPE html>
@@ -258,12 +305,15 @@ foreach ($products as $p) {
                                         $inTransit = (int)$product['cases_in_transit'];
                                         $delivered = (int)$product['cases_delivered'];
 
+                                        // Deduct in-transit cases from available stock
+                                        $availableStock = max(0, $caseStock - $inTransit);
+
                                         $stockClass = 'badge-stock-healthy';
                                         $statusText = 'In Stock';
-                                        if ($caseStock === 0) {
+                                        if ($availableStock === 0) {
                                             $stockClass = 'badge-stock-out';
                                             $statusText = 'Out of Stock';
-                                        } elseif ($caseStock < 20) {
+                                        } elseif ($availableStock < 20) {
                                             $stockClass = 'badge-stock-low';
                                             $statusText = 'Low Stock';
                                         }
@@ -290,7 +340,10 @@ foreach ($products as $p) {
                                             <span style="font-size: 11px; color: #64748b;">/ case</span>
                                         </td>
                                         <td>
-                                            <span style="font-weight: 700; font-size: 15px; color: #0f172a;"><?= number_format($caseStock) ?></span> Cases
+                                            <span style="font-weight: 700; font-size: 15px; color: #0f172a;"><?= number_format($availableStock) ?></span> Cases
+                                            <?php if ($inTransit > 0): ?>
+                                                <div style="font-size: 11px; color: #64748b; margin-top: 2px;">Total: <?= number_format($caseStock) ?> | Transit: <?= number_format($inTransit) ?></div>
+                                            <?php endif; ?>
                                         </td>
                                         <td>
                                             <?php if ($inTransit > 0): ?>
@@ -308,7 +361,7 @@ foreach ($products as $p) {
                                         </td>
                                         <td>
                                             <span class="badge-stock <?= $stockClass ?>">
-                                                <?= $statusText ?> (<?= number_format($caseStock) ?>)
+                                                <?= $statusText ?> (<?= number_format($availableStock) ?>)
                                             </span>
                                         </td>
                                         <td>

@@ -156,9 +156,10 @@ $ordersSummaryStmt = $pdo->query("
 ");
 $orderTotals = $ordersSummaryStmt ? ($ordersSummaryStmt->fetch(PDO::FETCH_ASSOC) ?: ['active_in_transit' => 0, 'total_delivered' => 0]) : ['active_in_transit' => 0, 'total_delivered' => 0];
 
-$total_available_stock = (int)$overall['total_stock'];
+$total_raw_stock = (int)$overall['total_stock'];
 $total_in_transit = (int)$orderTotals['active_in_transit'];
 $total_delivered = (int)$orderTotals['total_delivered'];
+$total_available_stock = max(0, $total_raw_stock - $total_in_transit);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -862,12 +863,15 @@ $total_delivered = (int)$orderTotals['total_delivered'];
                                 $inTransit = (int)$product['cases_in_transit'];
                                 $delivered = (int)$product['cases_delivered'];
 
+                                // Deduct in-transit cases from available stock
+                                $availableStock = max(0, $caseStock - $inTransit);
+
                                 $stockClass = 'badge-stock-healthy';
                                 $statusText = 'In Stock';
-                                if ($caseStock === 0) {
+                                if ($availableStock === 0) {
                                     $stockClass = 'badge-stock-out';
                                     $statusText = 'Out of Stock';
-                                } elseif ($caseStock < 20) {
+                                } elseif ($availableStock < 20) {
                                     $stockClass = 'badge-stock-low';
                                     $statusText = 'Low Stock';
                                 }
@@ -906,8 +910,11 @@ $total_delivered = (int)$orderTotals['total_delivered'];
                                     <span style="font-size: 11px; color: #64748b;">/ cs</span>
                                 </td>
                                 <td>
-                                    <span style="font-weight: 800; font-size: 14px; color: #0f172a;"><?= number_format($caseStock) ?></span>
+                                    <span style="font-weight: 800; font-size: 14px; color: #0f172a;"><?= number_format($availableStock) ?></span>
                                     <span style="font-size: 12px; color: #64748b;">cs</span>
+                                    <?php if ($inTransit > 0): ?>
+                                        <div style="font-size: 11px; color: #64748b; margin-top: 2px;">Total: <?= number_format($caseStock) ?> | Transit: <?= number_format($inTransit) ?></div>
+                                    <?php endif; ?>
                                 </td>
                                 <td>
                                     <?php if ($inTransit > 0): ?>
@@ -927,7 +934,7 @@ $total_delivered = (int)$orderTotals['total_delivered'];
                                 </td>
                                 <td>
                                     <span class="badge-stock <?= $stockClass ?>">
-                                        <?= $statusText ?>
+                                        <?= $statusText ?> (<?= number_format($availableStock) ?>)
                                     </span>
                                 </td>
                                 <td>
