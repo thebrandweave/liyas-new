@@ -789,7 +789,7 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
 
         .search-input {
             width: 100%;
-            padding: 8px 12px 8px 36px;
+            padding: 8px 12px 8px 26px;
             border: 1.5px solid var(--border-color);
             border-radius: 10px;
             font-size: 13px;
@@ -1327,6 +1327,29 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
         transform: rotate(180deg);
     }
 }
+
+@media (max-width: 576px) {
+    /* Hide button text on mobile phones, keeping only icons to save space */
+    .btn-header span {
+        display: block;
+         font-size: 10px;
+    }
+    
+    .btn-header {
+        padding: 3px;
+        /* border-radius: 50%; Circle icons for mobile header */
+        width:80px;
+        height: 36px;
+    }
+
+    .btn-header i {
+       
+        margin: 0;
+    }
+    .lock{
+        display:none;
+    }
+}
     </style>
 </head>
 <body>
@@ -1368,7 +1391,7 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
                     <span>Products</span>
                 </a>
                 <a href="<?= BASE_URL ?>/zone/orders/logout.php" class="btn-header btn-logout" title="Lock and logout">
-                    <i class='bx bx-lock-alt'></i>
+                    <i class='bx bx-lock-alt lock'></i>
                     <span>Lock / Logout</span>
                 </a>
             </div>
@@ -1516,13 +1539,13 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
                        class="chip-filter chip-due <?= ($filter === 'due') ? 'active' : '' ?>">Due</a>
                 </div>
 
-                <form action="" method="GET" class="search-form" style="display: flex; gap: 8px; flex-wrap: wrap;">
+                <form action="" method="GET" class="search-form" style="display: flex; gap: 8px; ">
                     <input type="hidden" name="zone" value="<?= htmlspecialchars($selectedZone) ?>">
                     <input type="hidden" name="filter" value="<?= htmlspecialchars($filter) ?>">
                     <input type="hidden" name="date" value="<?= htmlspecialchars($dateFilter) ?>">
 
                     <select name="shop" class="search-input" style="max-width: 170px; cursor: pointer;" onchange="this.form.submit()">
-                        <option value="">-- Filter by Shop --</option>
+                        <option value="">Filter by Shop</option>
                         <?php foreach ($allShopsList as $sh): ?>
                             <option value="<?= htmlspecialchars($sh['shop_name']) ?>" <?= ($shopFilter === $sh['shop_name']) ? 'selected' : '' ?>>
                                 <?= htmlspecialchars($sh['shop_name']) ?> (<?= $sh['order_count'] ?>)

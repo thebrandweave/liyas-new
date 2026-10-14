@@ -363,22 +363,38 @@ function renderOrdersTbodyRows(array $orders, string $status_filter = 'all', str
                         <?= date('H:i A', strtotime($order['created_at'])) ?>
                     </div>
                 </td>
-                <td>
-                    <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
-                        <a href="view.php?id=<?= (int)$order['order_id'] ?>" class="btn-action" style="padding: 5px 8px; background: #f1f5f9; color: #334155; border-radius: 6px; text-decoration: none; font-size: 12px; display: inline-flex; align-items: center; gap: 3px;" title="View Order">
-                            <i class='bx bx-show'></i> View
-                        </a>
-                        <a href="create.php?reorder_id=<?= (int)$order['order_id'] ?>" class="btn-action" style="padding: 5px 8px; background: #eff6ff; color: #2563eb; border-radius: 6px; text-decoration: none; font-size: 12px; display: inline-flex; align-items: center; gap: 3px; font-weight: 600;" title="Reorder for this Shop">
-                            <i class='bx bx-refresh'></i> Reorder
-                        </a>
-                        <a href="edit.php?id=<?= (int)$order['order_id'] ?>" class="btn-action" style="padding: 5px 8px; background: #e0f2fe; color: #0284c7; border-radius: 6px; text-decoration: none; font-size: 12px; display: inline-flex; align-items: center; gap: 3px;" title="Edit Order">
-                            <i class='bx bx-edit'></i> Edit
-                        </a>
-                        <a href="delete.php?id=<?= (int)$order['order_id'] ?>" onclick="return confirm('Are you sure you want to delete order <?= addslashes($displayOrderNum) ?>?');" class="btn-action" style="padding: 5px 8px; background: #fee2e2; color: #dc2626; border-radius: 6px; text-decoration: none; font-size: 12px; display: inline-flex; align-items: center; gap: 3px;" title="Delete Order">
-                            <i class='bx bx-trash'></i>
-                        </a>
-                    </div>
-                </td>
+               <td style="position: relative;">
+    <div class="action-menu">
+        <button type="button"
+                class="three-dot-btn"
+                onclick="toggleActionMenu(this)"
+                title="More actions"
+                aria-label="More actions"
+                aria-expanded="false">
+            <i class='bx bx-dots-vertical-rounded'></i>
+        </button>
+
+        <div class="action-dropdown">
+            <a href="view.php?id=<?= (int)$order['order_id'] ?>">
+                <i class='bx bx-show'></i> View
+            </a>
+
+            <a href="create.php?reorder_id=<?= (int)$order['order_id'] ?>">
+                <i class='bx bx-refresh'></i> Reorder
+            </a>
+
+            <a href="edit.php?id=<?= (int)$order['order_id'] ?>">
+                <i class='bx bx-edit'></i> Edit
+            </a>
+
+            <a href="delete.php?id=<?= (int)$order['order_id'] ?>"
+               class="delete-action"
+               onclick="return confirm('Are you sure you want to delete order <?= htmlspecialchars(addslashes($displayOrderNum), ENT_QUOTES, 'UTF-8') ?>?');">
+                <i class='bx bx-trash'></i> Delete
+            </a>
+        </div>
+    </div>
+</td>
             </tr>
             <?php
         }
@@ -457,6 +473,77 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
             overflow-x: auto;
             max-width: 100%;
         }
+
+
+        .action-menu {
+    position: relative;
+    display: inline-block;
+}
+
+.three-dot-btn {
+    width: 34px;
+    height: 34px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    background: #ffffff;
+    color: #334155;
+    cursor: pointer;
+    font-size: 22px;
+    transition: background 0.2s;
+}
+
+.three-dot-btn:hover {
+    background: #f1f5f9;
+}
+
+.action-dropdown {
+    display: none;
+    position: absolute;
+    top: calc(100% + 5px);
+    right: 0;
+    min-width: 150px;
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
+    padding: 5px;
+    z-index: 1000;
+}
+
+.action-dropdown.show {
+    display: block;
+}
+
+.action-dropdown a {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 9px 10px;
+    color: #334155;
+    text-decoration: none;
+    font-size: 13px;
+    border-radius: 5px;
+    white-space: nowrap;
+}
+
+.action-dropdown a i {
+    font-size: 17px;
+}
+
+.action-dropdown a:hover {
+    background: #f1f5f9;
+}
+
+.action-dropdown a.delete-action {
+    color: #dc2626;
+}
+
+.action-dropdown a.delete-action:hover {
+    background: #fef2f2;
+}
         .status-pill {
             padding: 6px 14px;
             font-size: 13px;
@@ -1057,6 +1144,43 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
             // Schedule 3-second auto-refresh
             setInterval(pollOrders, REFRESH_INTERVAL);
         })();
+
+        function toggleActionMenu(button) {
+    const currentMenu = button.nextElementSibling;
+    const isOpen = currentMenu.classList.contains('show');
+
+    // Close all other open menus
+    document.querySelectorAll('.action-dropdown.show').forEach(menu => {
+        menu.classList.remove('show');
+        menu.previousElementSibling.setAttribute('aria-expanded', 'false');
+    });
+
+    // Toggle the clicked menu
+    if (!isOpen) {
+        currentMenu.classList.add('show');
+        button.setAttribute('aria-expanded', 'true');
+    }
+}
+
+// Close dropdown when clicking outside
+document.addEventListener('click', function(event) {
+    if (!event.target.closest('.action-menu')) {
+        document.querySelectorAll('.action-dropdown.show').forEach(menu => {
+            menu.classList.remove('show');
+            menu.previousElementSibling.setAttribute('aria-expanded', 'false');
+        });
+    }
+});
+
+// Close dropdown with Escape key
+document.addEventListener('keydown', function(event) {
+    if (event.key === 'Escape') {
+        document.querySelectorAll('.action-dropdown.show').forEach(menu => {
+            menu.classList.remove('show');
+            menu.previousElementSibling.setAttribute('aria-expanded', 'false');
+        });
+    }
+});
     </script>
 </body>
 </html>

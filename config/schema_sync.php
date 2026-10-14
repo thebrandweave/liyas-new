@@ -39,15 +39,15 @@ function ensureWarehouseSchema(PDO $pdo): bool {
             }
 
             // Seed initial zones if none exist
-            $zoneCount = (int)$pdo->query("SELECT COUNT(*) FROM zones")->fetchColumn();
-            if ($zoneCount === 0) {
-                $pdo->exec("
-                    INSERT IGNORE INTO `zones` (`name`, `slug`, `access_code`, `status`) VALUES 
-                        ('Mangalore Zone', 'mangalore', 'ZONE2026', 'active'),
-                        ('Thokkottu Zone', 'thokkottu', 'ZONE2026', 'active'),
-                        ('Vitla Zone', 'vitla', 'ZONE2026', 'active');
-                ");
-            }
+            // $zoneCount = (int)$pdo->query("SELECT COUNT(*) FROM zones")->fetchColumn();
+            // if ($zoneCount === 0) {
+            //     $pdo->exec("
+            //         INSERT IGNORE INTO `zones` (`name`, `slug`, `access_code`, `status`) VALUES 
+            //             ('Mangalore Zone', 'mangalore', 'ZONE2026', 'active'),
+            //             ('Thokkottu Zone', 'thokkottu', 'ZONE2026', 'active'),
+            //             ('Vitla Zone', 'vitla', 'ZONE2026', 'active');
+            //     ");
+            // }
         } catch (Exception $e) {
             error_log("Schema sync zones error: " . $e->getMessage());
         }
