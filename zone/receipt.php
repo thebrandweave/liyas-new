@@ -814,7 +814,7 @@ if (file_exists($logoPath)) {
                             </span>
                         <?php endif; ?>
                         <?php if (!empty($item['is_extra'])): ?>
-                            <span style="font-size: 10px; font-weight: 700; color: #1e40af; background: #eff6ff; border: 1px solid #bfdbfe; padding: 1px 5px; border-radius: 4px; margin-left: 6px;">Extra from Vehicle</span>
+                            <span style="font-size: 10px; font-weight: 700; color: #1e40af; background: #eff6ff; border: 1px solid #bfdbfe; padding: 1px 5px; border-radius: 4px; margin-left: 6px;">Extra</span>
                         <?php endif; ?>
                     </td>
                     <td style="text-align: center; font-weight: 700;">
