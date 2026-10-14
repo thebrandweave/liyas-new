@@ -2440,16 +2440,16 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
             // 6. Add Products Modal Controls & Logic (When Order has no items)
             const AOP_PRODUCTS = <?= json_encode($allProductsList) ?>;
 
-            function getAopProductOptionsHtml(selectedPid = 0, extraStockAllowance = 0) {
+            function getAopProductOptionsHtml(selectedPid = 0) {
                 let html = '<option value="">-- Choose Product Item --</option>';
                 AOP_PRODUCTS.forEach(p => {
                     const pid = parseInt(p.product_id);
                     const pName = p.product_name || p.name || 'Product';
                     const rate = parseFloat(p.case_price || p.price || 0);
                     let stock = Math.max(0, parseInt(p.case_stock !== null && p.case_stock !== undefined ? p.case_stock : (p.stock || 0)));
-                    if (pid === parseInt(selectedPid)) {
-                        stock += parseInt(extraStockAllowance || 0);
-                    }
+                    // if (pid === parseInt(selectedPid)) {
+                    //     stock += parseInt(extraStockAllowance || 0);
+                    // }
                     const sel = (pid === parseInt(selectedPid)) ? 'selected' : '';
                     if (stock <= 0 && pid !== parseInt(selectedPid)) {
                         html += `<option value="${pid}" data-rate="${rate}" data-stock="0" disabled style="color: #94a3b8;">${pName} (₹${rate.toFixed(2)}/cs - Out of stock)</option>`;
@@ -2543,7 +2543,7 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
                 tr.innerHTML = `
                     <td style="padding: 6px 8px;">
                         <select class="form-input-v aop-prod-select" style="width: 100%; font-size: 13px; padding: 6px 8px; border-radius: 6px; border: 1px solid #cbd5e1;" onchange="handleAopProductChange(this)">
-                            ${getAopProductOptionsHtml(selectedPid, existingQty)}
+                            ${getAopProductOptionsHtml(selectedPid)}
                         </select>
                     </td>
                     <td style="padding: 6px 8px;">
