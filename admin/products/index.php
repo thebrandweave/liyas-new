@@ -112,11 +112,23 @@ $products = $stmt->fetchAll(PDO::FETCH_ASSOC);
 $total_available_stock = 0;
 $total_in_transit = 0;
 $total_delivered = 0;
+
 foreach ($products as $p) {
-    $cStock = (int)($p['case_stock'] ?: $p['stock']);
-    $inTransit = (int)$p['cases_in_transit'];
-    $delivered = (int)$p['cases_delivered'];
-    $total_available_stock += $cStock;
+
+    // Original warehouse stock
+    $cStock = (int)($p['case_stock'] ?? $p['stock'] ?? 0);
+
+    // Cases currently in transit
+    $inTransit = (int)($p['cases_in_transit'] ?? 0);
+
+    // Cases delivered
+    $delivered = (int)($p['cases_delivered'] ?? 0);
+
+    // Deduct in-transit cases from available stock
+    $availableStock = max(0, $cStock - $inTransit);
+
+    // Calculate totals
+    $total_available_stock += $availableStock;
     $total_in_transit += $inTransit;
     $total_delivered += $delivered;
 }
