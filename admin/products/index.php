@@ -123,8 +123,8 @@ foreach ($products as $p) {
     // Cases delivered
     $delivered = (int)($p['cases_delivered'] ?? 0);
 
-    // Deduct in-transit cases from available stock
-    $availableStock = max(0, $cStock - $inTransit);
+    // Available warehouse stock
+    $availableStock = $cStock;
 
     // Calculate totals
     $total_available_stock += $availableStock;
@@ -173,7 +173,7 @@ if ($total_records > count($products) && empty($search)) {
         if ($overallData = $overallStmt->fetch(PDO::FETCH_ASSOC)) {
             $total_in_transit = (int)$overallData['total_in_transit'];
             $total_delivered = (int)$overallData['total_delivered'];
-            $total_available_stock = max(0, (int)$overallData['total_stock'] - $total_in_transit);
+            $total_available_stock = (int)$overallData['total_stock'];
         }
     } catch (Exception $e) {
         // Fallback to loop totals on error
@@ -305,8 +305,8 @@ if ($total_records > count($products) && empty($search)) {
                                         $inTransit = (int)$product['cases_in_transit'];
                                         $delivered = (int)$product['cases_delivered'];
 
-                                        // Deduct in-transit cases from available stock
-                                        $availableStock = max(0, $caseStock - $inTransit);
+                                        // Available warehouse stock (in-transit is already deducted upon order creation)
+                                        $availableStock = $caseStock;
 
                                         $stockClass = 'badge-stock-healthy';
                                         $statusText = 'In Stock';
@@ -342,7 +342,7 @@ if ($total_records > count($products) && empty($search)) {
                                         <td>
                                             <span style="font-weight: 700; font-size: 15px; color: #0f172a;"><?= number_format($caseStock) ?></span> Cases
                                             <?php if ($inTransit > 0): ?>
-                                                <div style="font-size: 11px; color: #64748b; margin-top: 2px;">Total: <?= number_format($caseStock) ?> | Transit: <?= number_format($inTransit) ?></div>
+                                                <div style="font-size: 11px; color: #64748b; margin-top: 2px;">Total: <?= number_format($caseStock + $inTransit) ?> | Transit: <?= number_format($inTransit) ?></div>
                                             <?php endif; ?>
                                         </td>
                                         <td>

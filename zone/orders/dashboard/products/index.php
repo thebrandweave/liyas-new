@@ -159,7 +159,7 @@ $orderTotals = $ordersSummaryStmt ? ($ordersSummaryStmt->fetch(PDO::FETCH_ASSOC)
 $total_raw_stock = (int)$overall['total_stock'];
 $total_in_transit = (int)$orderTotals['active_in_transit'];
 $total_delivered = (int)$orderTotals['total_delivered'];
-$total_available_stock = max(0, $total_raw_stock - $total_in_transit);
+$total_available_stock = $total_raw_stock;
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -863,8 +863,8 @@ $total_available_stock = max(0, $total_raw_stock - $total_in_transit);
                                 $inTransit = (int)$product['cases_in_transit'];
                                 $delivered = (int)$product['cases_delivered'];
 
-                                // Deduct in-transit cases from available stock
-                                $availableStock = max(0, $caseStock - $inTransit);
+                                // Available warehouse stock (in-transit is already deducted upon order creation)
+                                $availableStock = $caseStock;
 
                                 $stockClass = 'badge-stock-healthy';
                                 $statusText = 'In Stock';
@@ -913,7 +913,7 @@ $total_available_stock = max(0, $total_raw_stock - $total_in_transit);
                                     <span style="font-weight: 800; font-size: 14px; color: #0f172a;"><?= number_format($availableStock) ?></span>
                                     <span style="font-size: 12px; color: #64748b;">cs</span>
                                     <?php if ($inTransit > 0): ?>
-                                        <div style="font-size: 11px; color: #64748b; margin-top: 2px;">Total: <?= number_format($caseStock) ?> | Transit: <?= number_format($inTransit) ?></div>
+                                        <div style="font-size: 11px; color: #64748b; margin-top: 2px;">Total: <?= number_format($caseStock + $inTransit) ?> | Transit: <?= number_format($inTransit) ?></div>
                                     <?php endif; ?>
                                 </td>
                                 <td>

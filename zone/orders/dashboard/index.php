@@ -210,44 +210,10 @@ try {
     } catch (Exception $e2) {}
 }
 
-// Fetch all active products with live available stock (warehouse stock minus active in-transit) for the Add Products modal
+// Fetch all active products for the Add Products modal
 $allProductsList = [];
 try {
-    $allProductsList = $pdo->query("
-        SELECT 
-            p.product_id, p.name, p.product_name, p.case_price, p.price, p.case_stock, p.stock, p.net_content, p.net_content_unit,
-            (
-                COALESCE((
-                    SELECT SUM(oi.quantity)
-                    FROM order_items oi
-                    JOIN orders ord ON oi.order_id = ord.order_id
-                    WHERE oi.product_id = p.product_id AND ord.status IN ('pending', 'processing', 'shipped')
-                ), 0) + COALESCE((
-                    SELECT SUM(ord2.quantity)
-                    FROM orders ord2
-                    WHERE ord2.product_id = p.product_id 
-                      AND ord2.status IN ('pending', 'processing', 'shipped')
-                      AND NOT EXISTS (SELECT 1 FROM order_items oi2 WHERE oi2.order_id = ord2.order_id)
-                ), 0) + COALESCE((
-                    SELECT SUM(vl.cases_loaded)
-                    FROM vehicle_loads vl
-                    WHERE vl.product_id = p.product_id AND vl.is_active = 1 AND vl.order_id IS NULL
-                ), 0)
-            ) AS cases_in_transit
-        FROM products p 
-        WHERE p.status != 'inactive' OR p.status IS NULL 
-        ORDER BY p.case_price ASC, p.name ASC
-    ")->fetchAll(PDO::FETCH_ASSOC) ?: [];
-
-    foreach ($allProductsList as &$ap) {
-        $cStock = (int)($ap['case_stock'] !== null ? $ap['case_stock'] : ($ap['stock'] ?? 0));
-        $inTransit = (int)($ap['cases_in_transit'] ?? 0);
-        $avail = max(0, $cStock - $inTransit);
-        $ap['case_stock'] = $avail;
-        $ap['stock'] = $avail;
-        $ap['available_stock'] = $avail;
-    }
-    unset($ap);
+    $allProductsList = $pdo->query("SELECT product_id, name, product_name, case_price, price, case_stock, stock, net_content, net_content_unit FROM products WHERE status != 'inactive' OR status IS NULL ORDER BY case_price ASC, name ASC")->fetchAll(PDO::FETCH_ASSOC) ?: [];
 } catch (Exception $e) {}
 
 // Fetch unread incoming orders for initial notification list
@@ -2480,7 +2446,7 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
                     const pid = parseInt(p.product_id);
                     const pName = p.product_name || p.name || 'Product';
                     const rate = parseFloat(p.case_price || p.price || 0);
-                    let stock = Math.max(0, parseInt(p.available_stock !== null && p.available_stock !== undefined ? p.available_stock : (p.stock || 0)));
+                    let stock = Math.max(0, parseInt(p.case_stock !== null && p.case_stock !== undefined ? p.case_stock : (p.stock || 0)));
                     if (pid === parseInt(selectedPid)) {
                         stock += parseInt(extraStockAllowance || 0);
                     }
@@ -2488,7 +2454,7 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
                     if (stock <= 0 && pid !== parseInt(selectedPid)) {
                         html += `<option value="${pid}" data-rate="${rate}" data-stock="0" disabled style="color: #94a3b8;">${pName} (₹${rate.toFixed(2)}/cs - Out of stock)</option>`;
                     } else {
-                        html += `<option value="${pid}" data-rate="${rate}" data-stock="${stock}" ${sel}>${pName} (₹${rate.toFixed(2)}/cs, Avail: ${stock} cs)</option>`;
+                        html += `<option value="${pid}" data-rate="${rate}" data-stock="${stock}" ${sel}>${pName} (₹${rate.toFixed(2)}/cs, Stock: ${stock})</option>`;
                     }
                 });
                 return html;
@@ -2526,7 +2492,7 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
 
                 backdrop.classList.add('open');
 
-                // Fetch existing order items and live catalog products with real-time available stock
+                // Fetch existing order items so previous products are NEVER lost or erased!
                 fetch(pollApiUrl + '&action=get_order_details&order_id=' + parsedId)
                     .then(r => r.json())
                     .then(res => {
@@ -2551,11 +2517,8 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
                                 // No existing products on order, start with 1 blank row
                                 addAopRow();
                             }
-                        } else {
-                            // No existing products on order, start with 1 blank row
-                            addAopRow();
+                            calculateAopTotals();
                         }
-                        calculateAopTotals();
                     })
                     .catch(err => {
                         console.error('Failed to load order products:', err);

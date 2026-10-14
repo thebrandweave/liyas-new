@@ -272,42 +272,21 @@ $searchQuery  = trim($_GET['search'] ?? '');
 $zonesStmt = $pdo->query("SELECT id, name, slug FROM zones ORDER BY name ASC");
 $zonesList = $zonesStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
-// 2. Fetch catalog products for Add Product modal with live available stock (deducting in-transit)
+// 2. Fetch catalog products for Add Product modal with live product stock
 $catalogProducts = [];
 try {
-    $productsStmt = $pdo->query("
+    $catalogProducts = $pdo->query("
         SELECT 
-            p.product_id, p.name, p.product_name, p.case_price, p.price, p.net_content, p.net_content_unit, p.case_stock, p.stock,
-            (
-                COALESCE((
-                    SELECT SUM(oi.quantity)
-                    FROM order_items oi
-                    JOIN orders ord ON oi.order_id = ord.order_id
-                    WHERE oi.product_id = p.product_id AND ord.status IN ('pending', 'processing', 'shipped')
-                ), 0) + COALESCE((
-                    SELECT SUM(ord2.quantity)
-                    FROM orders ord2
-                    WHERE ord2.product_id = p.product_id 
-                      AND ord2.status IN ('pending', 'processing', 'shipped')
-                      AND NOT EXISTS (SELECT 1 FROM order_items oi2 WHERE oi2.order_id = ord2.order_id)
-                ), 0) + COALESCE((
-                    SELECT SUM(vl.cases_loaded)
-                    FROM vehicle_loads vl
-                    WHERE vl.product_id = p.product_id AND vl.is_active = 1 AND vl.order_id IS NULL
-                ), 0)
-            ) AS cases_in_transit
+            p.product_id, p.name, p.product_name, p.case_price, p.price, p.net_content, p.net_content_unit, p.case_stock, p.stock
         FROM products p 
         WHERE p.status != 'inactive' OR p.status IS NULL 
         ORDER BY p.case_price ASC, p.name ASC
-    ");
-    $catalogProducts = $productsStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    ")->fetchAll(PDO::FETCH_ASSOC) ?: [];
     foreach ($catalogProducts as &$cp) {
         $cStock = (int)($cp['case_stock'] !== null ? $cp['case_stock'] : ($cp['stock'] ?? 0));
-        $inTransit = (int)($cp['cases_in_transit'] ?? 0);
-        $avail = max(0, $cStock - $inTransit);
-        $cp['case_stock'] = $avail;
-        $cp['stock'] = $avail;
-        $cp['available_stock'] = $avail;
+        $cp['case_stock'] = $cStock;
+        $cp['stock'] = $cStock;
+        $cp['available_stock'] = $cStock;
     }
     unset($cp);
 } catch (Exception $e) {}
