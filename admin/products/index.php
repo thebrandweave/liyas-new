@@ -306,17 +306,17 @@ if ($total_records > count($products) && empty($search)) {
                                         $delivered = (int)$product['cases_delivered'];
 
                                         // Deduct in-transit cases from available stock
-                                        $availableStock = max(0, $caseStock - $inTransit);
+                                        // $availableStock = max(0, $caseStock - $inTransit);
 
-                                        $stockClass = 'badge-stock-healthy';
-                                        $statusText = 'In Stock';
-                                        if ($availableStock === 0) {
-                                            $stockClass = 'badge-stock-out';
-                                            $statusText = 'Out of Stock';
-                                        } elseif ($availableStock < 20) {
-                                            $stockClass = 'badge-stock-low';
-                                            $statusText = 'Low Stock';
-                                        }
+                                        // $stockClass = 'badge-stock-healthy';
+                                        // $statusText = 'In Stock';
+                                        // if ($availableStock === 0) {
+                                        //     $stockClass = 'badge-stock-out';
+                                        //     $statusText = 'Out of Stock';
+                                        // } elseif ($availableStock < 20) {
+                                        //     $stockClass = 'badge-stock-low';
+                                        //     $statusText = 'Low Stock';
+                                        // }
                                     ?>
                                     <tr>
                                         <td>
