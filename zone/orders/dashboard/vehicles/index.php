@@ -945,8 +945,8 @@ if (!empty($searchQuery)) {
         .veh-model-title {
             font-size: 14px;
             font-weight: 700;
-            color: var(--text-main);
-            margin-top: 4px;
+            color: white;
+            /* margin-top: 4px; */
         }
 
         .veh-home-zone-chip {
@@ -955,7 +955,7 @@ if (!empty($searchQuery)) {
             display: inline-flex;
             align-items: center;
             gap: 3px;
-            margin-top: 2px;
+            margin-top: 6px;
         }
 
         /* Status Badge */
@@ -979,7 +979,7 @@ if (!empty($searchQuery)) {
             background: #f8fafc;
             border: 1px solid #f1f5f9;
             border-radius: 10px;
-            padding: 10px 14px;
+            padding: 10px 6px;
             margin-bottom: 14px;
             display: flex;
             align-items: center;
@@ -1047,9 +1047,9 @@ if (!empty($searchQuery)) {
         }
 
         .load-total-sub {
-            font-size: 11px;
+            font-size: 14px;
             font-weight: 700;
-            text-transform: uppercase;
+            /* text-transform: uppercase; */
             color: #3b82f6;
             margin-top: 2px;
         }
@@ -1363,14 +1363,13 @@ if (!empty($searchQuery)) {
     <!-- Sticky Header Navigation -->
     <header class="portal-header">
         <div class="header-inner">
-            <a href="<?= BASE_URL ?>/zone/orders/dashboard/" class="brand-block" title="Back to Multi-Zone Orders Hub">
-                <img src="<?= BASE_URL ?>/assets/images/logo/logo-bg.jpg" alt="Logo" class="brand-logo">
+          
                 <div class="brand-title">
                     <h1>
-                        <i class='bx bxs-truck' style="color: #2563eb;"></i>
-                        Zone Fleet &amp; Vehicle Products
+                        
+                        Vehicle Management
                     </h1>
-                    <p>Live Available Vehicles &amp; Line-Sale Stock Management</p>
+                    <!-- <p>Live Available Vehicles &amp; Line-Sale Stock Management</p> -->
                 </div>
             </a>
 
@@ -1527,16 +1526,18 @@ if (!empty($searchQuery)) {
                                 <div>
                                     <div class="plate-badge">
                                         <i class='bx bxs-truck' style="color: #60a5fa;"></i>
-                                        <span><?= $vNum ?></span>
+                                        <span><?= $vNum ?></span> /
+                                         <div class="veh-model-title"><?= $vName ?></div>
                                     </div>
-                                    <div class="veh-model-title"><?= $vName ?></div>
-                                    <div class="veh-home-zone-chip">
+                                   
+                                   
+                                </div>
+                                 <div class="veh-home-zone-chip">
                                         <i class='bx bx-map-pin' style="color: #ef4444;"></i> Base Zone: <strong><?= $homeZone ?></strong>
                                     </div>
-                                </div>
-                                <span class="status-badge <?= $stClass ?>">
+                                <!-- <span class="status-badge <?= $stClass ?>">
                                     <?= $stLabel ?>
-                                </span>
+                                </span> -->
                             </div>
 
                             <!-- Driver Contact Information -->
@@ -1580,21 +1581,21 @@ if (!empty($searchQuery)) {
                                     <div class="load-total-num">
                                         <?= $totalCases ?> <span style="font-size: 14px; font-weight: 700;">Cases</span>
                                         <?php if ($capacityCases > 0): ?>
-                                            <span style="font-size: 12px; font-weight: 600; color: #64748b;"> / <?= $capacityCases ?> Max</span>
+                                            <span style="font-size: 12px; font-weight: 600; color: #64748b;"> </span>
                                         <?php endif; ?>
                                     </div>
                                     <div class="load-total-sub">
-                                        <span style="color: #1e40af; font-weight: 700;"><?= $assignedOrderCases ?> cs Orders</span>
-                                        &bull;
-                                        <span style="color: #047857; font-weight: 700;"><?= $bufferCases ?> cs Line-Sale</span>
+                                        <span style=" color: #1e40af; font-weight: 700;"><?= $assignedOrderCases ?> cs Orders</span>
+                                        
+                                     
                                     </div>
                                 </div>
-                                <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                                <div style="display: flex; gap: 6px; flex-wrap: wrap;justify-content: flex-end;">
                                     <button type="button" class="btn-load-prod-plus" style="background: #059669;" onclick="openAssignOrderModal(<?= $vId ?>, '<?= htmlspecialchars(addslashes($vNum)) ?>')" title="Assign client order to this vehicle">
                                         <i class='bx bx-plus-circle'></i> Assign Order
                                     </button>
                                     <button type="button" class="btn-load-prod-plus" onclick="openLoadProductModal(<?= $vId ?>, '<?= htmlspecialchars(addslashes($vNum)) ?>')" title="Add line-sale product to this vehicle">
-                                        <i class='bx bx-plus'></i> Load Line-Sale
+                                        <i class='bx bx-plus'></i> Load Product
                                     </button>
                                 </div>
                             </div>
@@ -1603,7 +1604,7 @@ if (!empty($searchQuery)) {
                             <?php if (!empty($combinedCargo)): ?>
                                 <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 12px; margin-bottom: 14px;">
                                     <div style="font-size: 11px; font-weight: 800; text-transform: uppercase; color: #64748b; margin-bottom: 6px; display: flex; align-items: center; gap: 4px;">
-                                        <i class='bx bx-layer'></i> Total On-Board Inventory (<?= count($combinedCargo) ?> SKUs):
+                                        <i class='bx bx-layer'></i> Vehicle Storage (<?= count($combinedCargo) ?> Products):
                                     </div>
                                     <div style="display: flex; flex-wrap: wrap; gap: 6px;">
                                         <?php foreach ($combinedCargo as $cc): ?>
@@ -1617,7 +1618,7 @@ if (!empty($searchQuery)) {
                                                 <?php elseif ($cc['order_cases'] > 0): ?>
                                                     <small style="color: #2563eb; font-size: 10px;">(Orders)</small>
                                                 <?php else: ?>
-                                                    <small style="color: #059669; font-size: 10px;">(Line-Sale)</small>
+                                                    <small style="color: #059669; font-size: 12px;">(Extra)</small>
                                                 <?php endif; ?>
                                             </div>
                                         <?php endforeach; ?>
@@ -1625,208 +1626,9 @@ if (!empty($searchQuery)) {
                                 </div>
                             <?php endif; ?>
 
-                            <!-- SECTION 1: ASSIGNED CLIENT ORDERS & PRODUCTS BREAKDOWN -->
-                            <div class="veh-products-section" style="margin-bottom: 16px;">
-                                <div class="veh-prods-title">
-                                    <span style="color: #1e40af; display: flex; align-items: center; gap: 4px;">
-                                        <i class='bx bx-shopping-bag' style="font-size: 16px;"></i> 
-                                        <span>Assigned Client Orders</span>
-                                        <span style="background: #dbeafe; color: #1e40af; padding: 1px 6px; border-radius: 10px; font-size: 11px; font-weight: 800;"><?= count($assignedOrders) ?></span>
-                                    </span>
-                                    <span style="font-size: 11px; color: #64748b; font-weight: 700;"><?= $assignedOrderCases ?> Cases</span>
-                                </div>
+                          
 
-                                <?php if (!empty($assignedOrders)): ?>
-                                    <div style="display: flex; flex-direction: column; gap: 10px;">
-                                        <?php foreach ($assignedOrders as $ao): 
-                                            $aoId = (int)$ao['order_id'];
-                                            $aoNum = $ao['order_number'] ?: ('#' . $aoId);
-                                            $aoShop = $ao['shop_name'] ?: ($ao['customer_name'] ?: 'Customer');
-                                            $aoItems = $ao['items'] ?? [];
-                                            $aoTotal = (float)($ao['total_amount'] ?? 0);
-                                            $aoStatus = strtolower($ao['status'] ?? 'pending');
-                                            $aoPhone = htmlspecialchars($ao['phone'] ?: '');
-                                            $aoZone = htmlspecialchars($ao['zone_name'] ?: '');
-                                            $aoZoneSlug = htmlspecialchars($ao['zone_slug'] ?: '');
-                                        ?>
-                                            <div style="background: #ffffff; border: 1.5px solid #bfdbfe; border-radius: 10px; padding: 10px 12px; box-shadow: 0 1px 3px rgba(37,99,235,0.06);" id="assigned_order_<?= $aoId ?>">
-                                                <!-- Order Header Strip -->
-                                                <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; border-bottom: 1px dashed #e2e8f0; padding-bottom: 6px;">
-                                                    <div>
-                                                        <div style="display: flex; align-items: center; gap: 6px;">
-                                                            <strong style="font-size: 13px; color: #1e40af;">#<?= htmlspecialchars($aoNum) ?></strong>
-                                                            <span style="font-size: 13px; font-weight: 700; color: #0f172a;"><?= htmlspecialchars($aoShop) ?></span>
-                                                            <span class="status-badge" style="font-size: 10px; padding: 1px 6px; text-transform: uppercase; background: #e0f2fe; color: #0369a1; border-radius: 4px;"><?= htmlspecialchars($aoStatus) ?></span>
-                                                        </div>
-                                                        <div style="font-size: 11px; color: #64748b; display: flex; gap: 8px; flex-wrap: wrap; margin-top: 2px;">
-                                                            <?php if (!empty($aoZone)): ?>
-                                                                <span><i class='bx bx-map-pin'></i> <?= $aoZone ?></span>
-                                                            <?php endif; ?>
-                                                            <?php if (!empty($aoPhone)): ?>
-                                                                <span><i class='bx bx-phone'></i> <a href="tel:<?= $aoPhone ?>" style="color: #2563eb; text-decoration: none;"><?= $aoPhone ?></a></span>
-                                                            <?php endif; ?>
-                                                        </div>
-                                                    </div>
-
-                                                    <!-- Unassign Action -->
-                                                    <div>
-                                                        <form method="POST" action="index.php?zone=<?= urlencode($filterZone) ?>" style="display: inline;" onsubmit="return confirm('Unassign order #<?= htmlspecialchars(addslashes($aoNum)) ?> from vehicle <?= $vNum ?>?');">
-                                                            <input type="hidden" name="action" value="unassign_order">
-                                                            <input type="hidden" name="order_id" value="<?= $aoId ?>">
-                                                            <button type="submit" class="btn-crud-mini" style="color: #dc2626; border-color: #fecaca; background: #fef2f2; width: auto; padding: 2px 8px; font-size: 11px; font-weight: 700; height: 26px; border-radius: 6px;" title="Unassign order from vehicle">
-                                                                <i class='bx bx-x'></i> Unassign
-                                                            </button>
-                                                        </form>
-                                                    </div>
-                                                </div>
-
-                                                <!-- Products Breakdown for this Order -->
-                                                <div style="margin-bottom: 8px;">
-                                                    <div style="font-size: 10px; font-weight: 700; text-transform: uppercase; color: #64748b; margin-bottom: 4px; letter-spacing: 0.04em;">
-                                                        Ordered Products (<?= count($aoItems) ?>):
-                                                    </div>
-                                                    <?php if (empty($aoItems)): ?>
-                                                        <div style="font-size: 11px; color: #b45309; background: #fffbeb; padding: 4px 8px; border-radius: 6px; border: 1px dashed #fde68a;">
-                                                            <i class='bx bx-error-circle'></i> No products added yet
-                                                        </div>
-                                                    <?php else: ?>
-                                                        <div style="display: flex; flex-direction: column; gap: 4px;">
-                                                            <?php foreach ($aoItems as $it): 
-                                                                $itName = htmlspecialchars($it['product_name']);
-                                                                $itQty = (int)$it['quantity'];
-                                                                $itPrice = (float)$it['price_at_purchase'];
-                                                                $itIsExtra = !empty($it['is_extra']);
-                                                                $itContent = ($it['net_content'] ? (float)$it['net_content'] . ' ' . $it['net_content_unit'] : '');
-                                                            ?>
-                                                                <div style="display: flex; align-items: center; justify-content: space-between; font-size: 12px; background: #f8fafc; border: 1px solid #f1f5f9; border-radius: 6px; padding: 4px 8px;">
-                                                                    <div style="display: flex; align-items: center; gap: 6px; min-width: 0; flex: 1;">
-                                                                        <i class='bx bx-droplet' style="color: #2563eb; font-size: 14px;"></i>
-                                                                        <strong style="color: #1e293b;"><?= $itName ?></strong>
-                                                                        <?php if (!empty($itContent)): ?>
-                                                                            <small style="color: #64748b; font-size: 10px;">(<?= $itContent ?>)</small>
-                                                                        <?php endif; ?>
-                                                                        <?php if ($itIsExtra): ?>
-                                                                            <span style="font-size: 9px; font-weight: 800; background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; padding: 0 4px; border-radius: 4px;">EXTRA</span>
-                                                                        <?php endif; ?>
-                                                                    </div>
-                                                                    <div style="display: flex; align-items: center; gap: 8px; flex-shrink: 0;">
-                                                                        <span style="background: #eff6ff; color: #1e40af; font-weight: 800; font-size: 11px; padding: 1px 6px; border-radius: 4px;">
-                                                                            <?= $itQty ?> cs
-                                                                        </span>
-                                                                        <span style="font-size: 11px; color: #475569; font-weight: 600; min-width: 60px; text-align: right;">
-                                                                            <?= $itIsExtra ? '₹0.00' : '₹' . number_format($itPrice * $itQty, 2) ?>
-                                                                        </span>
-                                                                    </div>
-                                                                </div>
-                                                            <?php endforeach; ?>
-                                                        </div>
-                                                    <?php endif; ?>
-                                                </div>
-
-                                                <!-- Order Footer with Bill & Edit Links -->
-                                                <div style="display: flex; align-items: center; justify-content: space-between; padding-top: 6px; border-top: 1px solid #f1f5f9; font-size: 11px;">
-                                                    <div>
-                                                        <span style="color: #64748b;">Order Total:</span>
-                                                        <strong style="color: #059669; font-size: 13px;">₹<?= number_format($aoTotal, 2) ?></strong>
-                                                        <span style="color: #64748b; margin-left: 4px;">(<?= (int)$ao['total_cases'] ?> cs)</span>
-                                                    </div>
-                                                    <div style="display: flex; gap: 6px;">
-                                                        <button type="button" class="btn-crud-mini" style="width: auto; padding: 2px 8px; height: 24px; font-size: 11px; color: #047857; background: #ecfdf5; border-color: #a7f3d0; font-weight: 700;" onclick="openAddOrderProductsModal(<?= $aoId ?>, <?= htmlspecialchars(json_encode((string)$aoNum), ENT_QUOTES, 'UTF-8') ?>, <?= htmlspecialchars(json_encode((string)$aoShop), ENT_QUOTES, 'UTF-8') ?>)" title="Add or edit products on this order">
-                                                            <i class='bx bx-edit-alt'></i> Edit Products
-                                                        </button>
-                                                        <?php if (!empty($aoZoneSlug)): ?>
-                                                            <a href="<?= BASE_URL ?>/zone/generate-receipt.php?zone=<?= urlencode($aoZoneSlug) ?>&order_id=<?= $aoId ?>" target="_blank" class="btn-crud-mini" style="width: auto; padding: 2px 8px; height: 24px; font-size: 11px; color: #2563eb; background: #eff6ff; border-color: #bfdbfe; font-weight: 700; text-decoration: none;" title="Print or view bill">
-                                                                <i class='bx bx-receipt'></i> Bill
-                                                            </a>
-                                                        <?php endif; ?>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        <?php endforeach; ?>
-                                    </div>
-                                <?php else: ?>
-                                    <div class="empty-prods-msg" style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
-                                        <span><i class='bx bx-info-circle'></i> No client orders assigned to this vehicle yet.</span>
-                                        <button type="button" class="btn-crud-mini" style="width: auto; padding: 4px 10px; font-size: 11px; font-weight: 700; color: #2563eb; background: #eff6ff; border-color: #bfdbfe;" onclick="openAssignOrderModal(<?= $vId ?>, '<?= htmlspecialchars(addslashes($vNum)) ?>')">
-                                            <i class='bx bx-plus'></i> Assign Order
-                                        </button>
-                                    </div>
-                                <?php endif; ?>
-                            </div>
-
-                            <!-- SECTION 2: DIRECT LINE-SALE BUFFER STOCK -->
-                            <div class="veh-products-section">
-                                <div class="veh-prods-title">
-                                    <span style="color: #047857; display: flex; align-items: center; gap: 4px;">
-                                        <i class='bx bx-archive' style="font-size: 16px;"></i> 
-                                        <span>Direct Line-Sale Stock</span>
-                                        <span style="background: #d1fae5; color: #065f46; padding: 1px 6px; border-radius: 10px; font-size: 11px; font-weight: 800;"><?= count($loads) ?></span>
-                                    </span>
-                                    <span style="font-size: 11px; color: #64748b; font-weight: 700;"><?= $bufferCases ?> Cases</span>
-                                </div>
-
-                                <?php if (!empty($loads)): ?>
-                                    <div class="veh-prods-list">
-                                        <?php foreach ($loads as $l): 
-                                            $loadId = (int)$l['load_id'];
-                                            $pName  = htmlspecialchars($l['product_name']);
-                                            $pCases = (int)$l['cases_loaded'];
-                                            $pPrice = (float)$l['case_price'];
-                                            $pStock = (int)($l['case_stock'] ?? 0);
-                                            $pNotes = htmlspecialchars($l['notes'] ?: '');
-                                            $pZone  = htmlspecialchars($l['zone_name'] ?: '');
-                                            $pContent = ($l['net_content'] ? (float)$l['net_content'] . ' ' . $l['net_content_unit'] : '');
-                                        ?>
-                                            <div class="veh-prod-row" id="prod_load_<?= $loadId ?>">
-                                                <div class="veh-prod-info">
-                                                    <div class="prod-tag-icon" style="background: #ecfdf5; color: #059669;">
-                                                        <i class='bx bx-droplet'></i>
-                                                    </div>
-                                                    <div style="min-width: 0; flex: 1;">
-                                                        <div style="display: flex; align-items: center; gap: 6px;">
-                                                            <strong class="prod-name-text"><?= $pName ?></strong>
-                                                            <?php if (!empty($pContent)): ?>
-                                                                <small style="color: #64748b; font-size: 11px;"><?= $pContent ?></small>
-                                                            <?php endif; ?>
-                                                        </div>
-                                                        <div style="font-size: 11px; color: var(--text-muted); display: flex; gap: 8px; flex-wrap: wrap; margin-top: 2px;">
-                                                            <?php if (!empty($pZone)): ?>
-                                                                <span><i class='bx bx-map-pin'></i> <?= $pZone ?></span>
-                                                            <?php endif; ?>
-                                                            <span><i class='bx bx-archive'></i> Wh Stock: <strong><?= number_format($pStock) ?> cs</strong></span>
-                                                            <?php if (!empty($pNotes)): ?>
-                                                                <span>&bull; <?= $pNotes ?></span>
-                                                            <?php endif; ?>
-                                                        </div>
-                                                    </div>
-                                                </div>
-
-                                                <div style="display: flex; align-items: center; gap: 8px;">
-                                                    <span class="prod-cases-badge" style="background: #d1fae5; color: #065f46;"><?= $pCases ?> cs</span>
-                                                    
-                                                    <!-- CRUD: Edit & Delete buttons -->
-                                                    <div class="prod-crud-btns">
-                                                        <button type="button" class="btn-crud-mini btn-crud-edit" 
-                                                                onclick="openEditProductLoadModal(<?= $loadId ?>, '<?= htmlspecialchars(addslashes($pName)) ?>', <?= $pCases ?>, <?= (int)($l['zone_id'] ?? 0) ?>, '<?= htmlspecialchars(addslashes($pNotes)) ?>', <?= $pStock ?>)" 
-                                                                title="Edit quantity / notes for <?= $pName ?>">
-                                                            <i class='bx bx-pencil'></i>
-                                                        </button>
-                                                        <button type="button" class="btn-crud-mini btn-crud-del" 
-                                                                onclick="confirmDeleteProductLoad(<?= $loadId ?>, '<?= htmlspecialchars(addslashes($pName)) ?>', <?= $pCases ?>)" 
-                                                                title="Remove <?= $pName ?> from vehicle">
-                                                            <i class='bx bx-trash'></i>
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        <?php endforeach; ?>
-                                    </div>
-                                <?php else: ?>
-                                    <div class="empty-prods-msg">
-                                        <i class='bx bx-info-circle'></i> No line-sale buffer stock loaded on this vehicle.
-                                    </div>
-                                <?php endif; ?>
-                            </div>
+                 
                         </div>
 
                         <!-- Card Footer Operations: Edit Vehicle & Reset -->

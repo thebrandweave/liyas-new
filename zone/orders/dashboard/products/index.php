@@ -912,9 +912,7 @@ $total_available_stock = $total_raw_stock;
                                 <td>
                                     <span style="font-weight: 800; font-size: 14px; color: #0f172a;"><?= number_format($availableStock) ?></span>
                                     <span style="font-size: 12px; color: #64748b;">cs</span>
-                                    <?php if ($inTransit > 0): ?>
-                                        <div style="font-size: 11px; color: #64748b; margin-top: 2px;">Total: <?= number_format($caseStock + $inTransit) ?> | Transit: <?= number_format($inTransit) ?></div>
-                                    <?php endif; ?>
+                                 
                                 </td>
                                 <td>
                                     <?php if ($inTransit > 0): ?>

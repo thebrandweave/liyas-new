@@ -54,7 +54,7 @@ if ($is_live) {
     // Main Database (Fixed naming to match connection logic)
     define('DB_USER_MAIN', 'root');
     define('DB_PASS_MAIN', '');
-    define('DB_NAME_MAIN', 'liyaswater');
+    define('DB_NAME_MAIN', 'liyas');
 
     // Campaign Database (Added to prevent errors locally)
     define('DB_USER_CAMPAIGN', 'root');

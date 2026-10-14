@@ -1760,10 +1760,7 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
                         <?php if (!empty($order['assigned_vehicle_number'])): ?>
                             <div class="assigned-veh-info-strip" style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 8px 12px; margin-bottom: 12px; font-size: 12px;">
                                 <div style="display: flex; align-items: center; justify-content: space-between; gap: 6px;">
-                                    <div style="font-weight: 700; color: #1e40af; display: flex; align-items: center; gap: 6px;">
-                                        <i class='bx bxs-truck' style="color: #2563eb; font-size: 16px;"></i>
-                                        <span>Assigned Vehicle: <strong><?= htmlspecialchars($order['assigned_vehicle_number']) ?></strong> <?= !empty($order['assigned_vehicle_name']) ? '(' . htmlspecialchars($order['assigned_vehicle_name']) . ')' : '' ?></span>
-                                    </div>
+                                  
                                     <a href="<?= BASE_URL ?>/zone/orders/dashboard/vehicles/?search=<?= urlencode($order['assigned_vehicle_number']) ?>" target="_blank" style="font-size: 11px; color: #2563eb; text-decoration: none; font-weight: 700; display: inline-flex; align-items: center; gap: 2px;">
                                         <span>View Vehicle</span> <i class='bx bx-right-arrow-alt'></i>
                                     </a>
@@ -1771,7 +1768,7 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
                                 <?php if (!empty($order['vehicle_buffer_stock'])): ?>
                                     <div style="margin-top: 6px; font-size: 11px; color: #b45309; background: #fef3c7; border: 1px solid #fde68a; padding: 4px 8px; border-radius: 6px; display: flex; align-items: center; gap: 5px;">
                                         <i class='bx bx-archive' style="font-size: 13px;"></i>
-                                        <div><strong>On-Board Line-Sale Stock:</strong> <?= htmlspecialchars($order['vehicle_buffer_stock']) ?></div>
+                                        <div><strong>Vehicle Stock:</strong> <?= htmlspecialchars($order['vehicle_buffer_stock']) ?></div>
                                     </div>
                                 <?php endif; ?>
                             </div>
@@ -2363,9 +2360,9 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
 
                                 ${o.vehicle_number ? `
                                     <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:10px 14px; margin-bottom:16px;">
-                                        <div style="font-size:12px; font-weight:700; color:#334155; display:flex; align-items:center; gap:6px;">
-                                            <i class='bx bxs-truck' style="color:#2563eb;"></i> Assigned Vehicle: <strong>${o.vehicle_number}</strong> ${o.vehicle_name ? '(' + o.vehicle_name + ')' : ''}
-                                        </div>
+                                        // <div style="font-size:12px; font-weight:700; color:#334155; display:flex; align-items:center; gap:6px;">
+                                        //     <i class='bx bxs-truck' style="color:#2563eb;"></i> Assigned Vehicle: <strong>${o.vehicle_number}</strong> ${o.vehicle_name ? '(' + o.vehicle_name + ')' : ''}
+                                        // </div>
                                         ${Array.isArray(o.vehicle_storage) && o.vehicle_storage.length > 0 ? `
                                             <div style="margin-top:6px; font-size:12px; color:#b45309; background:#fef3c7; border:1px solid #fde68a; padding:6px 10px; border-radius:6px;">
                                                 <i class='bx bx-archive'></i> <strong>In Vehicle Storage:</strong>

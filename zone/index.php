@@ -385,7 +385,7 @@ function buildWhatsAppLink($phone, $shop, $orderNum, $amount, $itemsText = '') {
             color: #1e40af;
             font-size: 12px;
             font-weight: 700;
-            padding: 6px 12px;
+            padding: 4px 8px;
             border-radius: 20px;
             border: 1px solid #bfdbfe;
             white-space: nowrap;
@@ -881,7 +881,7 @@ function buildWhatsAppLink($phone, $shop, $orderNum, $amount, $itemsText = '') {
         /* Horizontal Scrollable Filter Tabs */
         .filter-scroll-container {
             display: flex;
-            gap: 6px;
+            gap: 2px;
             overflow-x: auto;
             padding-bottom: 4px;
             scrollbar-width: none;
@@ -1209,10 +1209,10 @@ function buildWhatsAppLink($phone, $shop, $orderNum, $amount, $itemsText = '') {
         }
 
         .veh-cases-chip {
-            background: rgba(96, 165, 250, 0.25);
-            color: #93c5fd;
+            background: #ffffff;
+            color: #070809;
             padding: 1px 6px;
-            border-radius: 4px;
+            /* border-radius: 4px; */
             font-size: 10px;
             font-weight: 800;
             letter-spacing: 0.02em;
@@ -1852,14 +1852,8 @@ function buildWhatsAppLink($phone, $shop, $orderNum, $amount, $itemsText = '') {
     <header class="portal-header">
         <div class="header-inner">
             <a href="<?= zone_url($zone_slug) ?>" class="brand-cluster">
-             
                 <div>
                     <div class="brand-title">Liyas Delivery</div>
-                    <div class="brand-subtitle">
-                        <span>Zone </span>
-                        <span>&bull;</span>
-                        <span style="color: #2563eb;"><?= htmlspecialchars($zone_name) ?></span>
-                    </div>
                 </div>
             </a>
 
@@ -1984,8 +1978,8 @@ function buildWhatsAppLink($phone, $shop, $orderNum, $amount, $itemsText = '') {
                                 <i class='bx bxs-truck'></i>
                             </span>
                             <div>
-                                <div class="vehicle-load-title">Current Vehicle Stock &amp; Remaining Load</div>
-                                <div class="vehicle-load-subtitle">Live on-road vehicle stock available for delivery in <?= htmlspecialchars($zone_name) ?></div>
+                                <div class="vehicle-load-title">Vehicle Stock &amp; Remaining Load</div>
+                             
                             </div>
                         </div>
                         <div class="vehicle-load-badge-group">

@@ -762,9 +762,7 @@ $stepLevel = $statusSteps[$currentStatus] ?? 1;
                 </div>
             <?php else: ?>
                 <div style="text-align: center; padding: 8px 0;">
-                    <p style="font-size: 14px; color: var(--text-muted); margin-bottom: 16px;">
-                        Ready for delivery? Confirm delivered cases and record Cash/Credit payment collection to generate official bill.
-                    </p>
+                 
                     <a href="<?= zone_url($zone_slug, 'generate-receipt', ['order_id' => $order_id]) ?>" class="btn-action-large btn-primary-green">
                         <i class='bx bx-check-shield' style="font-size: 20px;"></i> Generate Delivery Receipt
                     </a>

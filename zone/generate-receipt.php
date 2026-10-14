@@ -733,7 +733,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['items']) && is_array(
         }
 
         .section-hdr {
-            font-size: 13px;
+            font-size: 11px;
             font-weight: 800;
             color: var(--text-muted);
             text-transform: uppercase;
@@ -1007,9 +1007,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['items']) && is_array(
                     <i class='bx bx-receipt' style="color: #059669;"></i>
                     <?= ($order_id > 0) ? 'Generate Delivery Receipt' : 'New Spot Delivery Receipt' ?>
                 </h1>
-                <p class="form-subtitle">
-                    <?= ($order_id > 0) ? 'Confirm delivered cases and settle cash/credit payment.' : 'Create direct invoice and complete on-the-spot delivery.' ?>
-                </p>
+               
             </div>
 
             <form action="<?= zone_url($zone_slug, 'generate-receipt') ?>" method="POST" id="receiptForm">
@@ -1054,10 +1052,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['items']) && is_array(
                     </div>
                 </div>
 
-                <div class="form-group">
+                <!-- <div class="form-group">
                     <label class="form-label" for="customer_name">Contact Person (Optional)</label>
                     <input type="text" name="customer_name" id="customer_name" class="form-control" value="<?= htmlspecialchars($_POST['customer_name'] ?? $def_customer) ?>" placeholder="e.g. Ramesh">
-                </div>
+                </div> -->
 
                 <!-- Product & Quantity -->
                 <div class="section-hdr">
@@ -1101,20 +1099,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['items']) && is_array(
                                     <?php if ($isExtra): ?>
                                         <span style="font-size: 11px; font-weight: 700; color: #1e40af; background: #dbeafe; padding: 2px 7px; border-radius: 4px;">EXTRA VEHICLE CASE</span>
                                     <?php endif; ?>
-                                    <?php if (!empty($netContentStr)): ?>
-                                        <span style="font-size: 11px; color: #64748b; background: #f1f5f9; padding: 2px 6px; border-radius: 4px;"><?= $netContentStr ?></span>
-                                    <?php endif; ?>
+                             
                                 </div>
                                 <?php if ($isExtra): ?>
                                     <div style="font-size: 11px; color: #64748b; margin-top: 2px;">
                                         Loaded in vehicle: <strong><?= $maxCases ?> cases</strong>
                                     </div>
                                 <?php endif; ?>
-                                <div style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #475569; margin-top: 4px;">
-                                    <span>Rate: ₹</span>
-                                    <input type="number" step="0.01" min="0" name="items[<?= $idx ?>][rate]" value="<?= $rate ?>" class="form-control item-rate" style="width: 85px; height: 28px; padding: 2px 6px; font-size: 12px; font-weight: 700; border: 1.5px solid #cbd5e1; border-radius: 6px; background: #ffffff;" oninput="recalculate()" title="Edit rate if needed">
-                                    <span>/ case</span>
-                                </div>
+                               <div style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #475569; margin-top: 4px;">
+    <span>Rate: ₹</span>
+
+    <span style="font-weight: 700; color: #0f172a;">
+        <?= htmlspecialchars(number_format((float)$rate, 2), ENT_QUOTES, 'UTF-8') ?>
+    </span>
+
+    <input
+        type="hidden"
+        name="items[<?= $idx ?>][rate]"
+        value="<?= htmlspecialchars((string)$rate, ENT_QUOTES, 'UTF-8') ?>"
+        class="item-rate"
+    >
+
+    <span>/ case</span>
+</div>
                                 <div class="item-calc-text" style="font-size: 12px; color: #64748b; font-weight: 600; margin-top: 3px;">
                                     Rate × Qty: ₹<span class="calc-rate-val"><?= number_format($rate, 2) ?></span> × <span class="calc-qty-val"><?= $qty ?></span> cs = ₹<span class="calc-sub-val"><?= number_format($lineTotal, 2) ?></span>
                                 </div>
@@ -1141,22 +1148,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['items']) && is_array(
 
                 <?php if (!empty($vehicle_extra_products)): ?>
                 <!-- Add from Extra Cases Loaded in Vehicle Dropdown -->
-                <div style="background: #eff6ff; border: 1.5px solid #bfdbfe; border-radius: var(--radius-md); padding: 14px; margin-bottom: 16px;">
-                    <div style="font-size: 13px; font-weight: 800; color: #1e40af; margin-bottom: 4px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px;">
-                        <span style="display: flex; align-items: center; gap: 6px;">
-                            <i class='bx bxs-truck' style="font-size: 18px; color: #2563eb;"></i>
-                            Extra Cases Loaded in Vehicle <?= !empty($assignedVehicle['vehicle_number']) ? '(' . htmlspecialchars($assignedVehicle['vehicle_number']) . (!empty($assignedVehicle['vehicle_name']) ? ' - ' . htmlspecialchars($assignedVehicle['vehicle_name']) : '') . ')' : '' ?>
-                        </span>
-                        <span style="font-size: 11px; font-weight: 700; color: #1d4ed8; background: #dbeafe; padding: 2px 8px; border-radius: 6px;">
-                            Linesale / Vehicle Stock
-                        </span>
-                    </div>
-                    <div style="font-size: 12px; color: #475569; margin-bottom: 10px;">
-                        Click any product below or select from dropdown to add to this shop's delivery bill. Unselected cases remain stored in the vehicle.
-                    </div>
+                <div style="background: #eff6ff; border: 1.5px solid #bfdbfe; border-radius: var(--radius-md); padding: 4px; margin-bottom: 16px;">
+                  
 
                     <!-- One-click Quick Add Pills -->
-                    <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 12px;">
+                    <!-- <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 12px;">
                         <?php foreach ($vehicle_extra_products as $vep): ?>
                             <button type="button" class="btn-quick-extra" onclick="quickAddVehicleExtra(<?= $vep['product_id'] ?>)" 
                                     style="background: #ffffff; border: 1.5px solid #93c5fd; color: #1e40af; padding: 7px 12px; border-radius: 8px; font-size: 12px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); transition: all 0.15s ease;"
@@ -1179,11 +1175,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['items']) && is_array(
                                 <span>+ Add All to Bill</span>
                             </button>
                         <?php endif; ?>
-                    </div>
+                    </div> -->
 
                     <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
-                        <select id="extraVehicleSelect" class="form-control" style="flex: 1; min-width: 220px;">
-                            <option value="">-- Select extra cases loaded in vehicle --</option>
+                        <select id="extraVehicleSelect" class="form-control" style="flex: 1; min-width: 200px;">
+                            <option value="">- Select extra cases from vehicle -</option>
                             <?php foreach ($vehicle_extra_products as $vep): ?>
                                 <option value="<?= $vep['product_id'] ?>" 
                                         data-name="<?= htmlspecialchars($vep['product_name']) ?>" 
@@ -1202,7 +1198,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['items']) && is_array(
                 <?php endif; ?>
 
                 <!-- Add Regular Product Row -->
-                <div style="background: #f8fafc; border: 1.5px dashed #cbd5e1; border-radius: var(--radius-md); padding: 14px; margin-bottom: 20px;">
+                <!-- <div style="background: #f8fafc; border: 1.5px dashed #cbd5e1; border-radius: var(--radius-md); padding: 14px; margin-bottom: 20px;">
                     <div style="font-size: 12px; font-weight: 700; color: #475569; margin-bottom: 6px; display: flex; align-items: center; gap: 4px;">
                         <i class='bx bx-plus-circle' style="color: #475569;"></i> Add another catalog product to bill
                     </div>
@@ -1219,7 +1215,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['items']) && is_array(
                             <i class='bx bx-plus'></i> Add to Bill
                         </button>
                     </div>
-                </div>
+                </div> -->
 
                 <!-- Payment Settlement -->
                 <div class="section-hdr">
