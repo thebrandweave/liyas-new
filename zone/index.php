@@ -2048,9 +2048,7 @@ function buildWhatsAppLink($phone, $shop, $orderNum, $amount, $itemsText = '') {
                                         <span class="veh-prod-pill">
                                             <strong><?= htmlspecialchars($lp['product_name']) ?></strong>: 
                                             <span class="pill-qty"><?= (int)$lp['loaded_cases'] ?> cs</span>
-                                            <?php if (!empty($lp['storage_cases']) && $lp['storage_cases'] > 0 && !empty($lp['order_cases']) && $lp['order_cases'] > 0): ?>
-                                                <small style="color: #64748b; font-size: 10px;">(<?= (int)$lp['storage_cases'] ?> extra + <?= (int)$lp['order_cases'] ?> orders)</small>
-                                            <?php endif; ?>
+                                         
                                         </span>
                                     <?php endforeach; ?>
                                 <?php else: ?>
