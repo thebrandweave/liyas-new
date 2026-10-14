@@ -340,7 +340,7 @@ if ($total_records > count($products) && empty($search)) {
                                             <span style="font-size: 11px; color: #64748b;">/ case</span>
                                         </td>
                                         <td>
-                                            <span style="font-weight: 700; font-size: 15px; color: #0f172a;"><?= number_format($availableStock) ?></span> Cases
+                                            <span style="font-weight: 700; font-size: 15px; color: #0f172a;"><?= number_format($caseStock) ?></span> Cases
                                             <?php if ($inTransit > 0): ?>
                                                 <div style="font-size: 11px; color: #64748b; margin-top: 2px;">Total: <?= number_format($caseStock) ?> | Transit: <?= number_format($inTransit) ?></div>
                                             <?php endif; ?>
