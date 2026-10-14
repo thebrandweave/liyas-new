@@ -2480,7 +2480,7 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
                     const pid = parseInt(p.product_id);
                     const pName = p.product_name || p.name || 'Product';
                     const rate = parseFloat(p.case_price || p.price || 0);
-                    let stock = Math.max(0, parseInt(p.case_stock !== null && p.case_stock !== undefined ? p.case_stock : (p.stock || 0)));
+                    let stock = Math.max(0, parseInt(p.available_stock !== null && p.available_stock !== undefined ? p.available_stock : (p.stock || 0)));
                     if (pid === parseInt(selectedPid)) {
                         stock += parseInt(extraStockAllowance || 0);
                     }
