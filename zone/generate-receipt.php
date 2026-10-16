@@ -1,6 +1,17 @@
 <?php
 require_once __DIR__ . '/zone_context.php';
 
+// Quick AJAX endpoint to check prior pending dues for a shop or phone
+if (isset($_GET['action']) && $_GET['action'] === 'check_prior_due') {
+    header('Content-Type: application/json');
+    $checkShop = trim($_GET['shop'] ?? '');
+    $checkPhone = trim($_GET['phone'] ?? '');
+    $exId = (int)($_GET['exclude_id'] ?? 0);
+    $dues = getShopPendingDueDetails($pdo, $checkShop, $checkPhone, $exId, $zone_id);
+    echo json_encode($dues);
+    exit;
+}
+
 $order_id = isset($_GET['order_id']) ? (int)$_GET['order_id'] : (isset($_POST['order_id']) ? (int)$_POST['order_id'] : 0);
 
 // Load existing order if order_id provided
@@ -510,12 +521,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['generate_receipt'])) 
                 // Generate Bill Number
                 $bill_number = generateBillNumber($pdo);
 
+                // Handle clearance of prior pending dues if selected
+                $collect_prior_due = isset($_POST['collect_prior_due']);
+                $prior_due_amount  = $collect_prior_due ? (float)($_POST['prior_due_amount'] ?? 0) : 0.00;
+                $prior_due_mode    = trim($_POST['prior_due_mode'] ?? 'cash');
+
+                $settleResult = null;
+                if ($collect_prior_due && $prior_due_amount > 0) {
+                    $settleResult = settleShopPriorDuesFifo(
+                        $pdo,
+                        $shop_name,
+                        $phone,
+                        $prior_due_amount,
+                        $prior_due_mode,
+                        "Cleared during delivery of Bill #{$bill_number} (Order #{$order_number})",
+                        $order_id,
+                        $zone_id
+                    );
+                }
+
+                $receipt_notes = trim($_POST['receipt_notes'] ?? '');
+                if (!empty($settleResult['total_cleared']) && $settleResult['total_cleared'] > 0) {
+                    $clearedSummary = "Cleared ₹" . number_format($settleResult['total_cleared'], 2) . " earlier due (" . ucfirst($prior_due_mode) . ") from " . implode(', ', array_map(fn($c) => 'Bill #' . $c['bill_number'], $settleResult['cleared_receipts']));
+                    $receipt_notes = !empty($receipt_notes) ? ($receipt_notes . " | " . $clearedSummary) : $clearedSummary;
+                }
+
                 // Insert into receipts table
                 $insReceipt = $pdo->prepare("
                     INSERT INTO receipts (
                         order_id, bill_number, delivered_quantity, total_amount, 
-                        cash_amount, credited_amount, due_amount, payment_type, created_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())
+                        cash_amount, credited_amount, due_amount, payment_type, notes, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
                 ");
                 $insReceipt->execute([
                     $order_id,
@@ -525,7 +561,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['generate_receipt'])) 
                     $cash_amount,
                     $credited_amount,
                     $due_amount,
-                    $payment_type
+                    $payment_type,
+                    $receipt_notes ?: null
                 ]);
 
                 // Insert into order_payments table
@@ -547,7 +584,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['generate_receipt'])) 
 
                 $pdo->commit();
 
-                header("Location: " . zone_url($zone_slug, 'receipt', ['id' => $order_id, 'new' => 1]));
+                $redirectParams = ['id' => $order_id, 'new' => 1];
+                if (!empty($settleResult['total_cleared']) && $settleResult['total_cleared'] > 0) {
+                    $redirectParams['prior_cleared'] = $settleResult['total_cleared'];
+                }
+
+                header("Location: " . zone_url($zone_slug, 'receipt', $redirectParams));
                 exit;
 
             } catch (Exception $e) {
@@ -566,6 +608,9 @@ $def_customer   = $order['customer_name'] ?? '';
 $def_place      = $order['location'] ?? '';
 $def_phone      = $order['phone'] ?? '';
 $def_discount   = (float)($order['discount'] ?? 0);
+
+// Load prior pending dues for this shop/phone
+$priorDues = getShopPendingDueDetails($pdo, $def_shop ?: $def_customer, $def_phone, $order_id, $zone_id);
 
 // Categorize items into regular billed items
 $regular_items = [];
@@ -1217,6 +1262,103 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['items']) && is_array(
                     </div>
                 </div> -->
 
+                <!-- Earlier Due Balance Section -->
+                <div id="priorDueSection" data-total-due="<?= (float)($priorDues['total_due'] ?? 0) ?>" style="<?= !empty($priorDues['has_due']) ? '' : 'display: none;' ?> background: #fffaf0; border: 2px solid #fecaca; border-radius: var(--radius-md); padding: 16px; margin-bottom: 20px;">
+                    <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 10px;">
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <i class='bx bx-error-circle' style="color: #dc2626; font-size: 22px;"></i>
+                            <span style="font-size: 15px; font-weight: 800; color: #b91c1c;">
+                                Earlier Due Pending: <span id="dispPriorDueTotal"><?= formatCurrency($priorDues['total_due'] ?? 0) ?></span>
+                            </span>
+                        </div>
+                        <span id="dispPriorDueCount" style="background: #fee2e2; color: #dc2626; font-size: 11px; font-weight: 800; padding: 3px 8px; border-radius: 6px;">
+                            <?= ($priorDues['due_count'] ?? 0) ?> <?= (($priorDues['due_count'] ?? 0) === 1) ? 'Unpaid Bill' : 'Unpaid Bills' ?>
+                        </span>
+                    </div>
+
+                    <!-- Bills Breakdown Table -->
+                    <div id="priorDueBillsTableBox" style="background: #ffffff; border: 1px solid #fed7d7; border-radius: 8px; overflow-x: auto; margin-bottom: 12px;">
+                        <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
+                            <thead>
+                                <tr style="background: #fef2f2; border-bottom: 1px solid #fee2e2; text-align: left; color: #991b1b;">
+                                    <th style="padding: 6px 10px;">Bill #</th>
+                                    <th style="padding: 6px 10px;">Date</th>
+                                    <th style="padding: 6px 10px; text-align: right;">Bill Total</th>
+                                    <th style="padding: 6px 10px; text-align: right;">Outstanding Due</th>
+                                </tr>
+                            </thead>
+                            <tbody id="priorDueTableBody">
+                                <?php if (!empty($priorDues['receipts'])): ?>
+                                    <?php foreach ($priorDues['receipts'] as $pr): ?>
+                                    <tr style="border-bottom: 1px solid #f8fafc;">
+                                        <td style="padding: 6px 10px; font-weight: 700; color: #0f172a;">
+                                            Bill #<?= htmlspecialchars($pr['bill_number']) ?>
+                                            <span style="font-size: 10px; color: #64748b; font-weight: normal;">(Order #<?= htmlspecialchars($pr['order_number']) ?>)</span>
+                                        </td>
+                                        <td style="padding: 6px 10px; color: #64748b;">
+                                            <?= date('d M Y', strtotime($pr['receipt_date'])) ?>
+                                        </td>
+                                        <td style="padding: 6px 10px; text-align: right; color: #475569;">
+                                            <?= formatCurrency($pr['total_amount']) ?>
+                                        </td>
+                                        <td style="padding: 6px 10px; text-align: right; font-weight: 800; color: #dc2626;">
+                                            <?= formatCurrency($pr['due_amount']) ?>
+                                        </td>
+                                    </tr>
+                                    <?php endforeach; ?>
+                                <?php endif; ?>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Interactive Settlement Options -->
+                    <div style="background: #ffffff; border: 1.5px solid #fed7d7; border-radius: 8px; padding: 12px;">
+                        <label class="chk-label" for="collect_prior_due" style="color: #0f172a;">
+                            <input type="checkbox" name="collect_prior_due" id="collect_prior_due" class="chk-input" <?= (isset($_POST['collect_prior_due']) || !empty($priorDues['has_due'])) ? 'checked' : '' ?> onchange="togglePriorDueBox(this.checked)">
+                            <span>Collect / Clear Earlier Due with this Delivery</span>
+                        </label>
+
+                        <div id="priorDueInputFields" style="<?= (isset($_POST['collect_prior_due']) || !empty($priorDues['has_due'])) ? 'display: block;' : 'display: none;' ?> margin-top: 10px; border-top: 1px dashed #e2e8f0; padding-top: 10px;">
+                            <div style="display: grid; grid-template-columns: 1fr; gap: 10px;">
+                                <div>
+                                    <label class="form-label" style="font-size: 12px; margin-bottom: 4px;">Amount of Earlier Due to Clear (₹):</label>
+                                    <div style="display: flex; gap: 8px; align-items: center;">
+                                        <input
+    type="number"
+    step="0.01"
+    min="0"
+    max="<?= (float)($priorDues['total_due'] ?? 0) ?>"
+    name="prior_due_amount"
+    id="prior_due_amount"
+    class="form-control"
+    style="font-weight: 700; font-size: 15px;"
+    value="<?= htmlspecialchars($_POST['prior_due_amount'] ?? ($priorDues['total_due'] ?? 0)) ?>"
+    oninput="recalculate()"
+>
+                                        <button type="button" onclick="setPriorDueFull()" style="background: #e0f2fe; color: #0284c7; border: 1px solid #bae6fd; padding: 8px 12px; border-radius: 8px; font-size: 12px; font-weight: 700; cursor: pointer; white-space: nowrap;">
+                                            Full Due
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label class="form-label" style="font-size: 12px; margin-bottom: 4px;">Payment Mode for Earlier Due:</label>
+                                    <div style="display: flex; gap: 16px; font-size: 13px; font-weight: 700;">
+                                        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                                            <input type="radio" name="prior_due_mode" value="cash" checked style="accent-color: #2563eb;">
+                                            💵 In-Hand Cash
+                                        </label>
+                                        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                                            <input type="radio" name="prior_due_mode" value="upi" style="accent-color: #2563eb;">
+                                            📱 UPI / Online Payment
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Payment Settlement -->
                 <div class="section-hdr">
                     <i class='bx bx-wallet' style="color: #d97706;"></i> Payment Collection
@@ -1259,6 +1401,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['items']) && is_array(
                     </div>
                 </div>
 
+                <!-- Delivery Remarks / Notes -->
+                <div class="form-group" style="margin-top: 10px; margin-bottom: 14px;">
+                    <label class="form-label" for="receipt_notes" style="font-size: 12px;">Delivery Remarks / Notes (Optional)</label>
+                    <input type="text" name="receipt_notes" id="receipt_notes" class="form-control" placeholder="e.g. Paid partial due, remainder next week" value="<?= htmlspecialchars($_POST['receipt_notes'] ?? '') ?>">
+                </div>
+
                 <!-- Live Calculation Panel -->
                 <div class="calc-panel">
                     <div class="calc-row">
@@ -1276,20 +1424,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['items']) && is_array(
                     </div>
                     <?php endif; ?>
                     <div class="calc-row total">
-                        <span>Net Total Payable:</span>
+                        <span>Current Order Payable:</span>
                         <span id="dispTotal" style="color: #0f172a;">₹0.00</span>
                     </div>
+                    <div class="calc-row" id="rowPriorDueCollected" style="display: none; color: #b91c1c;">
+                        <span style="font-weight: 600;">+ Earlier Due Collected:</span>
+                        <span id="dispPriorDueCollected" style="font-weight: 700;">₹0.00</span>
+                    </div>
+                    <div class="calc-row" id="rowGrandTotal" style="display: none; border-top: 1.5px solid #cbd5e1; padding-top: 6px; font-size: 15px; font-weight: 800; color: #1e40af;">
+                        <span>Total Collectible Today:</span>
+                        <span id="dispGrandTotal">₹0.00</span>
+                    </div>
                     <div class="calc-row">
-                        <span style="color: #059669;">&minus; Cash Collected:</span>
+                        <span style="color: #059669;">&minus; Cash Collected (Current Bill):</span>
                         <span id="dispCash" style="color: #059669; font-weight: 700;">₹0.00</span>
                     </div>
                     <div class="calc-row">
-                        <span style="color: #d97706;">&minus; Credited Amount:</span>
+                        <span style="color: #d97706;">&minus; Credited Amount (Current Bill):</span>
                         <span id="dispCredit" style="color: #d97706; font-weight: 700;">₹0.00</span>
                     </div>
                     <div class="calc-row due">
-                        <span>Remaining Balance / Due:</span>
+                        <span>Current Bill Balance / Due:</span>
                         <span id="dispDue">₹0.00</span>
+                    </div>
+                    <div class="calc-row" id="rowRemainingPriorDue" style="display: none; color: #991b1b; font-size: 13px; font-weight: 700;">
+                        <span>Remaining Earlier Due:</span>
+                        <span id="dispRemainingPriorDue">₹0.00</span>
                     </div>
                 </div>
 
@@ -1637,6 +1797,56 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['items']) && is_array(
             if (dispCredit) dispCredit.textContent = '₹' + creditVal.toFixed(2);
             if (dispDue) dispDue.textContent = '₹' + due.toFixed(2);
 
+            // Prior due calculations
+            const sectionPrior = document.getElementById('priorDueSection');
+            const collectPriorDue = document.getElementById('collect_prior_due');
+            const priorDueInput = document.getElementById('prior_due_amount');
+            const totalPriorDue = sectionPrior ? (parseFloat(sectionPrior.dataset.totalDue) || 0) : 0;
+            const isCollectingPrior = collectPriorDue ? collectPriorDue.checked : false;
+            const priorCleared = isCollectingPrior ? Math.min(totalPriorDue, Math.max(0, parseFloat(priorDueInput ? priorDueInput.value : 0) || 0)) : 0;
+            const remainingPrior = Math.max(0, totalPriorDue - priorCleared);
+            const grandTotal = total + priorCleared;
+
+            const rowPrior = document.getElementById('rowPriorDueCollected');
+            const rowGrand = document.getElementById('rowGrandTotal');
+            const rowRemaining = document.getElementById('rowRemainingPriorDue');
+            const dispPriorCollected = document.getElementById('dispPriorDueCollected');
+            const dispGrand = document.getElementById('dispGrandTotal');
+            const dispRemainingPrior = document.getElementById('dispRemainingPriorDue');
+
+            if (rowPrior && dispPriorCollected) {
+                if (priorCleared > 0) {
+                    rowPrior.style.display = 'flex';
+                    dispPriorCollected.textContent = '+ ₹' + priorCleared.toFixed(2);
+                } else {
+                    rowPrior.style.display = 'none';
+                }
+            }
+
+            if (rowGrand && dispGrand) {
+                if (priorCleared > 0) {
+                    rowGrand.style.display = 'flex';
+                    dispGrand.textContent = '₹' + grandTotal.toFixed(2);
+                } else {
+                    rowGrand.style.display = 'none';
+                }
+            }
+
+            if (rowRemaining && dispRemainingPrior) {
+                if (totalPriorDue > 0) {
+                    rowRemaining.style.display = 'flex';
+                    if (remainingPrior === 0) {
+                        dispRemainingPrior.style.color = '#059669';
+                        dispRemainingPrior.textContent = '₹0.00 (Fully Cleared)';
+                    } else {
+                        dispRemainingPrior.style.color = '#dc2626';
+                        dispRemainingPrior.textContent = '₹' + remainingPrior.toFixed(2);
+                    }
+                } else {
+                    rowRemaining.style.display = 'none';
+                }
+            }
+
             if (due === 0 && total > 0) {
                 dispDue.style.color = '#059669';
             } else {
@@ -1663,6 +1873,79 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['items']) && is_array(
                 submitBtn.style.cursor = 'pointer';
             }
         }
+
+       function togglePriorDueBox(checked) {
+    const box = document.getElementById('priorDueInputFields');
+    const amountInput = document.getElementById('prior_due_amount');
+
+    if (box) {
+        box.style.display = checked ? 'block' : 'none';
+    }
+
+    if (amountInput) {
+        amountInput.disabled = !checked;
+        amountInput.required = checked;
+    }
+
+    recalculate();
+}
+
+        function setPriorDueFull() {
+            const sectionPrior = document.getElementById('priorDueSection');
+            const totalPriorDue = sectionPrior ? (parseFloat(sectionPrior.dataset.totalDue) || 0) : 0;
+            const pInput = document.getElementById('prior_due_amount');
+            if (pInput) {
+                pInput.value = totalPriorDue.toFixed(2);
+                recalculate();
+            }
+        }
+
+        function checkShopDuesAjax() {
+            const shopVal = (document.getElementById('shop_name')?.value || '').trim();
+            const phoneVal = (document.getElementById('phone')?.value || '').trim();
+            if (!shopVal && !phoneVal) return;
+
+            const url = '<?= zone_url($zone_slug, 'generate-receipt') ?>?action=check_prior_due&shop=' + encodeURIComponent(shopVal) + '&phone=' + encodeURIComponent(phoneVal) + '&exclude_id=<?= (int)$order_id ?>';
+            fetch(url)
+                .then(res => res.json())
+                .then(data => {
+                    const section = document.getElementById('priorDueSection');
+                    if (!section) return;
+                    if (data && data.has_due && data.total_due > 0) {
+                        section.style.display = 'block';
+                        section.dataset.totalDue = data.total_due;
+                        document.getElementById('dispPriorDueTotal').textContent = '₹' + data.total_due.toFixed(2);
+                        document.getElementById('dispPriorDueCount').textContent = data.due_count + (data.due_count === 1 ? ' Unpaid Bill' : ' Unpaid Bills');
+                        
+                        const tbody = document.getElementById('priorDueTableBody');
+                        if (tbody && data.receipts) {
+                            tbody.innerHTML = data.receipts.map(r => `
+                                <tr style="border-bottom: 1px solid #f8fafc;">
+                                    <td style="padding: 6px 10px; font-weight: 700; color: #0f172a;">Bill #${r.bill_number} <span style="font-size: 10px; color: #64748b;">(Order #${r.order_number})</span></td>
+                                    <td style="padding: 6px 10px; color: #64748b;">${r.receipt_date ? r.receipt_date.substring(0, 10) : ''}</td>
+                                    <td style="padding: 6px 10px; text-align: right; color: #475569;">₹${parseFloat(r.total_amount).toFixed(2)}</td>
+                                    <td style="padding: 6px 10px; text-align: right; font-weight: 800; color: #dc2626;">₹${parseFloat(r.due_amount).toFixed(2)}</td>
+                                </tr>
+                            `).join('');
+                        }
+                        const pInput = document.getElementById('prior_due_amount');
+                        if (pInput) {
+                            pInput.max = data.total_due;
+                            if (!pInput.value || parseFloat(pInput.value) <= 0) {
+                                pInput.value = data.total_due.toFixed(2);
+                            }
+                        }
+                    } else {
+                        section.style.display = 'none';
+                        section.dataset.totalDue = 0;
+                    }
+                    recalculate();
+                })
+                .catch(err => console.error(err));
+        }
+
+        document.getElementById('shop_name')?.addEventListener('blur', checkShopDuesAjax);
+        document.getElementById('phone')?.addEventListener('blur', checkShopDuesAjax);
 
         // Fast pay shortcut buttons
         btnFastCash.addEventListener('click', function() {
@@ -1711,7 +1994,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['items']) && is_array(
 
         cashInput.addEventListener('input', recalculate);
         creditInput.addEventListener('input', recalculate);
+// Keep prior due validation synchronized with visibility on page load
+const collectPriorCheckbox = document.getElementById('collect_prior_due');
+const priorDueAmountInput = document.getElementById('prior_due_amount');
+const priorDueFields = document.getElementById('priorDueInputFields');
 
+if (collectPriorCheckbox && priorDueAmountInput && priorDueFields) {
+    priorDueAmountInput.disabled = !collectPriorCheckbox.checked;
+    priorDueAmountInput.required = collectPriorCheckbox.checked;
+
+    priorDueFields.style.display =
+        collectPriorCheckbox.checked ? 'block' : 'none';
+}
         // Initial calculation
         if (enableCash.checked && !cashInput.value) {
             const { total } = calculateValues();

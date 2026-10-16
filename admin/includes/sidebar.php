@@ -9,6 +9,7 @@ $base_path = (in_array($current_dir_name, [
     'zones',
     'dashboard',
     'qr-rewards',
+    'shop-rewards',
     'activity-logs',
     'notifications',
     'subscriptions',
@@ -72,13 +73,68 @@ $is_more_active = in_array($current_dir, $more_dirs) || in_array($current_page, 
 $more_badge_total = $ads_count + $reviews_pending_count + $social_count + $subs_count + $notifications_count + $users_count;
 ?>
 
+<style>
+    /* Dark and bold sidebar header & icons */
+    .sidebar .logo-text {
+        font-size: 22px;
+        font-weight: 800;
+        color: #0f172a;
+        letter-spacing: -0.5px;
+    }
+    .sidebar .nav-item {
+        color: #334155;
+        font-weight: 500;
+    }
+    .sidebar .nav-item i {
+        font-size: 18px;
+        color: #0f172a !important;
+        font-weight: 700;
+        transition: transform 0.15s ease, color 0.15s ease;
+    }
+    .sidebar .nav-item:hover:not(.active) {
+        background: #f0f9ff;
+        color: #0284c7;
+    }
+    .sidebar .nav-item:hover:not(.active) i {
+        color: #0284c7 !important;
+        transform: scale(1.08);
+    }
+    .sidebar .nav-item.active {
+        background: #e0f2fe !important;
+        color: #0284c7 !important;
+        font-weight: 700 !important;
+    }
+    .sidebar .nav-item.active span {
+        color: #0284c7 !important;
+        font-weight: 700 !important;
+    }
+    .sidebar .nav-item.active i {
+        color: #0284c7 !important;
+        font-weight: 700 !important;
+    }
+    .sidebar .nav-item.active .nav-badge {
+        color: #0284c7 !important;
+        font-weight: 700 !important;
+    }
+    .sidebar .search-icon {
+        color: #0f172a !important;
+        font-weight: 700;
+    }
+
+    /* All admin table headers: Bold and Black */
+    table th, thead th, th, .table th, .shops-table th, .rev-table th {
+        color: #000000 !important;
+        font-weight: 700 !important;
+    }
+</style>
+
 <button id="sidebarToggle" class="sidebar-toggle" aria-label="Toggle sidebar">
     <i class='bx bx-menu'></i>
 </button>
 
 <div class="sidebar">
     <div class="logo" style="justify-content:center; padding-bottom: 0;">
-        <span class="logo-text">Liyas</span>
+        <span class="logo-text" style="font-size: 22px; font-weight: 800; color: #0f172a; letter-spacing: -0.5px;">Liyas</span>
     </div>
 
     <div class="app-switcher" style="padding: 15px; margin-bottom: 5px;">
@@ -106,14 +162,14 @@ $more_badge_total = $ads_count + $reviews_pending_count + $social_count + $subs_
     <nav class="nav-menu">
 
         <?php if ($current_dir == 'campaigns'): ?>
-            <div style="padding: 10px 25px; font-size: 11px; font-weight: 600; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px;">Campaign Engine</div>
+            <div style="padding: 10px 25px; font-size: 11px; font-weight: 700; color: #0f172a; text-transform: uppercase; letter-spacing: 0.5px;">Campaign Engine</div>
             
             <a href="<?= $base_path ?>campaigns/index.php" class="nav-item <?= ($current_file=='index.php')?'active':'' ?>">
                 <i class='bx bx-list-ul'></i>
                 <span>Manage Contests</span>
             </a>
             <a href="<?= $base_path ?>campaigns/entries.php" class="nav-item <?= ($current_file=='entries.php')?'active':'' ?>">
-                <i class='bx bx-group'></i>
+                <i class='bx bxs-group'></i>
                 <span>Entries / Leads</span>
                 <?php if ($campaign_submissions_count > 0): ?>
                     <span class="badge-count"><?= $campaign_submissions_count ?></span>
@@ -123,13 +179,13 @@ $more_badge_total = $ads_count + $reviews_pending_count + $social_count + $subs_
         <?php else: ?>
             <a href="<?= $base_path ?>dashboard/index.php"
                class="nav-item <?= ($current_dir=='dashboard'||($current_file=='index.php' && $current_dir=='admin'))?'active':'' ?>">
-                <i class='bx bx-home'></i>
+                <i class='bx bxs-home'></i>
                 <span>Dashboard</span>
             </a>
 
             <a href="<?= $base_path ?>orders/index.php"
                class="nav-item <?= ($current_dir=='orders'||$current_page==='orders')?'active':'' ?>">
-                <i class='bx bx-cart'></i>
+                <i class='bx bxs-cart'></i>
                 <span>Orders</span>
                 <?php if ($pending_orders_count > 0): ?>
                     <span class="badge-count" style="background:#ef4444; color:#fff; font-weight:600; border-radius:12px; padding:2px 8px; font-size:11px; display:inline-flex; align-items:center; gap:3px;">
@@ -140,7 +196,7 @@ $more_badge_total = $ads_count + $reviews_pending_count + $social_count + $subs_
 
             <a href="<?= $base_path ?>zones/index.php"
                class="nav-item <?= ($current_dir=='zones'||$current_page==='zones')?'active':'' ?>">
-                <i class='bx bx-map-pin'></i>
+                <i class='bx bxs-map-pin'></i>
                 <span>Zones</span>
                 <?php if ($zones_count > 0): ?>
                     <span class="nav-badge"><?= $zones_count ?></span>
@@ -151,7 +207,7 @@ $more_badge_total = $ads_count + $reviews_pending_count + $social_count + $subs_
                class="nav-item <?= ($current_dir=='vehicles'||$current_page==='vehicles')?'active':'' ?>"
            
                title="Vehicles, Cases Loaded & Zones">
-                <i class='bx bxs-truck' style="color: #2563eb;"></i>
+                <i class='bx bxs-truck'></i>
                 <span>Vehicles</span>
                 <?php if ($vehicles_count > 0): ?>
                     <span class="nav-badge"><?= $vehicles_count ?></span>
@@ -160,19 +216,19 @@ $more_badge_total = $ads_count + $reviews_pending_count + $social_count + $subs_
 
             <a href="<?= $base_path ?>revenue/index.php"
                class="nav-item <?= ($current_dir=='revenue'||$current_page==='revenue')?'active':'' ?>">
-                <i class='bx bx-line-chart'></i>
+                <i class='bx bxs-bar-chart-alt-2'></i>
                 <span>Revenue</span>
             </a>
-                <a href="<?= $base_path ?>qr-rewards/shop-rewards.php"
-                   class="nav-item <?= ($current_file=='shop-rewards.php')?'active':'' ?>">
-                    <i class='bx bxs-gift'></i>
-                    <span>Shop Rewards</span>
-                </a>
+            <a href="<?= $base_path ?>shop-rewards/index.php"
+               class="nav-item <?= ($current_dir==='shop-rewards' || $current_page==='shop-rewards')?'active':'' ?>">
+                <i class='bx bxs-gift'></i>
+                <span>Shop Rewards</span>
+            </a>
 
 
             <a href="<?= $base_path ?>products/index.php"
                class="nav-item <?= ($current_dir=='products'||$current_page==='products')?'active':'' ?>">
-                <i class='bx bx-shopping-bag'></i>
+                <i class='bx bxs-shopping-bag'></i>
                 <span>Products</span>
                 <?php if ($products_count > 0): ?>
                     <span class="nav-badge"><?= $products_count ?></span>
@@ -185,7 +241,7 @@ $more_badge_total = $ads_count + $reviews_pending_count + $social_count + $subs_
                     class="nav-item <?= $is_more_active ? 'active' : '' ?>" 
                     style="width: 100%; border: none; background: transparent; cursor: pointer; text-align: left; display: flex; align-items: center; justify-content: space-between;">
                 <div style="display: flex; align-items: center; gap: 4px;">
-                    <i class='bx bx-grid-alt'></i>
+                    <i class='bx bxs-grid-alt'></i>
                     <span>More Options</span>
                 </div>
                 <div style="display: flex; align-items: center; gap: 6px;">
@@ -200,7 +256,7 @@ $more_badge_total = $ads_count + $reviews_pending_count + $social_count + $subs_
             <div id="moreOptionsSubmenu" style="display: <?= $is_more_active ? 'block' : 'none' ?>; padding-left: 12px; border-left: 2px solid rgba(0,0,0,0.06); ">
                 <a href="<?= $base_path ?>advertisements/index.php"
                    class="nav-item <?= ($current_dir=='advertisements'||$current_page==='advertisements')?'active':'' ?>">
-                    <i class='bx bx-image'></i>
+                    <i class='bx bxs-image'></i>
                     <span>Advertisements</span>
                     <?php if ($ads_count > 0): ?>
                         <span class="nav-badge"><?= $ads_count ?></span>
@@ -209,7 +265,7 @@ $more_badge_total = $ads_count + $reviews_pending_count + $social_count + $subs_
 
                 <a href="<?= $base_path ?>reviews/index.php"
                    class="nav-item <?= ($current_dir=='reviews'||$current_page==='reviews')?'active':'' ?>">
-                    <i class='bx bx-star'></i>
+                    <i class='bx bxs-star'></i>
                     <span>Reviews</span>
                     <?php if ($reviews_pending_count > 0): ?>
                         <span class="badge-count"><?= $reviews_pending_count ?></span>
@@ -218,7 +274,7 @@ $more_badge_total = $ads_count + $reviews_pending_count + $social_count + $subs_
 
                 <a href="<?= $base_path ?>social-links/index.php"
                    class="nav-item <?= ($current_dir=='social-links'||$current_page==='social-links')?'active':'' ?>">
-                    <i class='bx bx-share-alt'></i>
+                    <i class='bx bxs-share-alt'></i>
                     <span>Social Media</span>
                     <?php if ($social_count > 0): ?>
                         <span class="nav-badge"><?= $social_count ?></span>
@@ -227,7 +283,7 @@ $more_badge_total = $ads_count + $reviews_pending_count + $social_count + $subs_
 
                 <a href="<?= $base_path ?>subscriptions/index.php"
                    class="nav-item <?= ($current_dir=='subscriptions'||$current_page==='subscriptions')?'active':'' ?>">
-                    <i class='bx bx-envelope'></i>
+                    <i class='bx bxs-envelope'></i>
                     <span>Newsletter</span>
                     <?php if ($subs_count > 0): ?>
                         <span class="nav-badge"><?= $subs_count ?></span>
@@ -236,7 +292,7 @@ $more_badge_total = $ads_count + $reviews_pending_count + $social_count + $subs_
 
                 <a href="<?= $base_path ?>notifications/index.php"
                    class="nav-item <?= ($current_dir=='notifications'||$current_page==='notifications')?'active':'' ?>">
-                    <i class='bx bx-bell'></i>
+                    <i class='bx bxs-bell'></i>
                     <span>Notifications</span>
                     <?php if ($notifications_count > 0): ?>
                         <span class="badge-count"><?= $notifications_count ?></span>
@@ -245,7 +301,7 @@ $more_badge_total = $ads_count + $reviews_pending_count + $social_count + $subs_
 
                 <a href="<?= $base_path ?>users/index.php"
                    class="nav-item <?= ($current_dir=='users'||$current_page==='users')?'active':'' ?>">
-                    <i class='bx bx-group'></i>
+                    <i class='bx bxs-group'></i>
                     <span>Users</span>
                     <?php if ($users_count > 0): ?>
                         <span class="nav-badge"><?= $users_count ?></span>
@@ -254,7 +310,7 @@ $more_badge_total = $ads_count + $reviews_pending_count + $social_count + $subs_
 
                 <a href="<?= $base_path ?>qr-rewards/index.php"
                    class="nav-item <?= ($current_dir=='qr-rewards' && $current_file=='index.php')?'active':'' ?>">
-                    <i class='bx bx-qr'></i>
+                    <i class='bx bx-qr-scan'></i>
                     <span>QR Rewards</span>
                 </a>
 
@@ -272,7 +328,7 @@ $more_badge_total = $ads_count + $reviews_pending_count + $social_count + $subs_
 
     <div class="sidebar-footer">
         <a href="<?= $base_path ?>logout.php" class="nav-item">
-            <i class='bx bx-log-out'></i>
+            <i class='bx bxs-log-out'></i>
             <span>Logout</span>
         </a>
     </div>

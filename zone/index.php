@@ -59,7 +59,19 @@ $unread_stmt = $pdo->prepare("
            (SELECT GROUP_CONCAT(CONCAT(COALESCE(p2.product_name, p2.name), ' (', oi2.quantity, 'cs', IF(oi2.is_extra = 1 OR oi2.price_at_purchase = 0, ' - Extra', ''), ')') SEPARATOR ', ') 
             FROM order_items oi2 
             JOIN products p2 ON oi2.product_id = p2.product_id 
-            WHERE oi2.order_id = o.order_id) AS items_summary
+            WHERE oi2.order_id = o.order_id) AS items_summary,
+           (SELECT COALESCE(SUM(r2.due_amount), 0)
+            FROM receipts r2
+            JOIN orders o2 ON r2.order_id = o2.order_id
+            WHERE r2.due_amount > 0
+              AND o2.status != 'cancelled'
+              AND o2.order_id != o.order_id
+              AND (
+                  (TRIM(LOWER(o2.shop_name)) = TRIM(LOWER(o.shop_name)) AND TRIM(o.shop_name) != '')
+                  OR (TRIM(LOWER(o2.customer_name)) = TRIM(LOWER(o.customer_name)) AND TRIM(o.customer_name) != '')
+                  OR (o.phone != '' AND LENGTH(o.phone) >= 7 AND RIGHT(REGEXP_REPLACE(o2.phone, '[^0-9]', ''), 10) = RIGHT(REGEXP_REPLACE(o.phone, '[^0-9]', ''), 10))
+              )
+           ) AS prior_due_amount
     FROM orders o
     LEFT JOIN products p ON o.product_id = p.product_id
     LEFT JOIN vehicles veh ON veh.id = COALESCE(o.vehicle_id, (SELECT vl.vehicle_id FROM vehicle_loads vl WHERE vl.order_id = o.order_id AND vl.is_active = 1 LIMIT 1))
@@ -139,7 +151,19 @@ $orders_stmt = $pdo->prepare("
         (SELECT GROUP_CONCAT(CONCAT(COALESCE(p2.product_name, p2.name), ' (', oi2.quantity, 'cs', IF(oi2.is_extra = 1 OR oi2.price_at_purchase = 0, ' - Extra', ''), ')') SEPARATOR ', ') 
          FROM order_items oi2 
          JOIN products p2 ON oi2.product_id = p2.product_id 
-         WHERE oi2.order_id = o.order_id) AS items_summary
+         WHERE oi2.order_id = o.order_id) AS items_summary,
+        (SELECT COALESCE(SUM(r2.due_amount), 0)
+         FROM receipts r2
+         JOIN orders o2 ON r2.order_id = o2.order_id
+         WHERE r2.due_amount > 0
+           AND o2.status != 'cancelled'
+           AND o2.order_id != o.order_id
+           AND (
+               (TRIM(LOWER(o2.shop_name)) = TRIM(LOWER(o.shop_name)) AND TRIM(o.shop_name) != '')
+               OR (TRIM(LOWER(o2.customer_name)) = TRIM(LOWER(o.customer_name)) AND TRIM(o.customer_name) != '')
+               OR (o.phone != '' AND LENGTH(o.phone) >= 7 AND RIGHT(REGEXP_REPLACE(o2.phone, '[^0-9]', ''), 10) = RIGHT(REGEXP_REPLACE(o.phone, '[^0-9]', ''), 10))
+           )
+        ) AS prior_due_amount
     FROM orders o
     LEFT JOIN products p ON o.product_id = p.product_id
     LEFT JOIN receipts r ON o.order_id = r.order_id
@@ -1484,6 +1508,24 @@ function buildWhatsAppLink($phone, $shop, $orderNum, $amount, $itemsText = '') {
             font-weight: 700;
         }
 
+        .badge-prior-due-alert {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            background: #fef2f2;
+            color: #dc2626;
+            border: 1px solid #fecaca;
+            font-size: 11px;
+            font-weight: 800;
+            padding: 2px 7px;
+            border-radius: 6px;
+            white-space: nowrap;
+        }
+
+        .badge-prior-due-alert i {
+            font-size: 13px;
+        }
+
         /* Order Actions Footer */
         .order-actions-bar {
             border-top: 1px solid #f1f5f9;
@@ -1923,6 +1965,11 @@ function buildWhatsAppLink($phone, $shop, $orderNum, $amount, $itemsText = '') {
                     <div>
                         <div class="notif-shop">
                             <?= $nShop ?> &bull; <span style="color: #2563eb; font-weight: 700;"><?= htmlspecialchars($nSummary) ?></span>
+                            <?php if ((float)($notif['prior_due_amount'] ?? 0) > 0): ?>
+                                <span class="badge-prior-due-alert" style="margin-left: 6px;" title="Shop has prior pending due from earlier deliveries">
+                                    <i class='bx bxs-error-circle'></i> Prior Due: <?= formatCurrency($notif['prior_due_amount']) ?>
+                                </span>
+                            <?php endif; ?>
                             <?php if (!empty($notif['assigned_vehicle_number'])): 
                                 $nvId = (int)($notif['resolved_vehicle_id'] ?? ($notif['vehicle_id'] ?? 0));
                                 $nvLoad = $vehiclesLoadMap[$nvId] ?? null;
@@ -2302,6 +2349,11 @@ function buildWhatsAppLink($phone, $shop, $orderNum, $amount, $itemsText = '') {
                                         <i class='bx bxs-bell-ring'></i> New
                                     </span>
                                 <?php endif; ?>
+                                <?php if ((float)($order['prior_due_amount'] ?? 0) > 0): ?>
+                                    <span class="badge-prior-due-alert" title="Shop has prior pending due from earlier deliveries">
+                                        <i class='bx bxs-error-circle'></i> Prior Due: <?= formatCurrency($order['prior_due_amount']) ?>
+                                    </span>
+                                <?php endif; ?>
                                 <span>&bull;</span>
                                 <span><?= $createdDate ?></span>
                             </div>
@@ -2369,6 +2421,11 @@ function buildWhatsAppLink($phone, $shop, $orderNum, $amount, $itemsText = '') {
                                 <?php else: ?>
                                     <span style="color: #d97706; font-size: 11px;">
                                         <i class='bx bx-info-circle'></i> Unbilled
+                                    </span>
+                                <?php endif; ?>
+                                <?php if ((float)($order['prior_due_amount'] ?? 0) > 0): ?>
+                                    <span class="due-badge" style="background: #fff1f2; border: 1px solid #fecdd3; color: #e11d48;" title="Pending earlier due balance from previous orders">
+                                        <i class='bx bx-history'></i> Prior Due: <?= formatCurrency($order['prior_due_amount']) ?>
                                     </span>
                                 <?php endif; ?>
                             </div>

@@ -13,11 +13,15 @@ require_once dirname(dirname(__DIR__)) . '/admin/includes/functions.php';
  * Check if current user is authenticated for Zone Orders portal
  */
 function isZoneOrdersAuthenticated(): bool {
+    // If explicitly locked out, require entering access code again
+    if (!empty($_SESSION['zone_orders_locked']) && $_SESSION['zone_orders_locked'] === true) {
+        return false;
+    }
     // Check zone orders session
     if (!empty($_SESSION['zone_orders_authenticated']) && $_SESSION['zone_orders_authenticated'] === true) {
         return true;
     }
-    // Admin login automatically passes
+    // Admin login automatically passes (only when not locked)
     if (!empty($_SESSION['admin_id'])) {
         return true;
     }
@@ -25,11 +29,11 @@ function isZoneOrdersAuthenticated(): bool {
 }
 
 /**
- * Require authentication; redirects unauthenticated visitors to /zone/orders
+ * Require authentication; redirects unauthenticated visitors to /zone/orders/
  */
 function requireZoneOrdersAuth(): void {
     if (!isZoneOrdersAuthenticated()) {
-        $loginUrl = BASE_URL . '/zone/orders';
+        $loginUrl = BASE_URL . '/zone/orders/';
         header("Location: " . $loginUrl);
         exit;
     }

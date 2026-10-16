@@ -34,7 +34,7 @@ $totalEntries = count($entries);
     body { background:#f8fafc; margin:0; font-family: 'Inter', sans-serif; }
     .card { background:#fff; border:1px solid #e5e7eb; border-radius:18px; padding:28px; }
     table { width:100%; border-collapse:collapse; margin-top:16px; }
-    thead th { font-size:12px; text-transform:uppercase; color:#64748b; background:#f8fafc; padding:14px; text-align:left; }
+    thead th { font-size:12px; text-transform:uppercase; color:#000000; font-weight:800; background:#f8fafc; padding:14px; text-align:left; }
     tbody td { padding:16px 14px; font-size:14px; color:#0f172a; border-top:1px solid #e5e7eb; }
     .btn-view { padding:8px 14px; font-size:13px; border-radius:8px; background:#10b981; color:#fff; border:none; cursor:pointer; }
     .table-wrapper{

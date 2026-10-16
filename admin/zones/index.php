@@ -56,11 +56,15 @@ try {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Delivery Zones - Liyas Admin</title>
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link href='https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css' rel='stylesheet'>
-    <link rel="stylesheet" href="../assets/css/prody-admin.css">
+    <link rel="stylesheet" href="../assets/css/prody-admin.css?v=<?= filemtime(__DIR__ . '/../assets/css/prody-admin.css') ?>">
     <style>
         body { font-family: 'Poppins', sans-serif; }
+        table th, thead th, th {
+            color: #000000 !important;
+            font-weight: 700 !important;
+        }
         .zone-path-badge {
             background: #eff6ff;
             color: #2563eb;

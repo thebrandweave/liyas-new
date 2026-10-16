@@ -262,6 +262,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         header("Location: index.php?zone=" . urlencode($redirectZone));
         exit;
     }
+
+    // 9. DELETE VEHICLE (Vehicle Delete)
+    if ($action === 'delete_vehicle') {
+        $vId = (int)($_POST['vehicle_id'] ?? 0);
+        if ($vId > 0) {
+            $vStmt = $pdo->prepare("SELECT vehicle_number FROM vehicles WHERE id = ?");
+            $vStmt->execute([$vId]);
+            $vNum = $vStmt->fetchColumn() ?: "#{$vId}";
+
+            // 1. Clear vehicle buffer loads
+            $pdo->prepare("DELETE FROM vehicle_loads WHERE vehicle_id = ?")->execute([$vId]);
+            // 2. Unassign any assigned orders so they remain safe in unassigned pool
+            $pdo->prepare("UPDATE orders SET vehicle_id = NULL WHERE vehicle_id = ?")->execute([$vId]);
+            // 3. Delete vehicle from vehicles table
+            $pdo->prepare("DELETE FROM vehicles WHERE id = ?")->execute([$vId]);
+
+            if (function_exists('quickLog')) {
+                quickLog($pdo, 'delete', 'vehicle', $vId, "Deleted vehicle {$vNum} via Zone Portal");
+            }
+            $_SESSION['success_message'] = "Vehicle {$vNum} successfully deleted from fleet.";
+        } else {
+            $_SESSION['error_message'] = "Invalid vehicle ID for deletion.";
+        }
+        $redirectZone = $_GET['zone'] ?? 'all';
+        header("Location: index.php?zone=" . urlencode($redirectZone));
+        exit;
+    }
 }
 
 // --- FETCH DATA FOR DASHBOARD ---
@@ -1532,12 +1559,14 @@ if (!empty($searchQuery)) {
                                    
                                    
                                 </div>
-                                 <div class="veh-home-zone-chip">
+                                <div style="display: flex; align-items: center; gap: 8px;">
+                                    <div class="veh-home-zone-chip">
                                         <i class='bx bx-map-pin' style="color: #ef4444;"></i> Base Zone: <strong><?= $homeZone ?></strong>
                                     </div>
-                                <!-- <span class="status-badge <?= $stClass ?>">
-                                    <?= $stLabel ?>
-                                </span> -->
+                                    <button type="button" class="btn-del-icon" onclick="confirmDeleteVehicle(<?= $vId ?>, '<?= htmlspecialchars(addslashes($vNum)) ?>', <?= $totalCases ?>, <?= count($v['assigned_orders'] ?? []) ?>)" title="Delete vehicle <?= $vNum ?>" style="background: none; border: 1px solid #fee2e2; color: #ef4444; border-radius: 8px; width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.15s ease;" onmouseover="this.style.background='#fef2f2'" onmouseout="this.style.background='none'">
+                                        <i class='bx bx-trash' style="font-size: 15px;"></i>
+                                    </button>
+                                </div>
                             </div>
 
                             <!-- Driver Contact Information -->
@@ -1631,14 +1660,18 @@ if (!empty($searchQuery)) {
                  
                         </div>
 
-                        <!-- Card Footer Operations: Edit Vehicle & Reset -->
+                        <!-- Card Footer Operations: Edit Vehicle, Reset & Delete -->
                         <div class="veh-card-footer">
                             <button type="button" class="btn-footer-action" onclick="openEditVehicleModal(<?= htmlspecialchars(json_encode($v)) ?>)" title="Edit vehicle details">
                                 <i class='bx bx-edit-alt'></i> Edit Vehicle
                             </button>
 
-                            <button type="button" class="btn-footer-action" style="color: #dc2626;" onclick="confirmResetLoad(<?= $vId ?>, '<?= htmlspecialchars(addslashes($vNum)) ?>', <?= $totalCases ?>)" title="Clear vehicle load for next trip">
+                            <button type="button" class="btn-footer-action" style="color: #d97706;" onclick="confirmResetLoad(<?= $vId ?>, '<?= htmlspecialchars(addslashes($vNum)) ?>', <?= $totalCases ?>)" title="Clear vehicle load for next trip">
                                 <i class='bx bx-reset'></i> Reset Load
+                            </button>
+
+                            <button type="button" class="btn-footer-action" style="color: #dc2626;" onclick="confirmDeleteVehicle(<?= $vId ?>, '<?= htmlspecialchars(addslashes($vNum)) ?>', <?= $totalCases ?>, <?= count($v['assigned_orders'] ?? []) ?>)" title="Delete vehicle from fleet">
+                                <i class='bx bx-trash'></i> Delete
                             </button>
                         </div>
                     </article>
@@ -1981,13 +2014,18 @@ if (!empty($searchQuery)) {
                     </div>
                 </div>
 
-                <div class="modal-btns-row">
-                    <button type="submit" class="btn-header btn-header-primary" style="border: none;">
-                        <i class='bx bx-check'></i> Save Vehicle Details
+                <div class="modal-btns-row" style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
+                    <button type="button" class="btn-header" style="color: #dc2626; border-color: #fecaca; background: #fef2f2;" onclick="closeEditVehicleModal(); confirmDeleteVehicle(document.getElementById('editVehId').value, document.getElementById('editVehNumber').value);">
+                        <i class='bx bx-trash'></i> Delete Vehicle
                     </button>
-                    <button type="button" class="btn-header" onclick="closeEditVehicleModal()">
-                        Cancel
-                    </button>
+                    <div style="display: flex; gap: 8px;">
+                        <button type="button" class="btn-header" onclick="closeEditVehicleModal()">
+                            Cancel
+                        </button>
+                        <button type="submit" class="btn-header btn-header-primary" style="border: none;">
+                            <i class='bx bx-check'></i> Save Vehicle Details
+                        </button>
+                    </div>
                 </div>
             </form>
         </div>
@@ -2020,6 +2058,45 @@ if (!empty($searchQuery)) {
                         <i class='bx bx-reset'></i> Reset Vehicle Load
                     </button>
                     <button type="button" class="btn-header" onclick="closeResetLoadModal()">
+                        Cancel
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- ========================================================
+         MODAL 6B: DELETE VEHICLE CONFIRMATION
+         ======================================================== -->
+    <div id="modalDeleteVehicle" class="modal-backdrop" onclick="if(event.target===this) closeDeleteVehicleModal()">
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <h3 class="modal-title" style="color: #dc2626;">
+                    <i class='bx bx-trash'></i> Delete Fleet Vehicle
+                </h3>
+                <button type="button" class="modal-close" onclick="closeDeleteVehicleModal()">&times;</button>
+            </div>
+            <form method="POST" action="">
+                <input type="hidden" name="action" value="delete_vehicle">
+                <input type="hidden" name="vehicle_id" id="deleteVehId" value="">
+
+                <p style="font-size: 14px; margin-bottom: 12px; color: var(--text-main);">
+                    Are you sure you want to permanently delete vehicle <strong id="deleteVehNumText"></strong> from the fleet?
+                </p>
+
+                <div id="deleteVehWarningWrap" style="display: none; background: #fff1f2; border: 1px solid #fecdd3; border-radius: 8px; padding: 10px 12px; font-size: 12px; color: #9f1239; margin-bottom: 14px;">
+                    <i class='bx bx-error-circle'></i> <span id="deleteVehWarningText"></span>
+                </div>
+
+                <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 20px;">
+                    This vehicle will be removed from fleet records. Any buffer loads will be deleted and assigned orders will be safely unassigned.
+                </p>
+
+                <div class="modal-btns-row">
+                    <button type="submit" class="btn-header" style="background: #dc2626; color: #fff; border-color: #dc2626;">
+                        <i class='bx bx-trash'></i> Yes, Delete Vehicle
+                    </button>
+                    <button type="button" class="btn-header" onclick="closeDeleteVehicleModal()">
                         Cancel
                     </button>
                 </div>
@@ -2307,6 +2384,29 @@ if (!empty($searchQuery)) {
         }
         function closeResetLoadModal() {
             const m = document.getElementById('modalResetLoad');
+            if (m) m.classList.remove('open');
+        }
+
+        // Modal 6B: Delete Vehicle
+        function confirmDeleteVehicle(vId, vNum, cases = 0, orderCount = 0) {
+            document.getElementById('deleteVehId').value = vId;
+            document.getElementById('deleteVehNumText').textContent = vNum;
+            const warnWrap = document.getElementById('deleteVehWarningWrap');
+            const warnText = document.getElementById('deleteVehWarningText');
+            if (cases > 0 || orderCount > 0) {
+                let parts = [];
+                if (cases > 0) parts.push(`${cases} cases loaded`);
+                if (orderCount > 0) parts.push(`${orderCount} assigned order(s)`);
+                warnText.textContent = `Warning: This vehicle currently has ${parts.join(' and ')}. Proceeding will clear all loads and unassign these orders safely.`;
+                warnWrap.style.display = 'block';
+            } else {
+                warnWrap.style.display = 'none';
+            }
+            const m = document.getElementById('modalDeleteVehicle');
+            if (m) m.classList.add('open');
+        }
+        function closeDeleteVehicleModal() {
+            const m = document.getElementById('modalDeleteVehicle');
             if (m) m.classList.remove('open');
         }
 

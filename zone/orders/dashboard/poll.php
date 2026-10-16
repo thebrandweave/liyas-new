@@ -542,6 +542,223 @@ try {
     }
 
     // ----------------------------------------------------
+    // Action 3e: Create Reorder in Zone Portal
+    // ----------------------------------------------------
+    if ($action === 'create_reorder' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+        $parent_order_id = !empty($_POST['parent_order_id']) ? (int)$_POST['parent_order_id'] : null;
+        $shop_name       = trim($_POST['shop_name'] ?? '');
+        $customer_name   = trim($_POST['customer_name'] ?? '');
+        $phone           = trim($_POST['phone'] ?? '');
+        $location        = trim($_POST['location'] ?? '');
+        $address         = trim($_POST['address'] ?? '');
+        $zone_id         = (int)($_POST['zone_id'] ?? 0);
+        $discount        = (float)($_POST['discount'] ?? 0);
+        $raw_items       = $_POST['items'] ?? [];
+
+        if (empty($raw_items)) {
+            $input = file_get_contents('php://input');
+            if (!empty($input)) {
+                $json = json_decode($input, true);
+                if (is_array($json)) {
+                    $raw_items = $json['items'] ?? [];
+                    if (empty($shop_name)) $shop_name = trim($json['shop_name'] ?? '');
+                    if (empty($customer_name)) $customer_name = trim($json['customer_name'] ?? '');
+                    if (empty($phone)) $phone = trim($json['phone'] ?? '');
+                    if (empty($location)) $location = trim($json['location'] ?? '');
+                    if (empty($address)) $address = trim($json['address'] ?? '');
+                    if ($zone_id <= 0) $zone_id = (int)($json['zone_id'] ?? 0);
+                    if ($discount <= 0) $discount = (float)($json['discount'] ?? 0);
+                    if (!$parent_order_id && !empty($json['parent_order_id'])) $parent_order_id = (int)$json['parent_order_id'];
+                }
+            }
+        }
+
+        if (empty($shop_name)) {
+            echo json_encode(['success' => false, 'error' => 'Shop / Customer Name is required.']);
+            exit;
+        }
+
+        if ($zone_id <= 0 && $parent_order_id > 0) {
+            $zStmt = $pdo->prepare("SELECT zone_id FROM orders WHERE order_id = ?");
+            $zStmt->execute([$parent_order_id]);
+            $zone_id = (int)$zStmt->fetchColumn();
+        }
+
+        if ($zone_id <= 0) {
+            echo json_encode(['success' => false, 'error' => 'Please select a delivery zone.']);
+            exit;
+        }
+
+        if (!is_array($raw_items) || empty($raw_items)) {
+            echo json_encode(['success' => false, 'error' => 'Please select at least one product for the reorder.']);
+            exit;
+        }
+
+        $parsed_items = [];
+        foreach ($raw_items as $row) {
+            $pid = (int)($row['product_id'] ?? 0);
+            $qty = (int)($row['quantity'] ?? 0);
+            $rate = (isset($row['rate']) && is_numeric($row['rate']) && (float)$row['rate'] >= 0) ? (float)$row['rate'] : null;
+            $isExtra = !empty($row['is_extra']) ? 1 : 0;
+
+            if ($pid > 0 && $qty > 0) {
+                $parsed_items[] = [
+                    'product_id' => $pid,
+                    'quantity'   => $qty,
+                    'rate'       => $rate,
+                    'is_extra'   => $isExtra
+                ];
+            }
+        }
+
+        if (empty($parsed_items)) {
+            echo json_encode(['success' => false, 'error' => 'Please enter a valid quantity of 1 or more for each product.']);
+            exit;
+        }
+
+        // Fetch product details
+        $pids = array_unique(array_column($parsed_items, 'product_id'));
+        $placeholders = implode(',', array_fill(0, count($pids), '?'));
+        $pStmt = $pdo->prepare("SELECT product_id, name, product_name, case_price, price, case_stock, stock FROM products WHERE product_id IN ($placeholders)");
+        $pStmt->execute($pids);
+        $dbProducts = $pStmt->fetchAll(PDO::FETCH_ASSOC);
+
+        $dbMap = [];
+        foreach ($dbProducts as $dp) {
+            $dbMap[(int)$dp['product_id']] = $dp;
+        }
+
+        $base_total = 0.0;
+        $total_cases = 0;
+        $valid_order_items = [];
+
+        foreach ($parsed_items as $item) {
+            $pid = $item['product_id'];
+            if (!isset($dbMap[$pid])) {
+                echo json_encode(['success' => false, 'error' => "Selected product #{$pid} is not found."]);
+                exit;
+            }
+            $dp = $dbMap[$pid];
+            $defaultPrice = (float)($dp['case_price'] ?: $dp['price']);
+            $price = ($item['is_extra'] == 1) ? 0.00 : (($item['rate'] !== null && (float)$item['rate'] >= 0) ? (float)$item['rate'] : $defaultPrice);
+            $qty = $item['quantity'];
+            $line_total = $price * $qty;
+
+            $base_total += $line_total;
+            $total_cases += $qty;
+
+            $valid_order_items[] = [
+                'product_id'        => $pid,
+                'quantity'          => $qty,
+                'price_at_purchase' => $price,
+                'line_total'        => $line_total,
+                'is_extra'          => $item['is_extra'],
+                'name'              => $dp['product_name'] ?: $dp['name']
+            ];
+        }
+
+        if ($discount > $base_total) {
+            $discount = $base_total;
+        }
+        $total_amount = max(0, $base_total - $discount);
+
+        // Generate unique order number
+        $maxStmt = $pdo->query("SELECT MAX(order_id) FROM orders");
+        $maxId = (int)$maxStmt->fetchColumn() + 1;
+        $order_number = '' . str_pad($maxId, 3, '0', STR_PAD_LEFT);
+
+        try {
+            $pdo->beginTransaction();
+
+            $primaryItem = $valid_order_items[0];
+            foreach ($valid_order_items as $voi) {
+                if (empty($voi['is_extra'])) {
+                    $primaryItem = $voi;
+                    break;
+                }
+            }
+            $primary_pid = $primaryItem['product_id'];
+            $primary_unit_price = $primaryItem['price_at_purchase'];
+
+            $stmt = $pdo->prepare("
+                INSERT INTO orders (
+                    order_number, zone_id, shop_name, customer_name,
+                    location, phone, address, product_id,
+                    quantity, unit_price, discount, total_amount,
+                    status, is_zone_read, is_reorder, parent_order_id,
+                    payment_method, payment_status, order_date, created_at, updated_at
+                ) VALUES (
+                    ?, ?, ?, ?,
+                    ?, ?, ?, ?,
+                    ?, ?, ?, ?,
+                    'pending', 0, 1, ?,
+                    'cod', 'pending', NOW(), NOW(), NOW()
+                )
+            ");
+
+            $stmt->execute([
+                $order_number,
+                $zone_id,
+                $shop_name,
+                $customer_name ?: $shop_name,
+                $location,
+                $phone,
+                $address,
+                $primary_pid,
+                $total_cases,
+                $primary_unit_price,
+                $discount,
+                $total_amount,
+                $parent_order_id ?: null
+            ]);
+
+            $new_order_id = (int)$pdo->lastInsertId();
+
+            // Insert line items
+            $insItem = $pdo->prepare("
+                INSERT INTO order_items (
+                    order_id, product_id, quantity, price_at_purchase, is_extra, created_at, updated_at
+                ) VALUES (
+                    ?, ?, ?, ?, ?, NOW(), NOW()
+                )
+            ");
+
+            foreach ($valid_order_items as $voi) {
+                $insItem->execute([
+                    $new_order_id,
+                    $voi['product_id'],
+                    $voi['quantity'],
+                    $voi['price_at_purchase'],
+                    $voi['is_extra']
+                ]);
+
+                // Adjust warehouse product stock
+                adjustProductStock($pdo, $voi['product_id'], -$voi['quantity'], "Reorder #{$order_number} created in Zone Portal");
+            }
+
+            $pdo->commit();
+
+            if (function_exists('quickLog')) {
+                quickLog($pdo, 'create', 'order', $new_order_id, "Created Reorder #{$order_number} for {$shop_name} via Zone Orders Hub [{$total_cases} cases, ₹{$total_amount}]");
+            }
+
+            echo json_encode([
+                'success'      => true,
+                'message'      => "Reorder #{$order_number} placed successfully!",
+                'order_id'     => $new_order_id,
+                'order_number' => $order_number
+            ]);
+            exit;
+        } catch (Exception $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            echo json_encode(['success' => false, 'error' => 'Database error placing reorder: ' . $e->getMessage()]);
+            exit;
+        }
+    }
+
+    // ----------------------------------------------------
     // Action 4: Get Full Order Details (for Quick Modal)
     // ----------------------------------------------------
     if ($action === 'get_order_details') {

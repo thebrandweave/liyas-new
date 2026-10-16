@@ -93,7 +93,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['settle_due_balance'])
         if (!empty($clear_notes)) { $auditNote .= " - Note: {$clear_notes}"; }
         $auditNote .= " on " . date('d-m-Y H:i:s');
 
-        if ($settle_mode === 'credit') {
+        $isOnlineOrCredit = in_array(strtolower($settle_mode), ['upi', 'bank', 'credit', 'online']);
+
+        if ($isOnlineOrCredit) {
             $upRec = $pdo->prepare("
                 UPDATE receipts 
                 SET credited_amount = credited_amount + ?,
@@ -121,9 +123,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['settle_due_balance'])
                 INSERT INTO order_payments (order_id, cash_amount, credited_amount, due_amount, payment_type, created_at)
                 VALUES (?, ?, ?, ?, ?, NOW())
             ");
-            $pCash = ($settle_mode === 'credit') ? 0.00 : $dueCleared;
-            $pCredit = ($settle_mode === 'credit') ? $dueCleared : 0.00;
-            $pPayType = ($settle_mode === 'credit') ? 'credit' : 'cash';
+            $pCash = $isOnlineOrCredit ? 0.00 : $dueCleared;
+            $pCredit = $isOnlineOrCredit ? $dueCleared : 0.00;
+            $pPayType = $settle_mode;
             $pPay->execute([$order_id, $pCash, $pCredit, $newDue, $pPayType]);
         } catch (Exception $e) {}
 
@@ -151,6 +153,7 @@ if ($itemsBaseTotal <= 0 && (float)$order['total_amount'] > 0) {
     $itemsBaseTotal = (float)$order['total_amount'] + (float)$order['discount'];
 }
 $baseAmount = $itemsBaseTotal;
+$paymentHistory = getOrderPaymentHistory($pdo, $order_id);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -220,6 +223,90 @@ $baseAmount = $itemsBaseTotal;
             justify-content: center;
             font-size: 22px;
         }
+        
+/* Better column width distribution */
+.payment-history-table {
+    width: 100%;
+    table-layout: fixed;
+    border-collapse: collapse;
+}
+
+.payment-history-table th:nth-child(1),
+.payment-history-table td:nth-child(1) {
+    width: 4%;
+}
+
+.payment-history-table th:nth-child(2),
+.payment-history-table td:nth-child(2) {
+    width: 16%;
+}
+
+.payment-history-table th:nth-child(3),
+.payment-history-table td:nth-child(3) {
+    width: 17%;
+}
+
+.payment-history-table th:nth-child(4),
+.payment-history-table td:nth-child(4) {
+    width: 14%;
+}
+
+.payment-history-table th:nth-child(5),
+.payment-history-table td:nth-child(5) {
+    width: 15%;
+}
+
+.payment-history-table th:nth-child(6),
+.payment-history-table td:nth-child(6) {
+    width: 34%;
+}
+
+.payment-history-table th,
+.payment-history-table td {
+    padding: 10px;
+    vertical-align: top;
+    overflow-wrap: anywhere;
+    white-space: normal;
+}
+
+.payment-history-table td:nth-child(2) {
+    font-size: 11px;
+}
+
+.payment-history-table td:nth-child(6) {
+    line-height: 1.6;
+}
+
+        
+/* Fix overflow in Payment History table */
+.payment-history-table {
+    width: 100%;
+    table-layout: fixed;
+    border-collapse: collapse;
+}
+
+.payment-history-table th,
+.payment-history-table td {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: normal;
+    vertical-align: top;
+}
+
+.payment-history-table .audit-notes-cell {
+    width: 28%;
+    max-width: 280px;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    line-height: 1.6;
+}
+
+.payment-history-wrapper {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+}
+
     </style>
 </head>
 <body>
@@ -408,6 +495,138 @@ $baseAmount = $itemsBaseTotal;
                                 <span class="info-label">Delivery Address:</span>
                                 <span class="info-val"><?= nl2br(htmlspecialchars($order['address'] ?: 'N/A')) ?></span>
                             </div>
+                        </div>
+
+                        <!-- Payment & Due Clearance Audit Ledger Card -->
+                        <div class="info-card">
+                            <div class="card-heading" style="display: flex; justify-content: space-between; align-items: center;">
+                                <span style="display: inline-flex; align-items: center; gap: 6px;">
+                                    <i class='bx bx-history' style="font-size: 18px; color: #7c3aed;"></i> Payment &amp; Due Clearance History
+                                </span>
+                                <?php if (!empty($paymentHistory['is_settled'])): ?>
+                                    <span style="background: #dcfce7; color: #15803d; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px;">
+                                        ✅ Fully Settled (₹0 Due)
+                                    </span>
+                                <?php elseif (!empty($paymentHistory['current_due']) && $paymentHistory['current_due'] > 0): ?>
+                                    <span style="background: #fee2e2; color: #dc2626; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px;">
+                                        ⚠️ Due: <?= formatCurrency($paymentHistory['current_due']) ?>
+                                    </span>
+                                <?php endif; ?>
+                            </div>
+
+                            <!-- Financial Summary Bar -->
+                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 1.25rem;">
+                                <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 12px;">
+                                    <div style="font-size: 11px; color: #64748b; font-weight: 600; text-transform: uppercase;">Total Billed</div>
+                                    <div style="font-size: 16px; font-weight: 700; color: #0f172a; margin-top: 2px;">
+                                        <?= formatCurrency($paymentHistory['total_order_amount'] ?? 0) ?>
+                                    </div>
+                                </div>
+                                <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 10px 12px;">
+                                    <div style="font-size: 11px; color: #166534; font-weight: 600; text-transform: uppercase;">Total Paid</div>
+                                    <div style="font-size: 16px; font-weight: 700; color: #15803d; margin-top: 2px;">
+                                        <?= formatCurrency($paymentHistory['total_paid'] ?? 0) ?>
+                                    </div>
+                                    <div style="font-size: 10px; color: #166534; margin-top: 1px;">
+                                        Cash: <?= formatCurrency($paymentHistory['total_paid_cash'] ?? 0) ?> &bull; Online: <?= formatCurrency($paymentHistory['total_paid_credit'] ?? 0) ?>
+                                    </div>
+                                </div>
+                                <div style="background: #fff1f2; border: 1px solid #fecdd3; border-radius: 8px; padding: 10px 12px;">
+                                    <div style="font-size: 11px; color: #9f1239; font-weight: 600; text-transform: uppercase;">Due Balance</div>
+                                    <div style="font-size: 16px; font-weight: 700; color: <?= (($paymentHistory['current_due'] ?? 0) > 0) ? '#e11d48' : '#15803d' ?>; margin-top: 2px;">
+                                        <?= formatCurrency($paymentHistory['current_due'] ?? 0) ?>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Ledger Table -->
+                            <?php if (empty($paymentHistory['ledger'])): ?>
+                                <div style="text-align: center; padding: 24px 10px; color: #94a3b8; font-size: 13px;">
+                                    <i class='bx bx-time' style="font-size: 28px; margin-bottom: 4px;"></i>
+                                    <div>No payment or delivery receipts recorded for this order yet.</div>
+                                </div>
+                            <?php else: ?>
+<div class="payment-history-wrapper"
+     style="border: 1px solid #e2e8f0; border-radius: 8px;">                              
+<table class="payment-history-table"
+       style="font-size: 12px; text-align: left;">    
+                                           <thead>
+                                            <tr style="background: #f8fafc; border-bottom: 1.5px solid #e2e8f0; color: #475569;">
+                                                <th style="padding: 8px 10px; font-weight: 700;">#</th>
+                                                <th style="padding: 8px 10px; font-weight: 700;">Date &amp; Time</th>
+                                                <th style="padding: 8px 10px; font-weight: 700;">Event / Stage</th>
+                                                <th style="padding: 8px 10px; font-weight: 700;">Amount Paid</th>
+                                                <th style="padding: 8px 10px; font-weight: 700;">Remaining Due</th>
+                                                <th style="padding: 8px 10px; font-weight: 700;">Audit Notes / Ref</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <?php foreach ($paymentHistory['ledger'] as $idx => $leg): 
+                                                $isInit = ($leg['type'] === 'initial_bill');
+                                                $m = strtolower($leg['payment_mode'] ?? 'cash');
+                                                $paidAmt = (float)$leg['amount_cleared'];
+                                                $remDue = (float)$leg['remaining_due'];
+                                            ?>
+                                            <tr style="border-bottom: 1px solid #f1f5f9;">
+                                                <td style="padding: 10px; color: #64748b; font-weight: 600;"><?= $idx + 1 ?></td>
+                                                <td style="padding: 10px; font-weight: 600; color: #0f172a; white-space: nowrap;">
+                                                    <i class='bx bx-time-five' style="color: #94a3b8;"></i> <?= htmlspecialchars($leg['formatted_date']) ?>
+                                                </td>
+                                                <td style="padding: 10px;">
+                                                    <?php if ($isInit): ?>
+                                                        <span style="background: #eff6ff; color: #1d4ed8; font-weight: 700; padding: 2px 6px; border-radius: 4px; font-size: 11px;">
+                                                            <i class='bx bx-receipt'></i> Initial Delivery Bill
+                                                        </span>
+                                                    <?php else: ?>
+                                                        <span style="background: #ecfdf5; color: #047857; font-weight: 700; padding: 2px 6px; border-radius: 4px; font-size: 11px;">
+                                                            <i class='bx bx-check-shield'></i> Due Clearance #<?= $idx ?>
+                                                        </span>
+                                                    <?php endif; ?>
+                                                </td>
+                                                <td style="padding: 10px;">
+                                                    <div style="font-weight: 700; color: #047857;">
+                                                        <?= formatCurrency($paidAmt) ?>
+                                                    </div>
+                                                    <div style="margin-top: 2px;">
+                                                        <?php if ($m === 'cash'): ?>
+                                                            <span style="background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; font-size: 10px; padding: 1px 5px; border-radius: 3px; font-weight: 600;">💵 Cash</span>
+                                                        <?php elseif ($m === 'upi'): ?>
+                                                            <span style="background: #faf5ff; color: #7e22ce; border: 1px solid #e9d5ff; font-size: 10px; padding: 1px 5px; border-radius: 3px; font-weight: 600;">📱 UPI</span>
+                                                        <?php elseif ($m === 'bank'): ?>
+                                                            <span style="background: #f0f9ff; color: #0369a1; border: 1px solid #bae6fd; font-size: 10px; padding: 1px 5px; border-radius: 3px; font-weight: 600;">🏦 Bank</span>
+                                                        <?php elseif ($m === 'credit'): ?>
+                                                            <span style="background: #fdf4ff; color: #a21caf; border: 1px solid #f5d0fe; font-size: 10px; padding: 1px 5px; border-radius: 3px; font-weight: 600;">📑 Credit</span>
+                                                        <?php else: ?>
+                                                            <span style="background: #f8fafc; color: #475569; border: 1px solid #e2e8f0; font-size: 10px; padding: 1px 5px; border-radius: 3px; font-weight: 600;"><?= strtoupper($m) ?></span>
+                                                        <?php endif; ?>
+                                                    </div>
+                                                </td>
+                                                <td style="padding: 10px; font-weight: 700; color: <?= ($remDue > 0) ? '#dc2626' : '#15803d' ?>;">
+                                                    <?= ($remDue > 0) ? formatCurrency($remDue) : '₹0.00 (Cleared)' ?>
+                                                </td>
+                                               <td class="audit-notes-cell"
+    style="padding: 10px; color: #475569; font-size: 11px;">
+    <?= htmlspecialchars($leg['note'] ?: '-') ?>
+</td>
+                                            </tr>
+                                            <?php endforeach; ?>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            <?php endif; ?>
+
+                            <?php if (!empty($paymentHistory['audit_notes'])): ?>
+                                <div style="margin-top: 12px; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 6px; padding: 10px 12px;">
+                                    <div style="font-size: 11px; font-weight: 700; color: #475569; text-transform: uppercase; margin-bottom: 4px;">
+                                        Settlement Notes Log:
+                                    </div>
+                                    <ul style="margin: 0; padding-left: 14px; font-size: 11px; color: #334155;">
+                                        <?php foreach ($paymentHistory['audit_notes'] as $an): ?>
+                                            <li style="margin-bottom: 3px;"><?= htmlspecialchars($an) ?></li>
+                                        <?php endforeach; ?>
+                                    </ul>
+                                </div>
+                            <?php endif; ?>
                         </div>
                     </div>
 

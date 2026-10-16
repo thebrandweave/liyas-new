@@ -42,9 +42,32 @@ if ((int)$order['is_zone_read'] === 0) {
 
 $shopName = $order['shop_name'] ?: ($order['customer_name'] ?: 'Customer');
 $rewardInfo = getShopRewardInfo($pdo, $shopName);
+$priorDues = getShopPendingDueDetails($pdo, $shopName, $order['phone'] ?? '', $order_id, $zone_id);
+
+$msg = '';
+$error_msg = '';
+
+// Handle quick settlement of prior dues directly from order view
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['settle_prior_due'])) {
+    $clearAmount = (float)($_POST['prior_clear_amount'] ?? 0);
+    $clearMode = trim($_POST['prior_clear_mode'] ?? 'cash');
+    $clearNotes = trim($_POST['prior_clear_notes'] ?? '');
+    if ($clearAmount > 0) {
+        $refNote = "Direct settlement from Order #" . ($order['order_number'] ?: $order_id);
+        if (!empty($clearNotes)) {
+            $refNote .= " - Note: " . $clearNotes;
+        }
+        $settleRes = settleShopPriorDuesFifo($pdo, $shopName, $order['phone'] ?? '', $clearAmount, $clearMode, $refNote, $order_id, $zone_id);
+        if (!empty($settleRes['success'])) {
+            $msg = "Successfully cleared ₹" . number_format($settleRes['total_cleared'], 2) . " of earlier dues via " . ucfirst($clearMode) . "! Remaining prior due: ₹" . number_format($settleRes['remaining_balance'], 2);
+            $priorDues = getShopPendingDueDetails($pdo, $shopName, $order['phone'] ?? '', $order_id, $zone_id);
+        } else {
+            $error_msg = "Could not settle prior due balance.";
+        }
+    }
+}
 
 // Update status
-$msg = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_status'])) {
     $new_status = $_POST['status'] ?? '';
     if (in_array($new_status, ['pending', 'processing', 'shipped', 'delivered', 'cancelled'])) {
@@ -512,6 +535,12 @@ $stepLevel = $statusSteps[$currentStatus] ?? 1;
                 <span><?= htmlspecialchars($msg) ?></span>
             </div>
         <?php endif; ?>
+        <?php if (!empty($error_msg)): ?>
+            <div class="flash-msg" style="background: #fee2e2; border-color: #fecaca; color: #991b1b;">
+                <i class='bx bx-error-circle' style="font-size: 20px; color: #dc2626;"></i>
+                <span><?= htmlspecialchars($error_msg) ?></span>
+            </div>
+        <?php endif; ?>
 
         <!-- Order Header & Live Stepper -->
         <section class="info-card">
@@ -610,6 +639,88 @@ $stepLevel = $statusSteps[$currentStatus] ?? 1;
                 </a>
             </div>
         </section>
+
+        <!-- Prior Unpaid Dues Card -->
+        <?php if (!empty($priorDues['has_due'])): ?>
+            <section class="info-card" style="border: 2px solid #fecaca; background: #fffaf0;">
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; flex-wrap: wrap; gap: 8px;">
+                    <h2 class="card-title" style="margin-bottom: 0; color: #b91c1c; font-size: 16px;">
+                        <i class='bx bx-error-circle' style="color: #dc2626; font-size: 20px;"></i>
+                        Earlier Due Pending: <?= formatCurrency($priorDues['total_due']) ?>
+                    </h2>
+                    <span style="background: #fee2e2; color: #dc2626; font-size: 11px; font-weight: 800; padding: 3px 8px; border-radius: 6px; text-transform: uppercase;">
+                        <?= $priorDues['due_count'] ?> <?= $priorDues['due_count'] === 1 ? 'Previous Bill Unpaid' : 'Previous Bills Unpaid' ?>
+                    </span>
+                </div>
+                <p style="font-size: 13px; color: #7f1d1d; margin-bottom: 12px; line-height: 1.4;">
+                    This shop has unpaid dues from previous deliveries. If the shopkeeper is paying now, you can record clearance below or collect it while generating the delivery receipt.
+                </p>
+                <div style="background: #ffffff; border: 1px solid #fed7d7; border-radius: 8px; overflow-x: auto; margin-bottom: 14px;">
+                    <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+                        <thead>
+                            <tr style="background: #fef2f2; border-bottom: 1px solid #fee2e2; text-align: left; color: #991b1b; font-size: 12px;">
+                                <th style="padding: 8px 10px;">Bill #</th>
+                                <th style="padding: 8px 10px;">Date</th>
+                                <th style="padding: 8px 10px; text-align: right;">Bill Total</th>
+                                <th style="padding: 8px 10px; text-align: right;">Outstanding Due</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($priorDues['receipts'] as $pr): ?>
+                            <tr style="border-bottom: 1px solid #f8fafc;">
+                                <td style="padding: 8px 10px; font-weight: 700; color: #0f172a;">
+                                    Bill #<?= htmlspecialchars($pr['bill_number']) ?>
+                                    <span style="font-size: 11px; color: #64748b; font-weight: normal;">(Order #<?= htmlspecialchars($pr['order_number']) ?>)</span>
+                                </td>
+                                <td style="padding: 8px 10px; color: #64748b; font-size: 12px;">
+                                    <?= date('d M Y', strtotime($pr['receipt_date'])) ?>
+                                </td>
+                                <td style="padding: 8px 10px; text-align: right; color: #475569;">
+                                    <?= formatCurrency($pr['total_amount']) ?>
+                                </td>
+                                <td style="padding: 8px 10px; text-align: right; font-weight: 800; color: #dc2626;">
+                                    <?= formatCurrency($pr['due_amount']) ?>
+                                </td>
+                            </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Quick Settlement Accordion / Form -->
+                <details style="background: #ffffff; border: 1px solid #fed7d7; border-radius: 8px; padding: 12px;">
+                    <summary style="font-size: 13px; font-weight: 700; color: #2563eb; cursor: pointer; display: flex; align-items: center; gap: 6px;">
+                        <i class='bx bx-check-shield'></i> Clear Earlier Due Directly
+                    </summary>
+                    <form action="<?= zone_url($zone_slug, 'order', ['id' => $order_id]) ?>" method="POST" style="margin-top: 12px;">
+                        <input type="hidden" name="settle_prior_due" value="1">
+                        <div style="margin-bottom: 10px;">
+                            <label style="font-size: 12px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Amount to Clear (₹):</label>
+                            <input type="number" step="0.01" min="0.01" max="<?= $priorDues['total_due'] ?>" name="prior_clear_amount" value="<?= $priorDues['total_due'] ?>" required style="width: 100%; padding: 8px 12px; border: 1.5px solid #cbd5e1; border-radius: 8px; font-size: 14px; font-weight: 700; box-sizing: border-box;">
+                        </div>
+                        <div style="margin-bottom: 10px;">
+                            <label style="font-size: 12px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Payment Mode:</label>
+                            <div style="display: flex; gap: 12px; font-size: 13px; font-weight: 600;">
+                                <label style="display: flex; align-items: center; gap: 5px; cursor: pointer;">
+                                    <input type="radio" name="prior_clear_mode" value="cash" checked style="accent-color: #2563eb;">
+                                    💵 In-Hand Cash
+                                </label>
+                                <label style="display: flex; align-items: center; gap: 5px; cursor: pointer;">
+                                    <input type="radio" name="prior_clear_mode" value="upi" style="accent-color: #2563eb;">
+                                    📱 UPI / Online
+                                </label>
+                            </div>
+                        </div>
+                        <div style="margin-bottom: 10px;">
+                            <input type="text" name="prior_clear_notes" placeholder="Optional reference note / remarks" style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 12px; box-sizing: border-box;">
+                        </div>
+                        <button type="submit" style="background: #059669; color: #fff; border: none; padding: 9px 16px; border-radius: 8px; font-size: 13px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;">
+                            <i class='bx bx-check'></i> Confirm Clearance
+                        </button>
+                    </form>
+                </details>
+            </section>
+        <?php endif; ?>
 
         <!-- Shop Loyalty Reward Card -->
         <?php if ($rewardInfo): 

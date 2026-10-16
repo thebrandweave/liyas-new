@@ -984,4 +984,337 @@ function unassignOrderFromVehicle(PDO $pdo, int $orderId): array {
 	}
 }
 
+/**
+ * Retrieve unpaid prior dues/receipts for a shop
+ */
+function getShopPendingDueDetails(PDO $pdo, string $shopName, string $phone = '', int $excludeOrderId = 0, ?int $zoneId = null): array {
+	$cleanShop = trim(strtolower($shopName));
+	$cleanPhone = preg_replace('/[^0-9]/', '', $phone);
+	$phone10 = strlen($cleanPhone) >= 10 ? substr($cleanPhone, -10) : $cleanPhone;
+	$phoneLike = '%' . $phone10;
+
+	if (empty($cleanShop) && empty($phone10)) {
+		return ['has_due' => false, 'total_due' => 0.0, 'due_count' => 0, 'receipts' => []];
+	}
+
+	try {
+		$zoneSql = ($zoneId !== null && $zoneId > 0) ? " AND o.zone_id = " . (int)$zoneId : "";
+		$sql = "
+			SELECT 
+				r.id as receipt_id,
+				r.order_id,
+				r.bill_number,
+				r.due_amount,
+				r.cash_amount,
+				r.credited_amount,
+				r.total_amount,
+				r.payment_type,
+				r.notes,
+				r.created_at as receipt_date,
+				o.order_number,
+				o.shop_name,
+				o.customer_name,
+				o.phone,
+				o.zone_id,
+				z.name as zone_name
+			FROM receipts r
+			JOIN orders o ON r.order_id = o.order_id
+			LEFT JOIN zones z ON o.zone_id = z.id
+			WHERE r.due_amount > 0
+			  AND o.status != 'cancelled'
+			  AND o.order_id != ?
+			  {$zoneSql}
+			  AND (
+				  (? != '' AND (TRIM(LOWER(o.shop_name)) = ? OR TRIM(LOWER(o.customer_name)) = ?))
+				  OR (? != '' AND LENGTH(?) >= 7 AND (
+					  REPLACE(REPLACE(REPLACE(REPLACE(o.phone, ' ', ''), '-', ''), '+91', ''), '+', '') LIKE ?
+					  OR RIGHT(REGEXP_REPLACE(o.phone, '[^0-9]', ''), 10) = ?
+				  ))
+			  )
+			ORDER BY r.id ASC
+		";
+
+		$stmt = $pdo->prepare($sql);
+		$stmt->execute([
+			$excludeOrderId,
+			$cleanShop, $cleanShop, $cleanShop,
+			$phone10, $phone10, $phoneLike, $phone10
+		]);
+		$rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+		$totalDue = 0.0;
+		foreach ($rows as &$r) {
+			$r['due_amount'] = (float)$r['due_amount'];
+			$r['total_amount'] = (float)$r['total_amount'];
+			$r['cash_amount'] = (float)$r['cash_amount'];
+			$r['credited_amount'] = (float)$r['credited_amount'];
+			$totalDue += $r['due_amount'];
+		}
+		unset($r);
+
+		return [
+			'has_due' => ($totalDue > 0),
+			'total_due' => $totalDue,
+			'due_count' => count($rows),
+			'receipts' => $rows
+		];
+	} catch (Exception $e) {
+		error_log("Error in getShopPendingDueDetails: " . $e->getMessage());
+		return ['has_due' => false, 'total_due' => 0.0, 'due_count' => 0, 'receipts' => []];
+	}
+}
+
+/**
+ * Settle a shop's prior pending dues FIFO across unpaid receipts
+ */
+function settleShopPriorDuesFifo(PDO $pdo, string $shopName, string $phone, float $amountToClear, string $mode = 'cash', string $referenceNote = '', int $excludeOrderId = 0, ?int $zoneId = null): array {
+	$amountToClear = (float)$amountToClear;
+	if ($amountToClear <= 0) {
+		return ['success' => false, 'total_cleared' => 0.0, 'remaining_balance' => 0.0, 'cleared_receipts' => []];
+	}
+
+	$dues = getShopPendingDueDetails($pdo, $shopName, $phone, $excludeOrderId, $zoneId);
+	if (empty($dues['receipts'])) {
+		return ['success' => false, 'total_cleared' => 0.0, 'remaining_balance' => 0.0, 'cleared_receipts' => []];
+	}
+
+	$isOnlineOrCredit = in_array(strtolower($mode), ['upi', 'bank', 'credit', 'online']);
+	$remainingToClear = min($amountToClear, $dues['total_due']);
+	$totalCleared = 0.0;
+	$clearedReceipts = [];
+
+	foreach ($dues['receipts'] as $rec) {
+		if ($remainingToClear <= 0) break;
+		$currentDue = (float)$rec['due_amount'];
+		if ($currentDue <= 0) continue;
+
+		$clearThis = min($currentDue, $remainingToClear);
+		$newDue = max(0, $currentDue - $clearThis);
+
+		$auditNote = " | Prior due of ₹" . number_format($clearThis, 2) . " settled via " . ucfirst($mode);
+		if (!empty($referenceNote)) {
+			$auditNote .= " ({$referenceNote})";
+		}
+		$auditNote .= " on " . date('d-m-Y H:i:s');
+
+		if ($isOnlineOrCredit) {
+			$upRec = $pdo->prepare("
+				UPDATE receipts 
+				SET credited_amount = credited_amount + ?,
+					due_amount = ?,
+					payment_type = CASE WHEN cash_amount > 0 THEN 'Cash + Credited' ELSE 'Credited' END,
+					notes = CONCAT(COALESCE(notes, ''), ?)
+				WHERE id = ?
+			");
+			$upRec->execute([$clearThis, $newDue, $auditNote, $rec['receipt_id']]);
+		} else {
+			$upRec = $pdo->prepare("
+				UPDATE receipts 
+				SET cash_amount = cash_amount + ?,
+					due_amount = ?,
+					payment_type = CASE WHEN credited_amount > 0 THEN 'Cash + Credited' ELSE 'Cash' END,
+					notes = CONCAT(COALESCE(notes, ''), ?)
+				WHERE id = ?
+			");
+			$upRec->execute([$clearThis, $newDue, $auditNote, $rec['receipt_id']]);
+		}
+
+		// Insert into order_payments
+		try {
+			$pPay = $pdo->prepare("
+				INSERT INTO order_payments (order_id, cash_amount, credited_amount, due_amount, payment_type, created_at)
+				VALUES (?, ?, ?, ?, ?, NOW())
+			");
+			$pCash = $isOnlineOrCredit ? 0.00 : $clearThis;
+			$pCredit = $isOnlineOrCredit ? $clearThis : 0.00;
+			$pPayType = strtolower($mode);
+			$pPay->execute([$rec['order_id'], $pCash, $pCredit, $newDue, $pPayType]);
+		} catch (Exception $e) {
+			error_log("Error inserting order_payments during FIFO due settlement: " . $e->getMessage());
+		}
+
+		if (function_exists('quickLog')) {
+			quickLog($pdo, 'settle_due_fifo', 'receipt', $rec['receipt_id'], "Cleared ₹{$clearThis} prior due for order #{$rec['order_id']} via {$mode}. Remaining due: ₹{$newDue}");
+		}
+
+		$clearedReceipts[] = [
+			'receipt_id' => $rec['receipt_id'],
+			'order_id' => $rec['order_id'],
+			'bill_number' => $rec['bill_number'],
+			'order_number' => $rec['order_number'],
+			'cleared_amount' => $clearThis,
+			'remaining_due' => $newDue
+		];
+
+		$totalCleared += $clearThis;
+		$remainingToClear -= $clearThis;
+	}
+
+	$remainingBalance = max(0, $dues['total_due'] - $totalCleared);
+
+	return [
+		'success' => true,
+		'total_cleared' => $totalCleared,
+		'remaining_balance' => $remainingBalance,
+		'cleared_receipts' => $clearedReceipts,
+		'mode' => $mode
+	];
+}
+
+/**
+ * Get comprehensive payment & due clearance audit history for an order
+ * Includes initial receipt generation and all subsequent payment installments / clearances
+ */
+function getOrderPaymentHistory(PDO $pdo, int $orderId): array {
+	$orderId = (int)$orderId;
+	if ($orderId <= 0) {
+		return ['success' => false, 'error' => 'Invalid order ID'];
+	}
+
+	try {
+		// Fetch order details
+		$oStmt = $pdo->prepare("
+			SELECT o.order_id, o.order_number, o.shop_name, o.customer_name, o.phone, o.location, o.address,
+			       o.total_amount, o.discount, o.status, o.created_at as order_date,
+			       z.name as zone_name, z.slug as zone_slug
+			FROM orders o
+			LEFT JOIN zones z ON o.zone_id = z.id
+			WHERE o.order_id = ?
+		");
+		$oStmt->execute([$orderId]);
+		$order = $oStmt->fetch(PDO::FETCH_ASSOC);
+		if (!$order) {
+			return ['success' => false, 'error' => 'Order not found'];
+		}
+
+		// Fetch receipt details
+		$rStmt = $pdo->prepare("
+			SELECT id as receipt_id, bill_number, delivered_quantity, total_amount as receipt_total,
+			       cash_amount as receipt_cash, credited_amount as receipt_credit,
+			       due_amount as receipt_due, payment_type as receipt_pay_type,
+			       notes, created_at as receipt_date
+			FROM receipts
+			WHERE order_id = ?
+		");
+		$rStmt->execute([$orderId]);
+		$receipt = $rStmt->fetch(PDO::FETCH_ASSOC);
+
+		// Fetch all order_payments records
+		$pStmt = $pdo->prepare("
+			SELECT id, order_id, cash_amount, credited_amount, due_amount, payment_type, created_at
+			FROM order_payments
+			WHERE order_id = ?
+			ORDER BY id ASC
+		");
+		$pStmt->execute([$orderId]);
+		$payments = $pStmt->fetchAll(PDO::FETCH_ASSOC);
+
+		// Parse audit notes from receipts.notes
+		$auditNotes = [];
+		if (!empty($receipt['notes'])) {
+			$rawNotes = explode(' | ', $receipt['notes']);
+			foreach ($rawNotes as $rn) {
+				$rn = trim($rn);
+				if (empty($rn)) continue;
+				$auditNotes[] = $rn;
+			}
+		}
+
+		// Build chronological timeline ledger
+		$ledger = [];
+		$totalOrderAmount = (float)$order['total_amount'];
+		$currentOutstandingDue = $receipt ? (float)$receipt['receipt_due'] : $totalOrderAmount;
+		$totalPaidCash = $receipt ? (float)$receipt['receipt_cash'] : 0.0;
+		$totalPaidCredit = $receipt ? (float)$receipt['receipt_credit'] : 0.0;
+		$totalPaid = $totalPaidCash + $totalPaidCredit;
+
+		if (!empty($payments)) {
+			foreach ($payments as $idx => $p) {
+				$pCash = (float)$p['cash_amount'];
+				$pCredit = (float)$p['credited_amount'];
+				$pDue = (float)$p['due_amount'];
+				$pPaidThis = $pCash + $pCredit;
+				$pMode = strtolower(trim($p['payment_type'] ?? ''));
+				if (empty($pMode)) {
+					$pMode = ($pCash > 0 && $pCredit > 0) ? 'split' : (($pCredit > 0) ? 'credit' : 'cash');
+				}
+
+				$isInitial = ($idx === 0);
+
+				$matchedNote = '';
+				if ($isInitial) {
+					$matchedNote = 'Initial order delivery & billing receipt generated';
+				} else {
+					$noteIndex = $idx - 1;
+					if (isset($auditNotes[$noteIndex])) {
+						$matchedNote = $auditNotes[$noteIndex];
+					} else {
+						$pTimeStr = date('d-m-Y', strtotime($p['created_at']));
+						foreach ($auditNotes as $an) {
+							if (strpos($an, $pTimeStr) !== false && (
+								strpos($an, number_format($pPaidThis, 2)) !== false ||
+								strpos($an, number_format($pCash, 2)) !== false ||
+								strpos($an, number_format($pCredit, 2)) !== false
+							)) {
+								$matchedNote = $an;
+								break;
+							}
+						}
+					}
+				}
+
+				$ledger[] = [
+					'payment_id' => (int)$p['id'],
+					'type' => $isInitial ? 'initial_bill' : 'due_clearance',
+					'title' => $isInitial ? 'Initial Order Delivery & Billing' : ('Due Clearance Installment #' . $idx),
+					'timestamp' => $p['created_at'],
+					'formatted_date' => date('d M Y, h:i A', strtotime($p['created_at'])),
+					'cash_amount' => $pCash,
+					'credited_amount' => $pCredit,
+					'amount_cleared' => $pPaidThis,
+					'remaining_due' => $pDue,
+					'payment_mode' => $pMode,
+					'note' => $matchedNote ?: ($isInitial ? 'Order delivered & billed' : 'Due clearance installment')
+				];
+			}
+		} elseif ($receipt) {
+			// Receipt exists but no order_payments rows yet
+			$ledger[] = [
+				'payment_id' => 0,
+				'type' => 'initial_bill',
+				'title' => 'Initial Order Delivery & Billing',
+				'timestamp' => $receipt['receipt_date'],
+				'formatted_date' => date('d M Y, h:i A', strtotime($receipt['receipt_date'])),
+				'cash_amount' => (float)$receipt['receipt_cash'],
+				'credited_amount' => (float)$receipt['receipt_credit'],
+				'amount_cleared' => (float)$receipt['receipt_cash'] + (float)$receipt['receipt_credit'],
+				'remaining_due' => (float)$receipt['receipt_due'],
+				'payment_mode' => strtolower($receipt['receipt_pay_type'] ?? 'cash'),
+				'note' => $receipt['notes'] ?: 'Receipt generated'
+			];
+		}
+
+		return [
+			'success' => true,
+			'order' => $order,
+			'receipt' => $receipt,
+			'has_receipt' => !empty($receipt),
+			'total_order_amount' => $totalOrderAmount,
+			'total_paid' => $totalPaid,
+			'total_paid_cash' => $totalPaidCash,
+			'total_paid_credit' => $totalPaidCredit,
+			'current_due' => $currentOutstandingDue,
+			'is_settled' => ($currentOutstandingDue <= 0.001),
+			'clearance_count' => max(0, count($payments) - 1),
+			'ledger' => $ledger,
+			'audit_notes' => $auditNotes
+		];
+	} catch (Exception $e) {
+		error_log("Error in getOrderPaymentHistory: " . $e->getMessage());
+		return ['success' => false, 'error' => $e->getMessage()];
+	}
+}
+
+
+
 

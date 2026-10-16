@@ -67,8 +67,10 @@ body {
 }
 
 .logo-text {
-    font-size: 18px;
-    font-weight: 600;
+    font-size: 22px;
+    font-weight: 800;
+    color: #0f172a;
+    letter-spacing: -0.5px;
 }
 
 .search-box {
@@ -95,8 +97,9 @@ body {
     left: 0.75rem;
     top: 50%;
     transform: translateY(-50%);
-    color: var(--text-muted);
+    color: #0f172a;
     font-size: 16px;
+    font-weight: 700;
 }
 
 .nav-menu {
@@ -119,18 +122,33 @@ body {
 }
 
 .nav-item:hover {
-    background: var(--bg-main);
-    color: var(--text-primary);
+    background: #f0f9ff;
+    color: #0284c7;
 }
 
 .nav-item.active {
-    background: var(--bg-main);
-    color: var(--text-primary);
-    font-weight: 600;
+    background: #e0f2fe;
+    color: #0284c7;
+    font-weight: 700;
 }
 
 .nav-item i {
-    font-size: 16px;
+    font-size: 18px;
+    color: #0f172a;
+    font-weight: 700;
+}
+
+.nav-item:hover i {
+    color: #0284c7;
+}
+
+.nav-item.active i {
+    color: #0284c7;
+}
+
+.nav-item.active span {
+    color: #0284c7;
+    font-weight: 700;
 }
 
 .nav-badge {
@@ -320,13 +338,16 @@ thead {
     border-bottom: 1px solid var(--border-light);
 }
 
-th {
-    border:1px solid #cac8c8;
+th,
+table th,
+.table th,
+thead th {
+    border: 1px solid #cac8c8;
     padding: 0.75rem 1.5rem;
     text-align: left;
     font-size: 12px;
-    font-weight: 500;
-    color: var(--text-muted);
+    font-weight: 800;
+    color: #000000 !important;
     text-transform: uppercase;
     letter-spacing: 0.05em;
 }

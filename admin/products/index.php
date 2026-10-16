@@ -185,12 +185,16 @@ if ($total_records > count($products) && empty($search)) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link href='https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css' rel='stylesheet'>
-    <link rel="stylesheet" href="../assets/css/prody-admin.css">
+    <link rel="stylesheet" href="../assets/css/prody-admin.css?v=<?= filemtime(__DIR__ . '/../assets/css/prody-admin.css') ?>">
     <title>Products Inventory - Liyas Website</title>
     <style>
         body { font-family: 'Poppins', sans-serif; }
+        table th, thead th, th {
+            color: #000000 !important;
+            font-weight: 700 !important;
+        }
         .table-card table tbody td { font-size: 14px; color: #334155; border:1px solid #cac8c8 }
         .text-muted-custom { font-size: 13px; color: #94a3b8; }
         .price-bold { color: #0284c7; font-weight: 600; font-size: 15px; }

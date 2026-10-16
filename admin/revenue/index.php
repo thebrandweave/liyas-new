@@ -4,6 +4,17 @@ require_once __DIR__ . '/../includes/auth_check.php';
 require_once __DIR__ . '/../includes/activity_logger.php';
 require_once __DIR__ . '/../includes/functions.php';
 
+date_default_timezone_set('Asia/Kolkata');
+
+// AJAX endpoint: Fetch Payment & Due Clearance History
+if (isset($_GET['action']) && $_GET['action'] === 'get_payment_history') {
+    header('Content-Type: application/json; charset=utf-8');
+    $reqOrderId = (int)($_GET['order_id'] ?? 0);
+    $historyData = getOrderPaymentHistory($pdo, $reqOrderId);
+    echo json_encode($historyData);
+    exit;
+}
+
 $current_page = "revenue";
 $page_title   = "Revenue & Multi-Zone Sales";
 $admin_name   = htmlspecialchars($_SESSION['admin_name'] ?? 'Admin');
@@ -74,7 +85,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['settle_due_balance'])
                 if (!empty($clear_notes)) { $auditNote .= " - Note: {$clear_notes}"; }
                 $auditNote .= " on " . date('d-m-Y H:i:s');
 
-                if ($settle_mode === 'credit') {
+                $isOnlineOrCredit = in_array($settle_mode, ['upi', 'bank', 'credit', 'online']);
+
+                if ($isOnlineOrCredit) {
+                    // Online payments (UPI, Bank, Online) and Credit adjustments belong to Credited Sales, NOT in-hand cash
                     $upRec = $pdo->prepare("
                         UPDATE receipts 
                         SET credited_amount = credited_amount + ?,
@@ -85,6 +99,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['settle_due_balance'])
                     ");
                     $upRec->execute([$dueCleared, $newDue, $auditNote, $rec['id']]);
                 } else {
+                    // Physical in-hand cash payment only
                     $upRec = $pdo->prepare("
                         UPDATE receipts 
                         SET cash_amount = cash_amount + ?,
@@ -102,9 +117,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['settle_due_balance'])
                         INSERT INTO order_payments (order_id, cash_amount, credited_amount, due_amount, payment_type, created_at)
                         VALUES (?, ?, ?, ?, ?, NOW())
                     ");
-                    $pCash = ($settle_mode === 'credit') ? 0.00 : $dueCleared;
-                    $pCredit = ($settle_mode === 'credit') ? $dueCleared : 0.00;
-                    $pPayType = ($settle_mode === 'credit') ? 'credit' : 'cash';
+                    $pCash = $isOnlineOrCredit ? 0.00 : $dueCleared;
+                    $pCredit = $isOnlineOrCredit ? $dueCleared : 0.00;
+                    $pPayType = $settle_mode;
                     $pPay->execute([$order_id, $pCash, $pCredit, $newDue, $pPayType]);
                 } catch (Exception $e) {}
 
@@ -160,12 +175,15 @@ if ($from_date !== '' || $to_date !== '') {
 
 } else {
     if ($period_filter === 'today') {
-        $date_clauses[] = "o.created_at >= CURDATE()
-                           AND o.created_at < CURDATE() + INTERVAL 1 DAY";
+        $date_clauses[] = "o.created_at >= :today_start AND o.created_at <= :today_end";
+        $date_params[':today_start'] = date('Y-m-d 00:00:00');
+        $date_params[':today_end']   = date('Y-m-d 23:59:59');
     } elseif ($period_filter === 'week') {
-        $date_clauses[] = "o.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)";
+        $date_clauses[] = "o.created_at >= :week_start";
+        $date_params[':week_start']  = date('Y-m-d 00:00:00', strtotime('-7 days'));
     } elseif ($period_filter === 'month') {
-        $date_clauses[] = "o.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)";
+        $date_clauses[] = "o.created_at >= :month_start";
+        $date_params[':month_start'] = date('Y-m-d 00:00:00', strtotime('-30 days'));
     }
 }
 
@@ -197,31 +215,29 @@ if ($status_filter !== 'all' && in_array($status_filter, ['pending', 'processing
 
 // Payment Status filter
 if ($payment_filter === 'paid') {
-    $where_clauses[] = "r.id IS NOT NULL AND (r.due_amount <= 0 OR r.due_amount IS NULL)";
+    $where_clauses[] = "r.id IS NOT NULL AND (r.due_amount <= 0 OR r.due_amount IS NULL) AND o.status != 'cancelled'";
 } elseif ($payment_filter === 'due') {
-    $where_clauses[] = "r.due_amount > 0";
+    $where_clauses[] = "r.due_amount > 0 AND o.status != 'cancelled'";
 } elseif ($payment_filter === 'cash') {
-    $where_clauses[] = "r.cash_amount > 0";
-    if ($status_filter === 'all') {
-        $where_clauses[] = "o.status = 'delivered'";
-    }
+    $where_clauses[] = "r.cash_amount > 0 AND o.status != 'cancelled'";
 } elseif ($payment_filter === 'credit') {
-    $where_clauses[] = "r.credited_amount > 0";
+    $where_clauses[] = "(r.credited_amount > 0 OR r.payment_type LIKE '%Credit%' OR r.payment_type = 'credited') AND o.status != 'cancelled'";
 } elseif ($payment_filter === 'unbilled') {
-    $where_clauses[] = "r.id IS NULL";
+    $where_clauses[] = "r.id IS NULL AND o.status != 'cancelled'";
 }
 
 // Search
 if (!empty($search)) {
+    $cleanSearch = trim($search);
+    $cleanSearchNum = ltrim($cleanSearch, '#');
+    $orderIdSearch = (is_numeric($cleanSearchNum) && (int)$cleanSearchNum > 0) ? (int)$cleanSearchNum : -1;
+
     $where_clauses[] = "(
-        o.shop_name LIKE :search 
-        OR o.customer_name LIKE :search 
-        OR o.phone LIKE :search 
-        OR o.location LIKE :search 
-        OR o.order_number LIKE :search 
-        OR r.bill_number LIKE :search
+        CONCAT_WS(' ', o.shop_name, o.customer_name, o.phone, o.location, o.order_number, r.bill_number) LIKE :search
+        OR o.order_id = :order_id_search
     )";
-    $params[':search'] = "%$search%";
+    $params[':search'] = "%$cleanSearch%";
+    $params[':order_id_search'] = $orderIdSearch;
 }
 
 $where_sql = implode(" AND ", $where_clauses);
@@ -262,7 +278,7 @@ if (isset($_GET['export']) && in_array($_GET['export'], ['csv', 'excel'])) {
     ";
     $exp_stmt = $pdo->prepare($export_sql);
     foreach ($params as $k => $v) {
-        if ($k === ':zone_id') {
+        if ($k === ':zone_id' || $k === ':order_id_search') {
             $exp_stmt->bindValue($k, $v, PDO::PARAM_INT);
         } else {
             $exp_stmt->bindValue($k, $v, PDO::PARAM_STR);
@@ -406,15 +422,22 @@ $kpi_stmt = $pdo->prepare("
         COUNT(DISTINCT o.order_id) as total_orders_count,
         SUM(CASE WHEN o.status = 'delivered' THEN 1 ELSE 0 END) as delivered_orders_count,
         COALESCE(SUM(CASE WHEN o.status = 'delivered' THEN COALESCE(r.total_amount, o.total_amount, 0) ELSE 0 END), 0) as total_delivered_sales,
-        COALESCE(SUM(CASE WHEN o.status = 'delivered' THEN r.cash_amount ELSE 0 END), 0) as total_cash_collected,
-        COALESCE(SUM(CASE WHEN o.status = 'delivered' THEN r.credited_amount ELSE 0 END), 0) as total_credited_amount,
+        COALESCE(SUM(CASE WHEN o.status != 'cancelled' THEN r.cash_amount ELSE 0 END), 0) as total_cash_collected,
+        COALESCE(SUM(CASE WHEN o.status != 'cancelled' THEN COALESCE(r.credited_amount, 0) ELSE 0 END), 0) as total_credited_amount,
         COALESCE(SUM(CASE WHEN o.status != 'cancelled' THEN r.due_amount ELSE 0 END), 0) as total_outstanding_due
     FROM orders o
     LEFT JOIN zones z ON o.zone_id = z.id
     LEFT JOIN receipts r ON o.order_id = r.order_id
     WHERE $where_sql
 ");
-$kpi_stmt->execute($params);
+foreach ($params as $k => $v) {
+    if ($k === ':zone_id' || $k === ':order_id_search') {
+        $kpi_stmt->bindValue($k, $v, PDO::PARAM_INT);
+    } else {
+        $kpi_stmt->bindValue($k, $v, PDO::PARAM_STR);
+    }
+}
+$kpi_stmt->execute();
 $kpis = $kpi_stmt->fetch(PDO::FETCH_ASSOC);
 
 // 2. Zone-by-Zone Financial Breakdown (respects period filter if specified)
@@ -428,8 +451,8 @@ $zone_breakdown_sql = "
         COUNT(o.order_id) as total_orders,
         SUM(CASE WHEN o.status = 'delivered' THEN 1 ELSE 0 END) as delivered_orders,
         COALESCE(SUM(CASE WHEN o.status = 'delivered' THEN COALESCE(r.total_amount, o.total_amount, 0) ELSE 0 END), 0) as total_sales,
-        COALESCE(SUM(CASE WHEN o.status = 'delivered' THEN r.cash_amount ELSE 0 END), 0) as total_cash,
-        COALESCE(SUM(CASE WHEN o.status = 'delivered' THEN r.credited_amount ELSE 0 END), 0) as total_credit,
+        COALESCE(SUM(CASE WHEN o.status != 'cancelled' THEN r.cash_amount ELSE 0 END), 0) as total_cash,
+        COALESCE(SUM(CASE WHEN o.status != 'cancelled' THEN COALESCE(r.credited_amount, 0) ELSE 0 END), 0) as total_credit,
         COALESCE(SUM(CASE WHEN o.status != 'cancelled' THEN r.due_amount ELSE 0 END), 0) as total_due
     FROM zones z
     LEFT JOIN orders o ON z.id = o.zone_id {$zone_date_clause}
@@ -481,7 +504,14 @@ $count_stmt = $pdo->prepare("
     LEFT JOIN receipts r ON o.order_id = r.order_id
     WHERE $where_sql
 ");
-$count_stmt->execute($params);
+foreach ($params as $k => $v) {
+    if ($k === ':zone_id' || $k === ':order_id_search') {
+        $count_stmt->bindValue($k, $v, PDO::PARAM_INT);
+    } else {
+        $count_stmt->bindValue($k, $v, PDO::PARAM_STR);
+    }
+}
+$count_stmt->execute();
 $total_matching_orders = (int)$count_stmt->fetchColumn();
 $total_pages = ceil($total_matching_orders / $per_page);
 
@@ -500,7 +530,9 @@ $orders_sql = "
         r.credited_amount as receipt_credit,
         r.due_amount as receipt_due,
         r.payment_type as receipt_pay_type,
+        r.notes as receipt_notes,
         r.created_at as receipt_date,
+        (SELECT COUNT(*) FROM order_payments op WHERE op.order_id = o.order_id) AS payments_count,
         (SELECT COUNT(*) FROM order_items oi WHERE oi.order_id = o.order_id) AS items_count,
         (SELECT GROUP_CONCAT(CONCAT(COALESCE(p2.product_name, p2.name), ' (', oi2.quantity, 'cs', IF(oi2.is_extra = 1 OR oi2.price_at_purchase = 0, ' - Extra', ''), ')') SEPARATOR ', ') 
          FROM order_items oi2 
@@ -516,7 +548,7 @@ $orders_sql = "
 ";
 $orders_stmt = $pdo->prepare($orders_sql);
 foreach ($params as $k => $v) {
-    if ($k === ':zone_id') {
+    if ($k === ':zone_id' || $k === ':order_id_search') {
         $orders_stmt->bindValue($k, $v, PDO::PARAM_INT);
     } else {
         $orders_stmt->bindValue($k, $v, PDO::PARAM_STR);
@@ -1196,9 +1228,9 @@ $cleanBaseUrl = rtrim(BASE_URL, '/');
 
         .rev-table th {
             background: #f8fafc;
-            color: #475569;
+            color: #000000;
             font-size: 11px;
-            font-weight: 700;
+            font-weight: 800;
             text-transform: uppercase;
             letter-spacing: 0.05em;
             padding: 12px 14px;
@@ -1305,6 +1337,9 @@ $cleanBaseUrl = rtrim(BASE_URL, '/');
         .btn-tbl-bill { background: #eff6ff; color: #2563eb; border-color: #bfdbfe; }
         .btn-tbl-bill:hover { background: #dbeafe; }
 
+        .btn-tbl-history { background: #f5f3ff; color: #7c3aed; border-color: #ddd6fe; }
+        .btn-tbl-history:hover { background: #ede9fe; color: #6d28d9; }
+
         .pagination-bar {
             display: flex;
             justify-content: space-between;
@@ -1347,9 +1382,9 @@ $cleanBaseUrl = rtrim(BASE_URL, '/');
                     <span>Revenue &amp; Multi-Zone Financials</span>
                 </div>
                 <div class="header-actions">
-                    <button onclick="window.print()" class="btn-filter-reset" title="Print report">
+                    <!-- <button onclick="window.print()" class="btn-filter-reset" title="Print report">
                         <i class='bx bx-printer'></i> Print
-                    </button>
+                    </button> -->
                     <!-- <a href="<?= htmlspecialchars(buildFilterUrl(['export' => 'csv'], '')) ?>" id="exportCsvBtn" class="btn-filter-submit" style="background: #059669; text-decoration: none;" title="Export 10 clean columns as CSV">
                         <i class='bx bx-download'></i> Export CSV
                     </a> -->
@@ -1582,7 +1617,6 @@ $cleanBaseUrl = rtrim(BASE_URL, '/');
         id="f_to_date"
         class="input-filter"
         value="<?= htmlspecialchars($to_date) ?>"
-        min="<?= htmlspecialchars($from_date) ?>"
         max="<?= date('Y-m-d') ?>"
     >
 </div>
@@ -1836,9 +1870,9 @@ $cleanBaseUrl = rtrim(BASE_URL, '/');
                                                     <span style="color: #cbd5e1;">&mdash;</span>
                                                 <?php endif; ?>
                                             <?php elseif ($cash > 0): ?>
-                                                <a href="<?= htmlspecialchars(buildFilterUrl(['payment_status' => 'cash', 'status' => 'delivered'])) ?>" style="text-decoration: none; font-weight: 700; color: #047857;" title="Filter delivered cash orders">
+                                                <button type="button" onclick="openPaymentHistoryModal(<?= $ordId ?>)" style="background: none; border: none; padding: 0; cursor: pointer; text-decoration: underline; font-weight: 700; color: #047857; font-size: 13px;" title="Click to view payment breakdown">
                                                     <?= formatCurrency($cash) ?>
-                                                </a>
+                                                </button>
                                             <?php else: ?>
                                                 <span style="color: #cbd5e1;">&mdash;</span>
                                             <?php endif; ?>
@@ -1856,9 +1890,9 @@ $cleanBaseUrl = rtrim(BASE_URL, '/');
                                                     <span style="color: #cbd5e1;">&mdash;</span>
                                                 <?php endif; ?>
                                             <?php elseif ($credit > 0): ?>
-                                                <a href="<?= htmlspecialchars(buildFilterUrl(['payment_status' => 'credit', 'status' => 'delivered'])) ?>" style="text-decoration: none; font-weight: 700; color: #6d28d9;" title="Filter delivered credited orders">
+                                                <button type="button" onclick="openPaymentHistoryModal(<?= $ordId ?>)" style="background: none; border: none; padding: 0; cursor: pointer; text-decoration: underline; font-weight: 700; color: #6d28d9; font-size: 13px;" title="Click to view online / credit breakdown">
                                                     <?= formatCurrency($credit) ?>
-                                                </a>
+                                                </button>
                                             <?php else: ?>
                                                 <span style="color: #cbd5e1;">&mdash;</span>
                                             <?php endif; ?>
@@ -1870,15 +1904,24 @@ $cleanBaseUrl = rtrim(BASE_URL, '/');
                                                 <span style="color: #94a3b8; font-size: 11px;">Voided</span>
                                             <?php elseif ($due > 0): ?>
                                                 <div>
-                                                    <a href="<?= htmlspecialchars(buildFilterUrl(['payment_status' => 'due'])) ?>" class="badge-due-danger" style="text-decoration: none;" title="Filter orders with due balance">
+                                                    <button type="button" class="badge-due-danger" onclick="openPaymentHistoryModal(<?= $ordId ?>)" style="border: none; cursor: pointer;" title="Click to view payment installments & history">
                                                         <?= formatCurrency($due) ?>
-                                                    </a>
+                                                    </button>
                                                 </div>
-                                                <button type="button" class="btn-tbl" onclick="openRevenueDueModal(<?= $ordId ?>, '<?= htmlspecialchars($ordNum, ENT_QUOTES) ?>', '<?= htmlspecialchars($shopName, ENT_QUOTES) ?>', <?= (float)$due ?>)" style="margin-top: 4px; padding: 2px 6px; font-size: 11px; background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; cursor: pointer; border-radius: 4px; display: inline-flex; align-items: center; gap: 3px; font-weight: 700; white-space: nowrap;" title="Custom Due Clearance">
+                                                <?php if ((int)($o['payments_count'] ?? 0) > 1): ?>
+                                                    <div style="margin-top: 3px;">
+                                                        <button type="button" onclick="openPaymentHistoryModal(<?= $ordId ?>)" style="background: #eff6ff; border: 1px solid #bfdbfe; color: #2563eb; font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 4px; cursor: pointer; display: inline-flex; align-items: center; gap: 2px;" title="View payment installments">
+                                                            <i class='bx bx-history'></i> Partial Paid
+                                                        </button>
+                                                    </div>
+                                                <?php endif; ?>
+                                                <button type="button" class="btn-tbl" onclick="openRevenueDueModal(<?= $ordId ?>, '<?= htmlspecialchars($ordNum, ENT_QUOTES) ?>', '<?= htmlspecialchars($shop, ENT_QUOTES) ?>', <?= (float)$due ?>)" style="margin-top: 4px; padding: 2px 6px; font-size: 11px; background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; cursor: pointer; border-radius: 4px; display: inline-flex; align-items: center; gap: 3px; font-weight: 700; white-space: nowrap;" title="Custom Due Clearance">
                                                     <i class='bx bx-check-circle'></i> Clear Due
                                                 </button>
                                             <?php elseif (!empty($billNum)): ?>
-                                                <span class="badge-settled">Settled (₹0)</span>
+                                                <button type="button" class="badge-settled" onclick="openPaymentHistoryModal(<?= $ordId ?>)" style="border: none; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;" title="Click to view payment & clearance timeline">
+                                                    Settled (₹0) <i class='bx bx-history' style="font-size: 13px;"></i>
+                                                </button>
                                             <?php else: ?>
                                                 <a href="<?= htmlspecialchars(buildFilterUrl(['payment_status' => 'unbilled'])) ?>" style="text-decoration: none; color: #94a3b8; font-size: 12px;" title="Filter unbilled orders">
                                                     Pending
@@ -1908,6 +1951,10 @@ $cleanBaseUrl = rtrim(BASE_URL, '/');
                                                     <i class='bx bx-show'></i>
                                                 </a>
 
+                                                <button type="button" class="btn-tbl btn-tbl-history" onclick="openPaymentHistoryModal(<?= $ordId ?>)" title="View Payment & Due Clearance History">
+                                                    <i class='bx bx-history'></i>
+                                                </button>
+
                                                 <?php if (!empty($billNum)): ?>
                                                     <a href="<?= $cleanBaseUrl ?>/<?= $zSlug ?>/receipt?id=<?= $ordId ?>" target="_blank" class="btn-tbl btn-tbl-bill" title="Print/View Official Receipt">
                                                         <i class='bx bx-printer'></i>
@@ -1919,7 +1966,7 @@ $cleanBaseUrl = rtrim(BASE_URL, '/');
                                                 <?php endif; ?>
 
                                                 <?php if ($due > 0): ?>
-                                                    <button type="button" class="btn-tbl" onclick="openRevenueDueModal(<?= $ordId ?>, '<?= htmlspecialchars($ordNum, ENT_QUOTES) ?>', '<?= htmlspecialchars($shopName, ENT_QUOTES) ?>', <?= (float)$due ?>)" style="background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; cursor: pointer;" title="Custom Due Clearance (<?= formatCurrency($due) ?>)">
+                                                    <button type="button" class="btn-tbl" onclick="openRevenueDueModal(<?= $ordId ?>, '<?= htmlspecialchars($ordNum, ENT_QUOTES) ?>', '<?= htmlspecialchars($shop, ENT_QUOTES) ?>', <?= (float)$due ?>)" style="background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; cursor: pointer;" title="Custom Due Clearance (<?= formatCurrency($due) ?>)">
                                                         <i class='bx bx-money'></i>
                                                     </button>
                                                 <?php endif; ?>
@@ -1989,6 +2036,25 @@ $cleanBaseUrl = rtrim(BASE_URL, '/');
                 }, 80);
             }
         }
+
+        // Synchronize preset period dropdown and custom date inputs
+        const fPeriod = document.getElementById('f_period');
+        const fFrom = document.getElementById('f_from_date');
+        const fTo = document.getElementById('f_to_date');
+        if (fPeriod && fFrom && fTo) {
+            fPeriod.addEventListener('change', function() {
+                if (this.value !== 'all') {
+                    fFrom.value = '';
+                    fTo.value = '';
+                }
+            });
+            fFrom.addEventListener('change', function() {
+                if (this.value) fPeriod.value = 'all';
+            });
+            fTo.addEventListener('change', function() {
+                if (this.value) fPeriod.value = 'all';
+            });
+        }
     });
 
     let activeModalDueVal = 0;
@@ -2014,6 +2080,161 @@ $cleanBaseUrl = rtrim(BASE_URL, '/');
 
     function setRevModalFullDue() {
         document.getElementById('revModalClearAmount').value = activeModalDueVal.toFixed(2);
+    }
+
+    // Payment & Due Clearance History Modal Logic
+    let currentHistoryData = null;
+
+    function openPaymentHistoryModal(orderId) {
+        const modal = document.getElementById('paymentHistoryModal');
+        const loadingState = document.getElementById('payHistLoading');
+        const contentState = document.getElementById('payHistContent');
+        const errorState = document.getElementById('payHistError');
+
+        modal.style.display = 'flex';
+        loadingState.style.display = 'block';
+        contentState.style.display = 'none';
+        errorState.style.display = 'none';
+
+        fetch('index.php?action=get_payment_history&order_id=' + orderId)
+            .then(res => res.json())
+            .then(data => {
+                loadingState.style.display = 'none';
+                if (!data || !data.success) {
+                    errorState.style.display = 'block';
+                    document.getElementById('payHistErrorMsg').textContent = (data && data.error) ? data.error : 'Failed to load payment history.';
+                    return;
+                }
+
+                currentHistoryData = data;
+                renderPaymentHistoryModal(data);
+                contentState.style.display = 'block';
+            })
+            .catch(err => {
+                loadingState.style.display = 'none';
+                errorState.style.display = 'block';
+                document.getElementById('payHistErrorMsg').textContent = 'Error connecting to server: ' + err.message;
+            });
+    }
+
+    function closePaymentHistoryModal() {
+        document.getElementById('paymentHistoryModal').style.display = 'none';
+    }
+
+    function renderPaymentHistoryModal(data) {
+        const ord = data.order || {};
+        const rec = data.receipt || {};
+        const shop = ord.shop_name || ord.customer_name || 'Customer';
+        const ordNum = ord.order_number || ('#' + ord.order_id);
+        const billNum = rec.bill_number ? ('Bill #' + rec.bill_number) : 'Unbilled';
+
+        document.getElementById('payHistModalTitle').textContent = `Order ${ordNum} - ${shop}`;
+        document.getElementById('payHistModalSubtitle').textContent = `${billNum} • ${ord.zone_name || 'Central'} • Placed on ${ord.order_date}`;
+
+        document.getElementById('payHistStatTotal').textContent = '₹' + parseFloat(data.total_order_amount || 0).toLocaleString('en-IN', {minimumFractionDigits: 2});
+        document.getElementById('payHistStatPaid').textContent = '₹' + parseFloat(data.total_paid || 0).toLocaleString('en-IN', {minimumFractionDigits: 2});
+        document.getElementById('payHistStatCash').textContent = 'Cash: ₹' + parseFloat(data.total_paid_cash || 0).toLocaleString('en-IN', {minimumFractionDigits: 2});
+        document.getElementById('payHistStatCredit').textContent = 'Online/Credit: ₹' + parseFloat(data.total_paid_credit || 0).toLocaleString('en-IN', {minimumFractionDigits: 2});
+
+        const dueElem = document.getElementById('payHistStatDue');
+        const dueBadge = document.getElementById('payHistDueStatus');
+        const dueAmt = parseFloat(data.current_due || 0);
+
+        if (dueAmt <= 0.001) {
+            dueElem.textContent = '₹0.00';
+            dueElem.style.color = '#15803d';
+            dueBadge.innerHTML = '<span style="background: #dcfce7; color: #166534; font-weight: 700; padding: 2px 8px; border-radius: 999px; font-size: 11px;">✅ Fully Settled</span>';
+        } else {
+            dueElem.textContent = '₹' + dueAmt.toLocaleString('en-IN', {minimumFractionDigits: 2});
+            dueElem.style.color = '#dc2626';
+            dueBadge.innerHTML = '<span style="background: #fee2e2; color: #991b1b; font-weight: 700; padding: 2px 8px; border-radius: 999px; font-size: 11px;">⚠️ Balance Pending</span>';
+        }
+
+        // Render Ledger Rows
+        const tbody = document.getElementById('payHistLedgerBody');
+        tbody.innerHTML = '';
+
+        if (!data.ledger || data.ledger.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; padding: 24px; color: #94a3b8;">No payment or billing entries recorded yet.</td></tr>`;
+        } else {
+            data.ledger.forEach((entry, idx) => {
+                const tr = document.createElement('tr');
+                tr.style.borderBottom = '1px solid #f1f5f9';
+
+                const isInitial = (entry.type === 'initial_bill');
+                const eventBadge = isInitial
+                    ? `<span style="background: #eff6ff; color: #1d4ed8; font-weight: 700; padding: 3px 8px; border-radius: 6px; font-size: 11px; display: inline-flex; align-items: center; gap: 4px;"><i class='bx bx-receipt'></i> Initial Delivery Bill</span>`
+                    : `<span style="background: #ecfdf5; color: #047857; font-weight: 700; padding: 3px 8px; border-radius: 6px; font-size: 11px; display: inline-flex; align-items: center; gap: 4px;"><i class='bx bx-check-shield'></i> Due Clearance #${idx}</span>`;
+
+                let modeBadge = '';
+                const m = (entry.payment_mode || '').toLowerCase();
+                if (m === 'cash') {
+                    modeBadge = `<span style="background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; font-weight: 600; padding: 2px 6px; border-radius: 4px; font-size: 11px;">💵 Cash</span>`;
+                } else if (m === 'upi') {
+                    modeBadge = `<span style="background: #faf5ff; color: #7e22ce; border: 1px solid #e9d5ff; font-weight: 600; padding: 2px 6px; border-radius: 4px; font-size: 11px;">📱 UPI Transfer</span>`;
+                } else if (m === 'bank') {
+                    modeBadge = `<span style="background: #f0f9ff; color: #0369a1; border: 1px solid #bae6fd; font-weight: 600; padding: 2px 6px; border-radius: 4px; font-size: 11px;">🏦 Bank / Cheque</span>`;
+                } else if (m === 'credit') {
+                    modeBadge = `<span style="background: #fdf4ff; color: #a21caf; border: 1px solid #f5d0fe; font-weight: 600; padding: 2px 6px; border-radius: 4px; font-size: 11px;">📑 Credit</span>`;
+                } else {
+                    modeBadge = `<span style="background: #f8fafc; color: #475569; border: 1px solid #e2e8f0; font-weight: 600; padding: 2px 6px; border-radius: 4px; font-size: 11px;">${m.toUpperCase() || 'Payment'}</span>`;
+                }
+
+                const paidAmt = parseFloat(entry.amount_cleared || 0);
+                const remDue = parseFloat(entry.remaining_due || 0);
+                const dueColor = (remDue > 0) ? '#dc2626' : '#15803d';
+                const dueLabel = (remDue > 0) ? ('₹' + remDue.toFixed(2)) : '₹0.00 (Cleared)';
+
+                tr.innerHTML = `
+                    <td style="padding: 10px 12px; font-size: 12px; color: #64748b; font-weight: 600;">${idx + 1}</td>
+                    <td style="padding: 10px 12px; font-size: 12px; font-weight: 600; color: #0f172a; white-space: nowrap;">
+                        <i class='bx bx-time-five' style="color: #94a3b8;"></i> ${entry.formatted_date}
+                    </td>
+                    <td style="padding: 10px 12px;">${eventBadge}</td>
+                    <td style="padding: 10px 12px;">
+                        <div style="font-weight: 700; color: #047857; font-size: 13px;">₹${paidAmt.toFixed(2)}</div>
+                        <div style="margin-top: 2px;">${modeBadge}</div>
+                    </td>
+                    <td style="padding: 10px 12px; font-weight: 700; color: ${dueColor}; font-size: 13px;">
+                        ${dueLabel}
+                    </td>
+                    <td style="padding: 10px 12px; font-size: 12px; color: #475569; max-width: 240px; word-break: break-word;">
+                        ${entry.note || '<span style="color:#cbd5e1;">&mdash;</span>'}
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        // Audit trail notes list
+        const notesCard = document.getElementById('payHistNotesCard');
+        const notesList = document.getElementById('payHistNotesList');
+        if (data.audit_notes && data.audit_notes.length > 0) {
+            notesCard.style.display = 'block';
+            notesList.innerHTML = '';
+            data.audit_notes.forEach(note => {
+                const li = document.createElement('li');
+                li.style.marginBottom = '6px';
+                li.style.fontSize = '12px';
+                li.style.color = '#334155';
+                li.innerHTML = `<i class='bx bx-chevron-right' style="color: #2563eb;"></i> ${note}`;
+                notesList.appendChild(li);
+            });
+        } else {
+            notesCard.style.display = 'none';
+        }
+
+        // Modal footer settle button
+        const clearBtn = document.getElementById('payHistClearDueBtn');
+        if (dueAmt > 0) {
+            clearBtn.style.display = 'inline-flex';
+            clearBtn.onclick = function() {
+                closePaymentHistoryModal();
+                openRevenueDueModal(ord.order_id, ord.order_number, shop, dueAmt);
+            };
+        } else {
+            clearBtn.style.display = 'none';
+        }
     }
     </script>
 
@@ -2061,10 +2282,10 @@ $cleanBaseUrl = rtrim(BASE_URL, '/');
                         Payment Mode <span style="color: #ef4444;">*</span>
                     </label>
                     <select name="settle_mode" id="revModalSettleMode" required style="width: 100%; padding: 8px 12px; border: 1.5px solid #d1d5db; border-radius: 8px; font-size: 13px; background: #fff;">
-                        <option value="cash" selected>💵 Cash Payment</option>
-                        <option value="upi">📱 UPI / Online Transfer</option>
-                        <option value="bank">🏦 Bank Transfer / NEFT / Cheque</option>
-                        <option value="credit">📑 Credit Adjustment</option>
+                        <option value="cash" selected>💵 Cash Payment (In-Hand Cash)</option>
+                        <option value="upi">📱 UPI / Online Transfer (Credited Sales)</option>
+                        <option value="bank">🏦 Bank Transfer / NEFT / Cheque (Credited Sales)</option>
+                        <option value="credit">📑 Credit Adjustment (Credited Sales)</option>
                     </select>
                 </div>
 
@@ -2091,6 +2312,129 @@ $cleanBaseUrl = rtrim(BASE_URL, '/');
                     </button>
                 </div>
             </form>
+        </div>
+    </div>
+
+    <!-- Payment & Due Clearance Audit History Modal -->
+    <div id="paymentHistoryModal" style="display: none; position: fixed; inset: 0; background: rgba(15, 23, 42, 0.65); backdrop-filter: blur(4px); z-index: 99999; align-items: center; justify-content: center; padding: 20px;">
+        <div style="background: #ffffff; border-radius: 16px; max-width: 820px; width: 100%; max-height: 90vh; display: flex; flex-direction: column; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.35); border: 1px solid #e2e8f0; overflow: hidden;">
+            
+            <!-- Modal Header -->
+            <div style="background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); color: #ffffff; padding: 18px 24px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #334155;">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <div style="width: 40px; height: 40px; border-radius: 10px; background: rgba(99, 102, 241, 0.2); border: 1px solid rgba(129, 140, 248, 0.3); display: flex; align-items: center; justify-content: center; font-size: 20px; color: #a5b4fc;">
+                        <i class='bx bx-history'></i>
+                    </div>
+                    <div>
+                        <h3 id="payHistModalTitle" style="font-size: 16px; font-weight: 700; margin: 0; color: #ffffff;">Payment &amp; Due Audit Ledger</h3>
+                        <div id="payHistModalSubtitle" style="font-size: 12px; color: #94a3b8; margin-top: 3px;">Order #... &bull; Bill #...</div>
+                    </div>
+                </div>
+                <button type="button" onclick="closePaymentHistoryModal()" style="background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.15); color: #e2e8f0; width: 32px; height: 32px; border-radius: 50%; cursor: pointer; font-size: 18px; display: flex; align-items: center; justify-content: center; transition: 0.15s;" onmouseover="this.style.background='rgba(255,255,255,0.2)'" onmouseout="this.style.background='rgba(255,255,255,0.1)'">&times;</button>
+            </div>
+
+            <!-- Modal Body (Scrollable) -->
+            <div style="padding: 20px 24px; overflow-y: auto; flex: 1;">
+                
+                <!-- Loading State -->
+                <div id="payHistLoading" style="text-align: center; padding: 48px 20px;">
+                    <i class='bx bx-loader-alt bx-spin' style="font-size: 38px; color: #3b82f6;"></i>
+                    <div style="margin-top: 10px; font-size: 14px; font-weight: 600; color: #475569;">Fetching complete payment &amp; clearance ledger...</div>
+                </div>
+
+                <!-- Error State -->
+                <div id="payHistError" style="display: none; padding: 24px; text-align: center;">
+                    <i class='bx bx-error-circle' style="font-size: 40px; color: #ef4444;"></i>
+                    <div id="payHistErrorMsg" style="margin-top: 8px; font-size: 14px; color: #dc2626; font-weight: 600;">Unable to load data.</div>
+                </div>
+
+                <!-- Content State -->
+                <div id="payHistContent" style="display: none;">
+                    
+                    <!-- 3 Financial Stat Cards -->
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px; margin-bottom: 20px;">
+                        
+                        <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px 16px;">
+                            <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #64748b; letter-spacing: 0.04em;">Total Bill Amount</div>
+                            <div id="payHistStatTotal" style="font-size: 20px; font-weight: 800; color: #0f172a; margin-top: 4px;">₹0.00</div>
+                            <div style="font-size: 11px; color: #94a3b8; margin-top: 2px;">Order total payable</div>
+                        </div>
+
+                        <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 10px; padding: 12px 16px;">
+                            <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #166534; letter-spacing: 0.04em;">Total Paid To Date</div>
+                            <div id="payHistStatPaid" style="font-size: 20px; font-weight: 800; color: #15803d; margin-top: 4px;">₹0.00</div>
+                            <div style="font-size: 11px; color: #166534; margin-top: 2px; display: flex; gap: 8px;">
+                                <span id="payHistStatCash">Cash: ₹0</span>
+                                <span>&bull;</span>
+                                <span id="payHistStatCredit">Online/Credit: ₹0</span>
+                            </div>
+                        </div>
+
+                        <div style="background: #fff1f2; border: 1px solid #fecdd3; border-radius: 10px; padding: 12px 16px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <span style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #9f1239; letter-spacing: 0.04em;">Outstanding Balance</span>
+                                <span id="payHistDueStatus"></span>
+                            </div>
+                            <div id="payHistStatDue" style="font-size: 20px; font-weight: 800; color: #e11d48; margin-top: 4px;">₹0.00</div>
+                            <div style="font-size: 11px; color: #9f1239; margin-top: 2px;">Remaining shop due</div>
+                        </div>
+
+                    </div>
+
+                    <!-- Chronological Payment Ledger Table -->
+                    <div style="border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden; margin-bottom: 18px;">
+                        <div style="background: #f8fafc; padding: 10px 16px; border-bottom: 1px solid #e2e8f0; display: flex; align-items: center; justify-content: space-between;">
+                            <div style="font-size: 12px; font-weight: 700; text-transform: uppercase; color: #334155; display: flex; align-items: center; gap: 6px;">
+                                <i class='bx bx-list-check' style="font-size: 16px; color: #2563eb;"></i> Chronological Payment &amp; Due Clearance Ledger
+                            </div>
+                            <span style="font-size: 11px; color: #64748b;">Step-by-step audit record</span>
+                        </div>
+                        <div style="overflow-x: auto;">
+                            <table style="width: 100%; border-collapse: collapse; font-size: 13px; text-align: left;">
+                                <thead>
+                                    <tr style="background: #ffffff; border-bottom: 2px solid #e2e8f0;">
+                                        <th style="padding: 10px 12px; font-size: 11px; font-weight: 700; color: #475569; text-transform: uppercase;">#</th>
+                                        <th style="padding: 10px 12px; font-size: 11px; font-weight: 700; color: #475569; text-transform: uppercase;">Date &amp; Time</th>
+                                        <th style="padding: 10px 12px; font-size: 11px; font-weight: 700; color: #475569; text-transform: uppercase;">Payment Stage / Event</th>
+                                        <th style="padding: 10px 12px; font-size: 11px; font-weight: 700; color: #475569; text-transform: uppercase;">Amount Cleared</th>
+                                        <th style="padding: 10px 12px; font-size: 11px; font-weight: 700; color: #475569; text-transform: uppercase;">Remaining Due</th>
+                                        <th style="padding: 10px 12px; font-size: 11px; font-weight: 700; color: #475569; text-transform: uppercase;">Audit Note / Cross Ref</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="payHistLedgerBody">
+                                    <!-- Rendered dynamically -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Audit Trail Notes Box -->
+                    <div id="payHistNotesCard" style="display: none; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 8px; padding: 12px 16px; margin-bottom: 12px;">
+                        <div style="font-size: 11px; font-weight: 700; color: #475569; text-transform: uppercase; margin-bottom: 6px; display: flex; align-items: center; gap: 4px;">
+                            <i class='bx bx-file-blank' style="font-size: 14px;"></i> System Settlement Audit Trail Log:
+                        </div>
+                        <ul id="payHistNotesList" style="margin: 0; padding-left: 0; list-style: none;"></ul>
+                    </div>
+
+                </div>
+
+            </div>
+
+            <!-- Modal Footer -->
+            <div style="background: #f8fafc; padding: 14px 24px; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                <div style="font-size: 12px; color: #64748b;">
+                    <i class='bx bx-shield-quarter' style="color: #059669;"></i> Real-time payment verification ledger
+                </div>
+                <div style="display: flex; gap: 8px;">
+                    <button type="button" id="payHistClearDueBtn" style="display: none; padding: 8px 16px; background: #059669; color: #fff; border: none; border-radius: 8px; font-size: 13px; font-weight: 700; cursor: pointer; align-items: center; gap: 5px;">
+                        <i class='bx bx-money-withdraw'></i> Clear Due Balance Now
+                    </button>
+                    <button type="button" onclick="closePaymentHistoryModal()" style="padding: 8px 18px; background: #ffffff; color: #334155; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer;">
+                        Close
+                    </button>
+                </div>
+            </div>
+
         </div>
     </div>
 </body>

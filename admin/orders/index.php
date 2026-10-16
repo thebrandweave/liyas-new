@@ -4,12 +4,14 @@ require_once __DIR__ . '/../includes/auth_check.php';
 require_once __DIR__ . '/../includes/activity_logger.php';
 require_once __DIR__ . '/../includes/functions.php';
 
+date_default_timezone_set('Asia/Kolkata');
+
 $current_page = "orders";
 $page_title   = "Warehouse Orders";
 
 // Filters from request
-$status_filter = $_GET['filter'] ?? 'all';
-$zone_filter   = $_GET['zone'] ?? 'all';
+$status_filter = strtolower(trim($_GET['filter'] ?? 'all'));
+$zone_filter   = trim($_GET['zone'] ?? 'all');
 $shop_filter   = trim($_GET['shop'] ?? 'all');
 $search        = trim($_GET['search'] ?? '');
 $page          = max(1, (int)($_GET['page'] ?? 1));
@@ -91,7 +93,7 @@ $where_clauses = [];
 if ($status_filter === 'unchecked') {
     $where_clauses[] = "o.zone_id IS NOT NULL AND o.zone_id > 0 AND o.is_zone_read = 0 AND o.status != 'cancelled'";
 } elseif ($status_filter !== 'all' && in_array($status_filter, ['pending', 'processing', 'shipped', 'delivered', 'cancelled', 'returned'])) {
-    $where_clauses[] = "o.status = :status";
+    $where_clauses[] = "LOWER(o.status) = :status";
     $where_params[':status'] = $status_filter;
 }
 
@@ -106,21 +108,21 @@ if ($zone_filter !== 'all' && !empty($zone_filter)) {
 }
 
 if (!empty($shop_filter) && $shop_filter !== 'all') {
-    $where_clauses[] = "(TRIM(o.shop_name) = :shop_filter OR (COALESCE(TRIM(o.shop_name), '') = '' AND TRIM(o.customer_name) = :shop_filter))";
+    $where_clauses[] = "TRIM(COALESCE(NULLIF(TRIM(o.shop_name), ''), TRIM(o.customer_name), '')) = :shop_filter";
     $where_params[':shop_filter'] = $shop_filter;
 }
 
 if (!empty($search)) {
+    $cleanSearch = trim($search);
+    $cleanSearchNum = ltrim($cleanSearch, '#');
+    $orderIdSearch = (is_numeric($cleanSearchNum) && (int)$cleanSearchNum > 0) ? (int)$cleanSearchNum : -1;
+
     $where_clauses[] = "(
-        o.shop_name LIKE :search 
-        OR o.customer_name LIKE :search 
-        OR o.phone LIKE :search 
-        OR o.location LIKE :search 
-        OR o.order_number LIKE :search 
+        CONCAT_WS(' ', o.shop_name, o.customer_name, o.phone, o.location, o.order_number, r.bill_number) LIKE :search
         OR o.order_id = :order_id_search
     )";
-    $where_params[':search'] = "%$search%";
-    $where_params[':order_id_search'] = is_numeric($search) ? (int)$search : -1;
+    $where_params[':search'] = "%$cleanSearch%";
+    $where_params[':order_id_search'] = $orderIdSearch;
 }
 
 // Calculate Shop Delivery Stats Summary if a shop is filtered or searched
@@ -143,6 +145,7 @@ $count_query = "
     SELECT COUNT(*) 
     FROM orders o 
     LEFT JOIN zones z ON o.zone_id = z.id
+    LEFT JOIN receipts r ON o.order_id = r.order_id
     $where_sql
 ";
 $cntStmt = $pdo->prepare($count_query);
@@ -451,11 +454,15 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Orders Management - Liyas Admin</title>
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link href='https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css' rel='stylesheet'>
-    <link rel="stylesheet" href="../assets/css/prody-admin.css">
+    <link rel="stylesheet" href="../assets/css/prody-admin.css?v=<?= filemtime(__DIR__ . '/../assets/css/prody-admin.css') ?>">
     <style>
         body { font-family: 'Poppins', sans-serif; }
+        table th, thead th, th {
+            color: #000000 !important;
+            font-weight: 700 !important;
+        }
         .filter-bar {
             display: flex;
             flex-wrap: wrap;
@@ -475,75 +482,89 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
         }
 
 
+        .table-card {
+            background: var(--bg-white);
+            border: 1px solid var(--border-light);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        .table-responsive-wrapper {
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+
         .action-menu {
-    position: relative;
-    display: inline-block;
-}
+            position: relative;
+            display: inline-block;
+        }
 
-.three-dot-btn {
-    width: 34px;
-    height: 34px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border: 1px solid #e2e8f0;
-    border-radius: 8px;
-    background: #ffffff;
-    color: #334155;
-    cursor: pointer;
-    font-size: 22px;
-    transition: background 0.2s;
-}
+        .three-dot-btn {
+            width: 34px;
+            height: 34px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            background: #ffffff;
+            color: #334155;
+            cursor: pointer;
+            font-size: 22px;
+            transition: background 0.2s;
+        }
 
-.three-dot-btn:hover {
-    background: #f1f5f9;
-}
+        .three-dot-btn:hover {
+            background: #f1f5f9;
+        }
 
-.action-dropdown {
-    display: none;
-    position: absolute;
-    top: calc(100% + 5px);
-    right: 0;
-    min-width: 150px;
-    background: #ffffff;
-    border: 1px solid #e2e8f0;
-    border-radius: 8px;
-    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
-    padding: 5px;
-    z-index: 1000;
-}
+        .action-dropdown {
+            display: none;
+            position: fixed;
+            min-width: 155px;
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+            padding: 6px;
+            z-index: 99999;
+        }
 
-.action-dropdown.show {
-    display: block;
-}
+        .action-dropdown.dropup {
+            box-shadow: 0 -10px 25px rgba(0, 0, 0, 0.15);
+        }
 
-.action-dropdown a {
-    display: flex;
-    align-items: center;
-    gap: 9px;
-    padding: 9px 10px;
-    color: #334155;
-    text-decoration: none;
-    font-size: 13px;
-    border-radius: 5px;
-    white-space: nowrap;
-}
+        .action-dropdown.show {
+            display: block;
+        }
 
-.action-dropdown a i {
-    font-size: 17px;
-}
+        .action-dropdown a {
+            display: flex;
+            align-items: center;
+            gap: 9px;
+            padding: 9px 10px;
+            color: #334155;
+            text-decoration: none;
+            font-size: 13px;
+            border-radius: 5px;
+            white-space: nowrap;
+        }
 
-.action-dropdown a:hover {
-    background: #f1f5f9;
-}
+        .action-dropdown a i {
+            font-size: 17px;
+        }
 
-.action-dropdown a.delete-action {
-    color: #dc2626;
-}
+        .action-dropdown a:hover {
+            background: #f1f5f9;
+        }
 
-.action-dropdown a.delete-action:hover {
-    background: #fef2f2;
-}
+        .action-dropdown a.delete-action {
+            color: #dc2626;
+        }
+
+        .action-dropdown a.delete-action:hover {
+            background: #fef2f2;
+        }
         .status-pill {
             padding: 6px 14px;
             font-size: 13px;
@@ -804,18 +825,18 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
                         <input type="hidden" name="filter" value="<?= htmlspecialchars($status_filter) ?>">
                         
                         <select name="zone" class="zone-select-filter" onchange="this.form.submit()">
-                            <option value="all" <?= ($zone_filter === 'all') ? 'selected' : '' ?>>All Zones</option>
+                            <option value="all" <?= ($zone_filter === 'all' || empty($zone_filter)) ? 'selected' : '' ?>>All Zones</option>
                             <?php foreach ($zones_list as $z): ?>
-                                <option value="<?= htmlspecialchars($z['slug']) ?>" <?= ($zone_filter === $z['slug']) ? 'selected' : '' ?>>
+                                <option value="<?= htmlspecialchars($z['slug']) ?>" <?= ($zone_filter === $z['slug'] || (is_numeric($zone_filter) && (int)$zone_filter === (int)$z['id'])) ? 'selected' : '' ?>>
                                     <?= htmlspecialchars($z['name']) ?>
                                 </option>
                             <?php endforeach; ?>
                         </select>
 
                         <select name="shop" class="zone-select-filter" onchange="this.form.submit()" style="max-width: 190px;">
-                            <option value="all" <?= ($shop_filter === 'all') ? 'selected' : '' ?>>All Shops</option>
+                            <option value="all" <?= ($shop_filter === 'all' || empty($shop_filter)) ? 'selected' : '' ?>>All Shops</option>
                             <?php foreach ($shops_list as $sh): ?>
-                                <option value="<?= htmlspecialchars($sh['shop_name']) ?>" <?= ($shop_filter === $sh['shop_name']) ? 'selected' : '' ?>>
+                                <option value="<?= htmlspecialchars($sh['shop_name']) ?>" <?= (strcasecmp($shop_filter, $sh['shop_name']) === 0) ? 'selected' : '' ?>>
                                     <?= htmlspecialchars($sh['shop_name']) ?> (<?= (int)$sh['order_count'] ?>)
                                 </option>
                             <?php endforeach; ?>
@@ -823,8 +844,8 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
 
                         <input type="search" name="search" placeholder="Search orders..." value="<?= htmlspecialchars($search) ?>" class="form-input" style="width: 180px;">
                         <button type="submit" class="header-btn" style="padding: 0.5rem;"><i class='bx bx-search'></i></button>
-                        <?php if ($shop_filter !== 'all' || $zone_filter !== 'all' || !empty($search)): ?>
-                            <a href="index.php?filter=<?= urlencode($status_filter) ?>" class="header-btn" style="text-decoration: none; padding: 0.5rem 0.75rem; background: #f1f5f9; color: #64748b;" title="Reset filters">
+                        <?php if ($shop_filter !== 'all' || $zone_filter !== 'all' || !empty($search) || $status_filter !== 'all'): ?>
+                            <a href="index.php" class="header-btn" style="text-decoration: none; padding: 0.5rem 0.75rem; background: #f1f5f9; color: #64748b;" title="Reset all filters">
                                 <i class='bx bx-x'></i> Reset
                             </a>
                         <?php endif; ?>
@@ -911,7 +932,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
 
                     <!-- Pagination -->
                     <div id="orders-pagination-wrapper">
-                        <?= renderOrdersPagination($page, $total_pages, $status_filter, $zone_filter, $search) ?>
+                        <?= renderOrdersPagination($page, $total_pages, $status_filter, $zone_filter, $search, $shop_filter) ?>
                     </div>
                 </div>
             </div>
@@ -1075,9 +1096,13 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
             function pollOrders() {
                 if (autoRefreshPaused || isPolling) return;
 
-                // Do not overwrite table while user is interacting with an input or select
+                // Do not overwrite table while an action dropdown is open or user is interacting
+                if (document.querySelector('.action-dropdown.show')) {
+                    return;
+                }
+
                 const activeEl = document.activeElement;
-                if (activeEl && (activeEl.tagName === 'SELECT' || activeEl.tagName === 'INPUT')) {
+                if (activeEl && (activeEl.tagName === 'SELECT' || activeEl.tagName === 'INPUT' || activeEl.closest('.action-menu'))) {
                     return;
                 }
 
@@ -1093,6 +1118,11 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
                 .then(res => res.json())
                 .then(data => {
                     if (!data || !data.success) return;
+
+                    // If an action dropdown opened while the AJAX was in-flight, abort DOM replacement
+                    if (document.querySelector('.action-dropdown.show')) {
+                        return;
+                    }
 
                     // Detect new incoming orders or new unchecked alerts to play notification
                     if (lastKnownMaxOrderId > 0 && data.max_order_id > lastKnownMaxOrderId) {
@@ -1145,42 +1175,100 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
             setInterval(pollOrders, REFRESH_INTERVAL);
         })();
 
+        function closeAllActionMenus() {
+            document.querySelectorAll('.action-dropdown.show').forEach(menu => {
+                menu.classList.remove('show');
+                menu.classList.remove('dropup');
+                menu.style.top = '';
+                menu.style.bottom = '';
+                menu.style.right = '';
+                menu.style.left = '';
+                menu.style.maxHeight = '';
+                if (menu.previousElementSibling) {
+                    menu.previousElementSibling.setAttribute('aria-expanded', 'false');
+                }
+            });
+        }
+
         function toggleActionMenu(button) {
-    const currentMenu = button.nextElementSibling;
-    const isOpen = currentMenu.classList.contains('show');
+            const currentMenu = button.nextElementSibling;
+            if (!currentMenu) return;
+            const isOpen = currentMenu.classList.contains('show');
 
-    // Close all other open menus
-    document.querySelectorAll('.action-dropdown.show').forEach(menu => {
-        menu.classList.remove('show');
-        menu.previousElementSibling.setAttribute('aria-expanded', 'false');
-    });
+            // Close all open menus first
+            closeAllActionMenus();
 
-    // Toggle the clicked menu
-    if (!isOpen) {
-        currentMenu.classList.add('show');
-        button.setAttribute('aria-expanded', 'true');
-    }
-}
+            // Toggle the clicked menu
+            if (!isOpen) {
+                // Show temporarily to measure
+                currentMenu.classList.add('show');
+                button.setAttribute('aria-expanded', 'true');
 
-// Close dropdown when clicking outside
-document.addEventListener('click', function(event) {
-    if (!event.target.closest('.action-menu')) {
-        document.querySelectorAll('.action-dropdown.show').forEach(menu => {
-            menu.classList.remove('show');
-            menu.previousElementSibling.setAttribute('aria-expanded', 'false');
+                const btnRect = button.getBoundingClientRect();
+                const menuWidth = currentMenu.offsetWidth || 160;
+                const menuHeight = currentMenu.offsetHeight || 170;
+                const viewportWidth = document.documentElement.clientWidth || window.innerWidth;
+                const viewportHeight = document.documentElement.clientHeight || window.innerHeight;
+
+                // Horizontal positioning: align right edge of dropdown with right edge of button
+                let rightPos = viewportWidth - btnRect.right;
+                if (rightPos < 10) rightPos = 10;
+                if (viewportWidth - rightPos < menuWidth + 10) {
+                    rightPos = Math.max(10, viewportWidth - (menuWidth + 10));
+                }
+
+                // Vertical positioning: choose dropup or dropdown cleanly
+                const spaceBelow = viewportHeight - btnRect.bottom;
+                const spaceAbove = btnRect.top;
+
+                if (spaceBelow < menuHeight + 12 && spaceAbove > spaceBelow) {
+                    // Dropup: above button
+                    currentMenu.classList.add('dropup');
+                    currentMenu.style.top = 'auto';
+                    currentMenu.style.bottom = (viewportHeight - btnRect.top + 6) + 'px';
+                    if (spaceAbove < menuHeight + 12) {
+                        currentMenu.style.maxHeight = Math.max(120, spaceAbove - 20) + 'px';
+                        currentMenu.style.overflowY = 'auto';
+                    }
+                } else {
+                    // Dropdown: below button
+                    currentMenu.classList.remove('dropup');
+                    currentMenu.style.bottom = 'auto';
+                    currentMenu.style.top = (btnRect.bottom + 6) + 'px';
+                    if (spaceBelow < menuHeight + 12) {
+                        currentMenu.style.maxHeight = Math.max(120, spaceBelow - 20) + 'px';
+                        currentMenu.style.overflowY = 'auto';
+                    }
+                }
+
+                currentMenu.style.right = rightPos + 'px';
+                currentMenu.style.left = 'auto';
+            }
+        }
+
+        // Close dropdown when clicking outside
+        document.addEventListener('click', function(event) {
+            if (!event.target.closest('.action-menu') && !event.target.closest('.action-dropdown')) {
+                closeAllActionMenus();
+            }
         });
-    }
-});
 
-// Close dropdown with Escape key
-document.addEventListener('keydown', function(event) {
-    if (event.key === 'Escape') {
-        document.querySelectorAll('.action-dropdown.show').forEach(menu => {
-            menu.classList.remove('show');
-            menu.previousElementSibling.setAttribute('aria-expanded', 'false');
+        // Close dropdown with Escape key
+        document.addEventListener('keydown', function(event) {
+            if (event.key === 'Escape') {
+                closeAllActionMenus();
+            }
         });
-    }
-});
+
+        // Close dropdown on scroll (to prevent detached floating menu)
+        window.addEventListener('scroll', function() {
+            closeAllActionMenus();
+        }, true);
+
+        // Close dropdown on window resize
+        window.addEventListener('resize', function() {
+            closeAllActionMenus();
+        });
     </script>
 </body>
 </html>

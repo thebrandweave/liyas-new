@@ -14,6 +14,7 @@ $stmt = $pdo->prepare("
         r.credited_amount as receipt_credit,
         r.due_amount as receipt_due,
         r.payment_type as receipt_pay_type,
+        r.notes as receipt_notes,
         r.created_at as receipt_created_at,
         p.product_name,
         p.name as fallback_product_name,
@@ -36,6 +37,8 @@ if (!$data) {
     echo renderZoneNotFound("Receipt for this order has not been generated yet.");
     exit;
 }
+
+$remainingShopDues = getShopPendingDueDetails($pdo, $data['shop_name'] ?: ($data['customer_name'] ?? ''), $data['phone'] ?? '', $order_id);
 
 // Company Details
 $gstin   = getSystemSetting($pdo, 'company_gstin', '29ABCDE1234F1Z5');
@@ -864,6 +867,22 @@ if (file_exists($logoPath)) {
                     <td>BALANCE / DUE:</td>
                     <td style="text-align: right;"><?= formatCurrency($dueAmount) ?></td>
                 </tr>
+                <?php if (!empty($data['receipt_notes']) && stripos($data['receipt_notes'], 'Cleared') !== false): ?>
+                <tr>
+                    <td style="color: #059669; font-weight: 700; padding-top: 8px;">Prior Due Settled:</td>
+                    <td style="text-align: right; color: #059669; font-weight: 800; padding-top: 8px; font-size: 11px;">
+                        <?= htmlspecialchars($data['receipt_notes']) ?>
+                    </td>
+                </tr>
+                <?php endif; ?>
+                <?php if (!empty($remainingShopDues['has_due'])): ?>
+                <tr>
+                    <td style="color: #dc2626; font-weight: 700; padding-top: 8px;">Remaining Shop Due:</td>
+                    <td style="text-align: right; color: #dc2626; font-weight: 800; padding-top: 8px;">
+                        <?= formatCurrency($remainingShopDues['total_due']) ?>
+                    </td>
+                </tr>
+                <?php endif; ?>
             </table>
         </div>
 

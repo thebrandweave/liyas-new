@@ -5,8 +5,15 @@
  */
 require_once __DIR__ . '/auth_helper.php';
 
-// If already authenticated, redirect straight to the dashboard
-if (isZoneOrdersAuthenticated()) {
+// Direct unlock for logged-in admins
+if (isset($_GET['unlock']) && $_GET['unlock'] == '1' && !empty($_SESSION['admin_id'])) {
+    unset($_SESSION['zone_orders_locked']);
+    header("Location: " . BASE_URL . '/zone/orders/dashboard/');
+    exit;
+}
+
+// If already authenticated and not locked/logging out, redirect straight to the dashboard
+if (isZoneOrdersAuthenticated() && empty($_GET['logged_out'])) {
     header("Location: " . BASE_URL . '/zone/orders/dashboard/');
     exit;
 }
@@ -24,6 +31,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $verification = verifyZoneAccessCode($pdo, $accessCode);
         
         if ($verification['valid'] === true) {
+            // Unlock portal
+            unset($_SESSION['zone_orders_locked']);
+
             // Set session authorization
             $_SESSION['zone_orders_authenticated'] = true;
             $_SESSION['zone_orders_scope']          = $verification['scope'];
@@ -452,7 +462,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <?php if ($loggedOut): ?>
                 <div class="alert alert-success">
                     <i class='bx bx-check-circle' style="font-size: 18px;"></i>
-                    <span>You have been safely logged out.</span>
+                    <span>Portal locked. You have been safely logged out.</span>
                 </div>
             <?php endif; ?>
 
@@ -478,10 +488,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </div>
 
                 <button type="submit" class="btn-submit" id="submitBtn">
-                    <span>Login</span>
+                    <span>Login / Unlock</span>
                     <i class='bx bx-right-arrow-alt' style="font-size: 20px;"></i>
                 </button>
             </form>
+<!-- 
+            <?php if (!empty($_SESSION['admin_id'])): ?>
+                <div style="margin-top: 20px; padding: 12px 14px; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 12px; font-size: 13px; color: #1e40af; text-align: center;">
+                    <div style="font-weight: 700; margin-bottom: 8px; display: flex; align-items: center; justify-content: center; gap: 6px;">
+                        <i class='bx bxs-user-check' style="font-size: 16px;"></i> Admin Active: <?= htmlspecialchars($_SESSION['admin_name'] ?? 'Administrator') ?>
+                    </div>
+                    <div style="display: flex; gap: 8px; justify-content: center; align-items: center; flex-wrap: wrap;">
+                        <a href="<?= BASE_URL ?>/zone/orders/?unlock=1" style="background: #2563eb; color: #fff; padding: 6px 12px; border-radius: 8px; text-decoration: none; font-weight: 700; font-size: 12px; display: inline-flex; align-items: center; gap: 4px;">
+                            <i class='bx bx-lock-open-alt'></i> Unlock Dashboard
+                        </a>
+                        <a href="<?= BASE_URL ?>/admin/index.php" style="background: #fff; color: #2563eb; border: 1px solid #bfdbfe; padding: 6px 12px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 12px; display: inline-flex; align-items: center; gap: 4px;">
+                            <i class='bx bxs-dashboard'></i> Admin Panel
+                        </a>
+                        <a href="<?= BASE_URL ?>/zone/orders/logout.php?admin=1" style="background: #fee2e2; color: #dc2626; border: 1px solid #fecaca; padding: 6px 12px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 12px; display: inline-flex; align-items: center; gap: 4px;">
+                            <i class='bx bx-power-off'></i> Full Logout
+                        </a>
+                    </div>
+                </div>
+            <?php endif; ?> -->
 
             
         </div>

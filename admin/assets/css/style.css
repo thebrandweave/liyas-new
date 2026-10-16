@@ -192,8 +192,8 @@ input::placeholder, textarea::placeholder {
 .table th {
   padding: 10px 12px;
   text-align: left;
-  font-weight: 600;
-  color: var(--text-color);
+  font-weight: 800;
+  color: #000000;
   border-bottom: 1px solid rgba(255, 255, 255, 0.2);
   font-size: 11px;
   text-transform: uppercase;

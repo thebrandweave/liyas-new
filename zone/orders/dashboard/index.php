@@ -1381,10 +1381,10 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
                     <span>Rewards</span>
                 </button>
 
-                <!-- <a href="<?= BASE_URL ?>/admin/orders/create.php" class="btn-header" style="color: #047857; background: #ecfdf5; border-color: #a7f3d0; font-weight: 700;" title="Place New Order or Reorder">
-                    <i class='bx bx-plus-circle' style="color: #059669; font-size: 16px;"></i>
-                    <span> New Order</span>
-                </a> -->
+                <button type="button" class="btn-header" onclick="openReorderModal(0, '')" style="color: #047857; background: #ecfdf5; border-color: #a7f3d0; font-weight: 700;" title="Place Rapid Reorder">
+                    <i class='bx bx-refresh' style="color: #059669; font-size: 16px;"></i>
+                    <span>+ Reorder</span>
+                </button>
 
                 <a href="<?= BASE_URL ?>/zone/orders/dashboard/products/" class="btn-header" title="Products & Inventory Management">
                     <i class='bx bx-cube'></i>
@@ -1593,11 +1593,10 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
                         </div>
                     </div>
 
-                    <div style="display: flex; align-items: center; gap: 8px;">
-                        <a href="<?= BASE_URL ?>/admin/orders/create.php?reorder_id=<?= !empty($orders[0]['order_id']) ? $orders[0]['order_id'] : '' ?>&shop_name=<?= urlencode($shopSummary['shop_name']) ?>" 
-                           class="btn-header" style="background: #2563eb; color: #ffffff; border: none; font-weight: 700; padding: 8px 16px;">
+                        <button type="button" class="btn-header" onclick="openReorderModal(<?= !empty($orders[0]['order_id']) ? (int)$orders[0]['order_id'] : 0 ?>, '<?= htmlspecialchars(addslashes($shopSummary['shop_name'])) ?>')" 
+                                style="background: #2563eb; color: #ffffff; border: none; font-weight: 700; padding: 8px 16px; cursor: pointer;" title="Place rapid reorder for <?= htmlspecialchars($shopSummary['shop_name']) ?>">
                             <i class='bx bx-refresh'></i> Place Reorder
-                        </a>
+                        </button>
                         <button type="button" class="btn-header" onclick="openVehiclesSidebar('<?= htmlspecialchars($selectedZone) ?>')" style="background: rgba(255, 255, 255, 0.1); color: #60a5fa; border-color: rgba(96, 165, 250, 0.3);">
                             <i class='bx bxs-truck'></i> Check Vehicle Load
                         </button>
@@ -1813,10 +1812,9 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
                                     </button>
                                
 
-                                <a href="<?= BASE_URL ?>/admin/orders/create.php?reorder_id=<?= $orderId ?>" 
-                                   class="btn-card-action" style="color: #2563eb; background: #eff6ff; border-color: #bfdbfe; font-weight: 700;" title="Place Reorder for this Shop">
+                                <button type="button" class="btn-card-action" style="color: #2563eb; background: #eff6ff; border-color: #bfdbfe; font-weight: 700;" onclick="openReorderModal(<?= $orderId ?>, <?= htmlspecialchars(json_encode((string)$shopName), ENT_QUOTES, 'UTF-8') ?>)" title="Place Reorder for this Shop">
                                     <i class='bx bx-refresh'></i> Reorder
-                                </a>
+                                </button>
 
                                 <!-- <button type="button" class="btn-card-action" onclick="viewOrderModal(<?= $orderId ?>)" title="View Order Details">
                                     <i class='bx bx-show'></i> Details
@@ -1919,6 +1917,128 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
                         <button type="button" class="btn-card-action" onclick="closeAddOrderProductsModal()" style="padding: 8px 18px;">Cancel</button>
                         <button type="submit" id="btnAopSubmit" class="btn-card-action btn-card-primary" style="padding: 8px 22px; font-weight: 700; background: #059669; border-color: #059669;">
                             <i class='bx bx-check-circle'></i> Save &amp; Update Order
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========================================================
+         MODAL: PLACE REORDER (Direct In-Portal Reordering)
+         ======================================================== -->
+    <div class="modal-backdrop" id="modalReorderBackdrop" style="z-index: 1055;">
+        <div class="modal-box" style="max-width: 780px; width: 95%;">
+            <div class="modal-header" style="border-bottom: 1px solid #e2e8f0; padding-bottom: 14px;">
+                <div>
+                    <h3 style="font-size: 18px; font-weight: 800; color: #0f172a; margin: 0; display: flex; align-items: center; gap: 8px;">
+                        <i class='bx bx-refresh' style="color: #2563eb; font-size: 24px;"></i>
+                        <span id="reorderModalTitle">Place Reorder</span>
+                    </h3>
+                    <div style="font-size: 12px; color: #64748b; margin-top: 2px;" id="reorderModalSubtitle">
+                        Quickly create a new live order from previous order details
+                    </div>
+                </div>
+                <button type="button" class="modal-close" onclick="closeReorderModal()">&times;</button>
+            </div>
+
+            <div style="padding: 16px 0 0 0;">
+                <form id="formPlaceReorder" onsubmit="event.preventDefault(); submitReorderForm();">
+                    <input type="hidden" id="reorderParentOrderId" name="parent_order_id" value="">
+
+                    <!-- Shop & Contact Details Grid -->
+                    <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px; margin-bottom: 16px;">
+                        <div style="font-size: 12px; font-weight: 700; color: #475569; text-transform: uppercase; margin-bottom: 10px; display: flex; align-items: center; gap: 6px;">
+                            <i class='bx bx-store-alt' style="color: #2563eb;"></i> Shop &amp; Delivery Details
+                        </div>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-bottom: 8px;">
+                            <div>
+                                <label style="display: block; font-size: 11px; font-weight: 700; color: #334155; margin-bottom: 4px;">Shop Name *</label>
+                                <input type="text" id="reorderShopName" name="shop_name" required class="input-field" style="width: 100%; padding: 8px 12px; font-size: 13px; font-weight: 600; border: 1.5px solid #cbd5e1; border-radius: 8px;" placeholder="e.g. Royal Bakery">
+                            </div>
+                            <div>
+                                <label style="display: block; font-size: 11px; font-weight: 700; color: #334155; margin-bottom: 4px;">Customer / Contact Person</label>
+                                <input type="text" id="reorderCustomerName" name="customer_name" class="input-field" style="width: 100%; padding: 8px 12px; font-size: 13px; font-weight: 500; border: 1.5px solid #cbd5e1; border-radius: 8px;" placeholder="Contact Person">
+                            </div>
+                            <div>
+                                <label style="display: block; font-size: 11px; font-weight: 700; color: #334155; margin-bottom: 4px;">Phone Number</label>
+                                <input type="tel" id="reorderPhone" name="phone" class="input-field" style="width: 100%; padding: 8px 12px; font-size: 13px; font-weight: 500; border: 1.5px solid #cbd5e1; border-radius: 8px;" placeholder="e.g. 9876543210">
+                            </div>
+                        </div>
+
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px;">
+                            <div>
+                                <label style="display: block; font-size: 11px; font-weight: 700; color: #334155; margin-bottom: 4px;">Delivery Zone *</label>
+                                <select id="reorderZoneSelect" name="zone_id" required class="input-field" style="width: 100%; padding: 8px 12px; font-size: 13px; font-weight: 600; border: 1.5px solid #cbd5e1; border-radius: 8px; background: #fff;">
+                                    <option value="">-- Select Zone --</option>
+                                    <?php foreach ($allZones as $z): ?>
+                                        <option value="<?= (int)$z['id'] ?>"><?= htmlspecialchars($z['name']) ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                            <div>
+                                <label style="display: block; font-size: 11px; font-weight: 700; color: #334155; margin-bottom: 4px;">Location / Area</label>
+                                <input type="text" id="reorderLocation" name="location" class="input-field" style="width: 100%; padding: 8px 12px; font-size: 13px; font-weight: 500; border: 1.5px solid #cbd5e1; border-radius: 8px;" placeholder="e.g. Kankanady">
+                            </div>
+                            <div>
+                                <label style="display: block; font-size: 11px; font-weight: 700; color: #334155; margin-bottom: 4px;">Address / Landmark</label>
+                                <input type="text" id="reorderAddress" name="address" class="input-field" style="width: 100%; padding: 8px 12px; font-size: 13px; font-weight: 500; border: 1.5px solid #cbd5e1; border-radius: 8px;" placeholder="Street address">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Products Table -->
+                    <div style="font-size: 12px; font-weight: 700; color: #475569; text-transform: uppercase; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between;">
+                        <span><i class='bx bx-package' style="color: #2563eb;"></i> Reorder Items &amp; Quantities</span>
+                        <span id="reorderLoadingHint" style="display: none; color: #2563eb; font-weight: 600; font-size: 11px;"><i class='bx bx-loader-alt bx-spin'></i> Loading source items...</span>
+                    </div>
+
+                    <div style="margin-bottom: 14px; max-height: 260px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 8px; padding: 6px;">
+                        <table style="width: 100%; border-collapse: collapse;">
+                            <thead>
+                                <tr style="border-bottom: 2px solid #e2e8f0; text-align: left; font-size: 11px; text-transform: uppercase; color: #64748b; font-weight: 700;">
+                                    <th style="padding: 6px 8px;">Product</th>
+                                    <th style="padding: 6px 8px; width: 100px;">Rate (₹)</th>
+                                    <th style="padding: 6px 8px; width: 95px;">Qty (cs)</th>
+                                    <th style="padding: 6px 8px; width: 90px; text-align: center;">Extra</th>
+                                    <th style="padding: 6px 8px; width: 100px; text-align: right;">Total</th>
+                                    <th style="padding: 6px 4px; width: 36px;"></th>
+                                </tr>
+                            </thead>
+                            <tbody id="reorderItemsTableBody">
+                                <!-- Dynamic product rows -->
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Add row button & Totals row -->
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; flex-wrap: wrap; gap: 10px;">
+                        <button type="button" class="btn-card-action" onclick="addReorderRow()" style="font-size: 12px; font-weight: 700; color: #2563eb; background: #eff6ff; border-color: #bfdbfe;">
+                            <i class='bx bx-plus'></i> Add Another Product
+                        </button>
+                        
+                        <div style="display: flex; align-items: center; gap: 16px;">
+                            <div>
+                                <span style="font-size: 11px; color: #64748b; font-weight: 600;">Total Cases: </span>
+                                <strong id="reorderTotalCases" style="font-size: 14px; color: #0f172a;">0 cs</strong>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 6px;">
+                                <label style="font-size: 11px; color: #64748b; font-weight: 600;">Discount (₹):</label>
+                                <input type="number" id="reorderDiscount" name="discount" value="0" min="0" step="any" oninput="calculateReorderTotals()" style="width: 75px; padding: 4px 6px; font-size: 12px; font-weight: 600; border: 1px solid #cbd5e1; border-radius: 6px; text-align: right;">
+                            </div>
+                            <div>
+                                <span style="font-size: 11px; color: #64748b; font-weight: 600;">Net Total: </span>
+                                <span id="reorderGrandTotal" style="font-size: 18px; font-weight: 800; color: #059669;">₹0.00</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="reorderErrorMsg" style="display: none; padding: 10px 14px; background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; color: #b91c1c; font-size: 13px; margin-bottom: 14px;"></div>
+
+                    <div style="display: flex; justify-content: flex-end; gap: 10px;">
+                        <button type="button" class="btn-card-action" onclick="closeReorderModal()" style="padding: 8px 18px;">Cancel</button>
+                        <button type="submit" id="btnReorderSubmit" class="btn-card-action btn-card-primary" style="padding: 9px 24px; font-weight: 700; background: #2563eb; border-color: #2563eb;">
+                            <i class='bx bx-check-circle'></i> Place Live Reorder
                         </button>
                     </div>
                 </form>
@@ -2946,11 +3066,413 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
                     });
             };
 
+            // ========================================================
+            // 7. IN-PORTAL REORDER MODAL LOGIC
+            // ========================================================
+            function getReorderProductOptionsHtml(selectedPid = 0) {
+                let html = '<option value="">-- Choose Product Item --</option>';
+                AOP_PRODUCTS.forEach(p => {
+                    const pid = parseInt(p.product_id);
+                    const pName = p.product_name || p.name || 'Product';
+                    const rate = parseFloat(p.case_price || p.price || 0);
+                    const stock = Math.max(0, parseInt(p.case_stock !== null && p.case_stock !== undefined ? p.case_stock : (p.stock || 0)));
+                    const sel = (pid === parseInt(selectedPid)) ? 'selected' : '';
+                    if (stock <= 0 && pid !== parseInt(selectedPid)) {
+                        html += `<option value="${pid}" data-rate="${rate}" data-stock="0" disabled style="color: #94a3b8;">${pName} (₹${rate.toFixed(2)}/cs - Out of stock)</option>`;
+                    } else {
+                        html += `<option value="${pid}" data-rate="${rate}" data-stock="${stock}" ${sel}>${pName} (₹${rate.toFixed(2)}/cs, Avail: ${stock} cs)</option>`;
+                    }
+                });
+                return html;
+            }
+
+            window.openReorderModal = function(orderId = 0, shopName = '') {
+                const backdrop = document.getElementById('modalReorderBackdrop');
+                const title = document.getElementById('reorderModalTitle');
+                const subtitle = document.getElementById('reorderModalSubtitle');
+                const parentIn = document.getElementById('reorderParentOrderId');
+                const shopIn = document.getElementById('reorderShopName');
+                const custIn = document.getElementById('reorderCustomerName');
+                const phoneIn = document.getElementById('reorderPhone');
+                const locIn = document.getElementById('reorderLocation');
+                const addrIn = document.getElementById('reorderAddress');
+                const zoneSel = document.getElementById('reorderZoneSelect');
+                const discIn = document.getElementById('reorderDiscount');
+                const tbody = document.getElementById('reorderItemsTableBody');
+                const errBox = document.getElementById('reorderErrorMsg');
+                const loadingHint = document.getElementById('reorderLoadingHint');
+
+                if (errBox) {
+                    errBox.textContent = '';
+                    errBox.style.display = 'none';
+                }
+
+                // Reset form fields
+                parentIn.value = orderId || '';
+                shopIn.value = shopName || '';
+                custIn.value = '';
+                phoneIn.value = '';
+                locIn.value = '';
+                addrIn.value = '';
+                if (discIn) discIn.value = '0';
+                tbody.innerHTML = '';
+
+                if (orderId > 0) {
+                    title.textContent = `Place Reorder for ${shopName || 'Shop'}`;
+                    subtitle.textContent = `Cloning order details & products from Order #${orderId}`;
+                    if (loadingHint) loadingHint.style.display = 'inline-block';
+
+                    const detailsUrl = pollApiUrl + '&action=get_order_details&order_id=' + orderId;
+                    fetch(detailsUrl)
+                        .then(r => r.json())
+                        .then(res => {
+                            if (loadingHint) loadingHint.style.display = 'none';
+                            if (res.success && res.order) {
+                                const o = res.order;
+                                shopIn.value = o.shop_name || shopName || '';
+                                custIn.value = o.customer_name || '';
+                                phoneIn.value = o.phone || '';
+                                locIn.value = o.location || '';
+                                addrIn.value = o.address || '';
+                                if (zoneSel && o.zone_id) {
+                                    zoneSel.value = o.zone_id;
+                                }
+                                if (discIn && o.discount) {
+                                    discIn.value = o.discount;
+                                }
+
+                                if (Array.isArray(o.items) && o.items.length > 0) {
+                                    o.items.forEach(it => {
+                                        addReorderRow(it.product_id, it.price_at_purchase, it.quantity, it.is_extra);
+                                    });
+                                } else if (o.product_id) {
+                                    addReorderRow(o.product_id, o.unit_price, o.quantity, 0);
+                                } else {
+                                    addReorderRow();
+                                }
+                                calculateReorderTotals();
+                            } else {
+                                addReorderRow();
+                                calculateReorderTotals();
+                            }
+                        })
+                        .catch(() => {
+                            if (loadingHint) loadingHint.style.display = 'none';
+                            addReorderRow();
+                            calculateReorderTotals();
+                        });
+                } else {
+                    title.textContent = 'Place New Reorder';
+                    subtitle.textContent = 'Creates a new order directly in the Zone Hub and Admin Panel';
+                    if (loadingHint) loadingHint.style.display = 'none';
+
+                    // Try to preselect current zone if filtered
+                    if (zoneSel && currentZone && currentZone !== 'all') {
+                        for (let opt of zoneSel.options) {
+                            if (opt.value === currentZone || opt.textContent.trim().toLowerCase() === currentZone.toLowerCase()) {
+                                zoneSel.value = opt.value;
+                                break;
+                            }
+                        }
+                    }
+                    addReorderRow();
+                    calculateReorderTotals();
+                }
+
+                if (backdrop) backdrop.classList.add('open');
+            };
+
+            window.closeReorderModal = function() {
+                const backdrop = document.getElementById('modalReorderBackdrop');
+                if (backdrop) backdrop.classList.remove('open');
+            };
+
+            window.addReorderRow = function(selectedPid = 0, rate = '', qty = 1, isExtra = 0) {
+                const tbody = document.getElementById('reorderItemsTableBody');
+                if (!tbody) return;
+
+                const tr = document.createElement('tr');
+                tr.className = 'reorder-row';
+                tr.style.borderBottom = '1px solid #f1f5f9';
+
+                tr.innerHTML = `
+                    <td style="padding: 6px 8px;">
+                        <select class="reorder-prod-select" onchange="onReorderProdChange(this)" style="width: 100%; padding: 6px 8px; font-size: 13px; font-weight: 600; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff;">
+                            ${getReorderProductOptionsHtml(selectedPid)}
+                        </select>
+                    </td>
+                    <td style="padding: 6px 8px;">
+                        <input type="number" step="any" min="0" class="reorder-rate-input" value="${rate !== '' ? rate : ''}" placeholder="Rate" oninput="calculateReorderTotals()" style="width: 100%; padding: 6px 8px; font-size: 13px; font-weight: 600; border: 1px solid #cbd5e1; border-radius: 6px;">
+                    </td>
+                    <td style="padding: 6px 8px;">
+                        <input type="number" min="1" class="reorder-qty-input" value="${qty || 1}" oninput="calculateReorderTotals()" style="width: 100%; padding: 6px 8px; font-size: 13px; font-weight: 700; border: 1px solid #cbd5e1; border-radius: 6px;">
+                    </td>
+                    <td style="padding: 6px 8px; text-align: center;">
+                        <label style="display: inline-flex; align-items: center; gap: 4px; font-size: 11px; cursor: pointer;">
+                            <input type="checkbox" class="reorder-extra-checkbox" ${isExtra ? 'checked' : ''} onchange="onReorderExtraChange(this)">
+                            <span style="color: #64748b;">Free</span>
+                        </label>
+                    </td>
+                    <td style="padding: 6px 8px; text-align: right; font-weight: 700; color: #0f172a; font-size: 13px;">
+                        <span class="reorder-row-total">₹0.00</span>
+                    </td>
+                    <td style="padding: 6px 4px; text-align: center;">
+                        <button type="button" onclick="removeReorderRow(this)" style="background: none; border: none; color: #ef4444; font-size: 18px; cursor: pointer;" title="Remove row">
+                            <i class='bx bx-trash'></i>
+                        </button>
+                    </td>
+                `;
+
+                tbody.appendChild(tr);
+
+                if (selectedPid > 0 && (rate === '' || rate === undefined)) {
+                    const sel = tr.querySelector('.reorder-prod-select');
+                    if (sel) onReorderProdChange(sel);
+                } else {
+                    calculateReorderTotals();
+                }
+            };
+
+            window.onReorderProdChange = function(sel) {
+                const row = sel.closest('tr');
+                const opt = sel.options[sel.selectedIndex];
+                const rateIn = row.querySelector('.reorder-rate-input');
+                const extraIn = row.querySelector('.reorder-extra-checkbox');
+
+                if (opt && opt.value) {
+                    const defaultRate = parseFloat(opt.dataset.rate || 0);
+                    if (rateIn && (!rateIn.value || parseFloat(rateIn.value) === 0 || rateIn.dataset.autoFilled === "1")) {
+                        if (!extraIn || !extraIn.checked) {
+                            rateIn.value = defaultRate;
+                            rateIn.dataset.autoFilled = "1";
+                        }
+                    }
+                }
+                calculateReorderTotals();
+            };
+
+            window.onReorderExtraChange = function(chk) {
+                const row = chk.closest('tr');
+                const rateIn = row.querySelector('.reorder-rate-input');
+                const sel = row.querySelector('.reorder-prod-select');
+                const opt = sel ? sel.options[sel.selectedIndex] : null;
+
+                if (chk.checked) {
+                    if (rateIn) {
+                        rateIn.dataset.prevRate = rateIn.value;
+                        rateIn.value = 0;
+                        rateIn.disabled = true;
+                    }
+                } else {
+                    if (rateIn) {
+                        rateIn.disabled = false;
+                        rateIn.value = rateIn.dataset.prevRate || (opt ? (opt.dataset.rate || 0) : 0);
+                    }
+                }
+                calculateReorderTotals();
+            };
+
+            window.removeReorderRow = function(btn) {
+                const tbody = document.getElementById('reorderItemsTableBody');
+                if (!tbody) return;
+                const rows = tbody.querySelectorAll('.reorder-row');
+                if (rows.length <= 1) {
+                    const r = rows[0];
+                    r.querySelector('.reorder-prod-select').value = '';
+                    r.querySelector('.reorder-rate-input').value = '';
+                    r.querySelector('.reorder-qty-input').value = '1';
+                    r.querySelector('.reorder-extra-checkbox').checked = false;
+                } else {
+                    btn.closest('tr').remove();
+                }
+                calculateReorderTotals();
+            };
+
+            window.calculateReorderTotals = function() {
+                const rows = document.querySelectorAll('.reorder-row');
+                let grandTotal = 0;
+                let totalCases = 0;
+
+                rows.forEach(row => {
+                    const sel = row.querySelector('.reorder-prod-select');
+                    const rateIn = row.querySelector('.reorder-rate-input');
+                    const qtyIn = row.querySelector('.reorder-qty-input');
+                    const extraIn = row.querySelector('.reorder-extra-checkbox');
+                    const totalSpan = row.querySelector('.reorder-row-total');
+
+                    const pid = parseInt(sel ? sel.value : 0);
+                    const rate = parseFloat(rateIn ? (rateIn.value || 0) : 0);
+                    const qty = parseInt(qtyIn ? (qtyIn.value || 0) : 0);
+                    const isExtra = extraIn && extraIn.checked;
+
+                    let lineTotal = 0;
+                    if (pid > 0 && qty > 0) {
+                        totalCases += qty;
+                        if (!isExtra) {
+                            lineTotal = rate * qty;
+                        }
+                    }
+
+                    if (totalSpan) {
+                        totalSpan.textContent = `₹${lineTotal.toFixed(2)}`;
+                    }
+                    grandTotal += lineTotal;
+                });
+
+                const discIn = document.getElementById('reorderDiscount');
+                const discount = parseFloat(discIn ? (discIn.value || 0) : 0);
+                const netTotal = Math.max(0, grandTotal - discount);
+
+                const gtElem = document.getElementById('reorderGrandTotal');
+                if (gtElem) gtElem.textContent = `₹${netTotal.toFixed(2)}`;
+
+                const tcElem = document.getElementById('reorderTotalCases');
+                if (tcElem) tcElem.textContent = `${totalCases} cs`;
+            };
+
+            window.submitReorderForm = function() {
+                const errBox = document.getElementById('reorderErrorMsg');
+                const submitBtn = document.getElementById('btnReorderSubmit');
+                const parentId = parseInt(document.getElementById('reorderParentOrderId')?.value || 0);
+                const shopName = document.getElementById('reorderShopName')?.value.trim();
+                const custName = document.getElementById('reorderCustomerName')?.value.trim();
+                const phone = document.getElementById('reorderPhone')?.value.trim();
+                const location = document.getElementById('reorderLocation')?.value.trim();
+                const address = document.getElementById('reorderAddress')?.value.trim();
+                const zoneId = parseInt(document.getElementById('reorderZoneSelect')?.value || 0);
+                const discount = parseFloat(document.getElementById('reorderDiscount')?.value || 0);
+
+                if (errBox) {
+                    errBox.textContent = '';
+                    errBox.style.display = 'none';
+                }
+
+                if (!shopName) {
+                    if (errBox) {
+                        errBox.textContent = 'Please enter the Shop Name.';
+                        errBox.style.display = 'block';
+                    }
+                    return;
+                }
+
+                if (!zoneId || zoneId <= 0) {
+                    if (errBox) {
+                        errBox.textContent = 'Please select a Delivery Zone.';
+                        errBox.style.display = 'block';
+                    }
+                    return;
+                }
+
+                const rows = document.querySelectorAll('.reorder-row');
+                const items = [];
+                let hasError = false;
+
+                rows.forEach(row => {
+                    const sel = row.querySelector('.reorder-prod-select');
+                    const rateIn = row.querySelector('.reorder-rate-input');
+                    const qtyIn = row.querySelector('.reorder-qty-input');
+                    const extraIn = row.querySelector('.reorder-extra-checkbox');
+
+                    const pid = parseInt(sel ? sel.value : 0);
+                    const rate = parseFloat(rateIn ? (rateIn.value || 0) : 0);
+                    const qty = parseInt(qtyIn ? (qtyIn.value || 0) : 0);
+                    const isExtra = extraIn ? (extraIn.checked ? 1 : 0) : 0;
+
+                    if (pid > 0) {
+                        if (qty <= 0) {
+                            hasError = true;
+                            if (errBox) {
+                                errBox.textContent = 'Please enter a valid quantity of at least 1 case for all selected products.';
+                                errBox.style.display = 'block';
+                            }
+                            return;
+                        }
+                        items.push({
+                            product_id: pid,
+                            rate: isExtra ? 0 : rate,
+                            quantity: qty,
+                            is_extra: isExtra
+                        });
+                    }
+                });
+
+                if (hasError) return;
+
+                if (items.length === 0) {
+                    if (errBox) {
+                        errBox.textContent = 'Please choose at least one product with quantity for the reorder.';
+                        errBox.style.display = 'block';
+                    }
+                    return;
+                }
+
+                if (submitBtn) {
+                    submitBtn.disabled = true;
+                    submitBtn.innerHTML = "<i class='bx bx-loader-alt bx-spin'></i> Placing Reorder...";
+                }
+
+                const fd = new FormData();
+                fd.append('action', 'create_reorder');
+                fd.append('parent_order_id', parentId);
+                fd.append('shop_name', shopName);
+                fd.append('customer_name', custName);
+                fd.append('phone', phone);
+                fd.append('location', location);
+                fd.append('address', address);
+                fd.append('zone_id', zoneId);
+                fd.append('discount', discount);
+
+                items.forEach((it, i) => {
+                    fd.append(`items[${i}][product_id]`, it.product_id);
+                    fd.append(`items[${i}][rate]`, it.rate);
+                    fd.append(`items[${i}][quantity]`, it.quantity);
+                    fd.append(`items[${i}][is_extra]`, it.is_extra);
+                });
+
+                fetch(pollApiUrl, { method: 'POST', body: fd })
+                    .then(r => r.json())
+                    .then(res => {
+                        if (submitBtn) {
+                            submitBtn.disabled = false;
+                            submitBtn.innerHTML = "<i class='bx bx-check-circle'></i> Place Live Reorder";
+                        }
+                        if (res.success) {
+                            closeReorderModal();
+                            if (typeof showToast === 'function') {
+                                showToast('Reorder Created', `Order #${res.order_number || res.order_id} created successfully! Saved in Admin & Zone portal.`);
+                            } else {
+                                alert(`Order #${res.order_number || res.order_id} placed successfully!`);
+                            }
+                            setTimeout(() => {
+                                window.location.reload();
+                            }, 800);
+                        } else {
+                            if (errBox) {
+                                errBox.textContent = res.error || 'Failed to place reorder.';
+                                errBox.style.display = 'block';
+                            } else {
+                                alert(res.error || 'Failed to place reorder.');
+                            }
+                        }
+                    })
+                    .catch(err => {
+                        if (submitBtn) {
+                            submitBtn.disabled = false;
+                            submitBtn.innerHTML = "<i class='bx bx-check-circle'></i> Place Live Reorder";
+                        }
+                        if (errBox) {
+                            errBox.textContent = 'Server connection error. Please try again.';
+                            errBox.style.display = 'block';
+                        }
+                    });
+            };
+
             // Close modals on escape or clicking outside
             document.addEventListener('keydown', function(e) {
                 if (e.key === 'Escape') {
                     closeOrderModal();
                     closeAddOrderProductsModal();
+                    closeReorderModal();
                 }
             });
             const backdrop = document.getElementById('orderModalBackdrop');
@@ -2963,6 +3485,12 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
             if (aopBackdrop) {
                 aopBackdrop.addEventListener('click', function(e) {
                     if (e.target === aopBackdrop) closeAddOrderProductsModal();
+                });
+            }
+            const reorderBackdrop = document.getElementById('modalReorderBackdrop');
+            if (reorderBackdrop) {
+                reorderBackdrop.addEventListener('click', function(e) {
+                    if (e.target === reorderBackdrop) closeReorderModal();
                 });
             }
         })();
