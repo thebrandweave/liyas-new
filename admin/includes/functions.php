@@ -3,6 +3,10 @@
 // Set timezone for consistent date/time handling across the admin panel
 date_default_timezone_set('Asia/Kolkata');
 
+if (file_exists(__DIR__ . '/activity_logger.php')) {
+	require_once __DIR__ . '/activity_logger.php';
+}
+
 /**
  * Convert database timestamp to IST format
  */
@@ -1520,6 +1524,261 @@ function getOrderPaymentHistory(PDO $pdo, int $orderId): array {
 		return ['success' => false, 'error' => $e->getMessage()];
 	}
 }
+
+/**
+ * Get active damaged items recorded for a specific vehicle
+ */
+function getVehicleDamagedItems(PDO $pdo, int $vehicleId, ?string $status = 'reported'): array {
+	if ($vehicleId <= 0) return [];
+	try {
+		$sql = "
+			SELECT 
+				vdi.*,
+				COALESCE(p.product_name, p.name) as product_name,
+				p.net_content,
+				p.net_content_unit,
+				p.case_price
+			FROM vehicle_damaged_items vdi
+			JOIN products p ON vdi.product_id = p.product_id
+			WHERE vdi.vehicle_id = ?
+		";
+		$params = [$vehicleId];
+		if ($status !== null) {
+			$sql .= " AND vdi.status = ?";
+			$params[] = $status;
+		}
+		$sql .= " ORDER BY vdi.created_at DESC";
+		$stmt = $pdo->prepare($sql);
+		$stmt->execute($params);
+		return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+	} catch (Exception $e) {
+		error_log("Error in getVehicleDamagedItems: " . $e->getMessage());
+		return [];
+	}
+}
+
+/**
+ * Get active damaged items recorded for a specific product across vehicles
+ */
+function getProductDamagedItems(PDO $pdo, int $productId, ?string $status = 'reported'): array {
+	if ($productId <= 0) return [];
+	try {
+		$sql = "
+			SELECT 
+				vdi.*,
+				COALESCE(p.product_name, p.name) as product_name,
+				p.net_content,
+				p.net_content_unit,
+				p.case_price,
+				v.vehicle_number,
+				v.vehicle_name,
+				v.driver_name,
+				z.name as zone_name,
+				z.slug as zone_slug
+			FROM vehicle_damaged_items vdi
+			JOIN products p ON vdi.product_id = p.product_id
+			LEFT JOIN vehicles v ON vdi.vehicle_id = v.id
+			LEFT JOIN zones z ON vdi.zone_id = z.id
+			WHERE vdi.product_id = ?
+		";
+		$params = [$productId];
+		if ($status !== null) {
+			$sql .= " AND vdi.status = ?";
+			$params[] = $status;
+		}
+		$sql .= " ORDER BY vdi.created_at DESC";
+		$stmt = $pdo->prepare($sql);
+		$stmt->execute($params);
+		return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+	} catch (Exception $e) {
+		error_log("Error in getProductDamagedItems: " . $e->getMessage());
+		return [];
+	}
+}
+
+/**
+ * Get vehicle damaged items summary for all vehicles operating in a zone
+ */
+function getZoneVehicleDamagedSummary(PDO $pdo, int $zoneId): array {
+	try {
+		$stmt = $pdo->prepare("
+			SELECT 
+				vdi.*,
+				COALESCE(p.product_name, p.name) as product_name,
+				p.net_content,
+				p.net_content_unit
+			FROM vehicle_damaged_items vdi
+			JOIN products p ON vdi.product_id = p.product_id
+			WHERE (vdi.zone_id = ? OR vdi.vehicle_id IN (SELECT id FROM vehicles WHERE zone_id = ?))
+			  AND vdi.status = 'reported'
+			ORDER BY vdi.created_at DESC
+		");
+		$stmt->execute([$zoneId, $zoneId]);
+		$rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+		$map = [];
+		foreach ($rows as $r) {
+			$vid = (int)$r['vehicle_id'];
+			if (!isset($map[$vid])) {
+				$map[$vid] = [
+					'total_damaged_cases' => 0,
+					'items' => []
+				];
+			}
+			$map[$vid]['total_damaged_cases'] += (int)$r['damaged_cases'];
+			$map[$vid]['items'][] = $r;
+		}
+		return $map;
+	} catch (Exception $e) {
+		error_log("Error in getZoneVehicleDamagedSummary: " . $e->getMessage());
+		return [];
+	}
+}
+
+/**
+ * Record a damaged item for a vehicle
+ */
+function recordVehicleDamagedItem(PDO $pdo, int $vehicleId, int $productId, int $cases, ?int $zoneId = null, string $notes = '', string $reportedBy = '', bool $deductVehicleLoad = true): array {
+	$cases = max(1, $cases);
+	if ($vehicleId <= 0 || $productId <= 0) {
+		return ['success' => false, 'error' => 'Invalid vehicle or product specified.'];
+	}
+
+	try {
+		$pdo->beginTransaction();
+
+		// 1. Insert into vehicle_damaged_items
+		$ins = $pdo->prepare("
+			INSERT INTO vehicle_damaged_items (
+				vehicle_id, zone_id, product_id, damaged_cases, 
+				status, notes, reported_by, created_at
+			) VALUES (?, ?, ?, ?, 'reported', ?, ?, NOW())
+		");
+		$ins->execute([
+			$vehicleId,
+			$zoneId,
+			$productId,
+			$cases,
+			$notes ?: null,
+			$reportedBy ?: 'Zone User'
+		]);
+		$damageId = (int)$pdo->lastInsertId();
+
+		// 2. Optionally deduct from vehicle's active storage load so damaged stock cannot be delivered
+		$deductedCases = 0;
+		if ($deductVehicleLoad) {
+			$vlStmt = $pdo->prepare("
+				SELECT id, cases_loaded 
+				FROM vehicle_loads 
+				WHERE vehicle_id = ? 
+				  AND product_id = ? 
+				  AND is_active = 1 
+				  AND order_id IS NULL
+				ORDER BY id DESC
+				LIMIT 1
+			");
+			$vlStmt->execute([$vehicleId, $productId]);
+			$vlRow = $vlStmt->fetch(PDO::FETCH_ASSOC);
+
+			if ($vlRow) {
+				$currLoaded = (int)$vlRow['cases_loaded'];
+				$deductedCases = min($currLoaded, $cases);
+				$newLoaded = max(0, $currLoaded - $deductedCases);
+				if ($newLoaded === 0) {
+					$pdo->prepare("UPDATE vehicle_loads SET cases_loaded = 0, is_active = 0 WHERE id = ?")->execute([$vlRow['id']]);
+				} else {
+					$pdo->prepare("UPDATE vehicle_loads SET cases_loaded = ? WHERE id = ?")->execute([$newLoaded, $vlRow['id']]);
+				}
+			}
+		}
+
+		$pdo->commit();
+
+		// Quick log
+		$vNum = $pdo->query("SELECT vehicle_number FROM vehicles WHERE id = {$vehicleId}")->fetchColumn() ?: ('Vehicle #' . $vehicleId);
+		$pName = $pdo->query("SELECT COALESCE(product_name, name) FROM products WHERE product_id = {$productId}")->fetchColumn() ?: ('Product #' . $productId);
+		if (function_exists('quickLog')) {
+			quickLog($pdo, 'report_damaged', 'vehicle', $vehicleId, "Reported {$cases} damaged cases of {$pName} on {$vNum}" . ($notes ? " (Note: {$notes})" : ""));
+		}
+
+		return [
+			'success' => true,
+			'id' => $damageId,
+			'deducted_from_load' => $deductedCases
+		];
+	} catch (Exception $e) {
+		if ($pdo->inTransaction()) {
+			$pdo->rollBack();
+		}
+		error_log("Error in recordVehicleDamagedItem: " . $e->getMessage());
+		return ['success' => false, 'error' => $e->getMessage()];
+	}
+}
+
+/**
+ * Resolve/Remove damaged items (when corrected, transferred, or resolved)
+ */
+function resolveDamagedItem(PDO $pdo, int $damagedId, string $action = 'transferred', bool $restoreToWarehouse = false, string $notes = '', string $resolvedBy = 'Admin'): array {
+	if ($damagedId <= 0) {
+		return ['success' => false, 'error' => 'Invalid damaged record ID.'];
+	}
+
+	$allowedActions = ['corrected', 'transferred', 'resolved'];
+	if (!in_array($action, $allowedActions)) {
+		$action = 'resolved';
+	}
+
+	try {
+		$stmt = $pdo->prepare("SELECT * FROM vehicle_damaged_items WHERE id = ?");
+		$stmt->execute([$damagedId]);
+		$rec = $stmt->fetch(PDO::FETCH_ASSOC);
+
+		if (!$rec) {
+			return ['success' => false, 'error' => 'Damaged record not found.'];
+		}
+
+		$pdo->beginTransaction();
+
+		$upStmt = $pdo->prepare("
+			UPDATE vehicle_damaged_items 
+			SET status = ?,
+				resolution_action = ?,
+				resolution_notes = ?,
+				resolved_by = ?,
+				resolved_at = NOW()
+			WHERE id = ?
+		");
+		$upStmt->execute([
+			$action,
+			$action,
+			$notes ?: null,
+			$resolvedBy ?: 'Admin',
+			$damagedId
+		]);
+
+		// If admin opts to restore to warehouse stock
+		$pid = (int)$rec['product_id'];
+		$cases = (int)$rec['damaged_cases'];
+		if ($restoreToWarehouse && $pid > 0 && $cases > 0) {
+			adjustProductStock($pdo, $pid, +$cases, "Damaged stock restored to warehouse ({$action})");
+		}
+
+		$pdo->commit();
+
+		if (function_exists('quickLog')) {
+			quickLog($pdo, 'resolve_damaged', 'product', $pid, "Resolved {$cases} damaged cases as {$action} (Record #{$damagedId})" . ($restoreToWarehouse ? " & restored to warehouse stock" : ""));
+		}
+
+		return ['success' => true, 'cases' => $cases, 'action' => $action];
+	} catch (Exception $e) {
+		if ($pdo->inTransaction()) {
+			$pdo->rollBack();
+		}
+		error_log("Error in resolveDamagedItem: " . $e->getMessage());
+		return ['success' => false, 'error' => $e->getMessage()];
+	}
+}
+
 
 
 

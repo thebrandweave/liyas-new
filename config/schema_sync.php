@@ -421,6 +421,36 @@ function ensureWarehouseSchema(PDO $pdo): bool {
             error_log("Schema sync delivered extra stock reconcile error: " . $e->getMessage());
         }
 
+        // ============================================
+        // 13. VEHICLE DAMAGED ITEMS TABLE
+        // ============================================
+        try {
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS `vehicle_damaged_items` (
+                    `id` INT AUTO_INCREMENT PRIMARY KEY,
+                    `vehicle_id` INT NOT NULL,
+                    `zone_id` INT NULL,
+                    `product_id` INT NOT NULL,
+                    `damaged_cases` INT NOT NULL DEFAULT 1,
+                    `status` ENUM('reported', 'corrected', 'transferred', 'resolved') NOT NULL DEFAULT 'reported',
+                    `notes` VARCHAR(255) NULL,
+                    `reported_by` VARCHAR(100) NULL,
+                    `resolution_action` VARCHAR(100) NULL,
+                    `resolution_notes` VARCHAR(255) NULL,
+                    `resolved_by` VARCHAR(100) NULL,
+                    `resolved_at` TIMESTAMP NULL,
+                    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    INDEX `idx_vdi_vehicle` (`vehicle_id`),
+                    INDEX `idx_vdi_product` (`product_id`),
+                    INDEX `idx_vdi_status` (`status`),
+                    INDEX `idx_vdi_zone` (`zone_id`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+            ");
+        } catch (Exception $e) {
+            error_log("Schema sync vehicle_damaged_items error: " . $e->getMessage());
+        }
+
         return true;
     } catch (Exception $e) {
         error_log("Warehouse schema sync failed: " . $e->getMessage());

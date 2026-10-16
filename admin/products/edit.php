@@ -19,6 +19,30 @@ if (!$product) {
     exit;
 }
 
+$success_msg = '';
+if (isset($_GET['resolved']) && $_GET['resolved'] == '1') {
+    $success_msg = "Damaged item updated successfully.";
+}
+
+// Handle resolving damaged item from edit page
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['resolve_damaged_item'])) {
+    $damageId = (int)($_POST['damaged_id'] ?? 0);
+    $action = trim($_POST['resolution_action'] ?? 'resolved'); // 'corrected', 'transferred', 'resolved'
+    $restoreStock = !empty($_POST['restore_to_warehouse']);
+    $notes = trim($_POST['resolution_notes'] ?? '');
+    $resolvedBy = 'Admin (' . htmlspecialchars($_SESSION['admin_name'] ?? 'Admin') . ')';
+
+    $res = resolveDamagedItem($pdo, $damageId, $action, $restoreStock, $notes, $resolvedBy);
+    if (!empty($res['success'])) {
+        header("Location: edit.php?id={$product_id}&resolved=1");
+        exit;
+    } else {
+        $error = $res['error'] ?? "Failed to update damaged item.";
+    }
+}
+
+$productDamagedItems = getProductDamagedItems($pdo, $product_id, 'reported');
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_product'])) {
     $product_name     = trim($_POST['product_name'] ?? '');
     $case_stock       = (int)($_POST['case_stock'] ?? 0);
@@ -156,13 +180,119 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_product'])) {
             </div>
             
             <div class="content-area">
+                <?php if (!empty($success_msg)): ?>
+                    <div class="alert alert-success" style="padding: 12px 16px; background: #d1fae5; color: #065f46; border-radius: 8px; margin-bottom: 1.5rem; max-width: 780px;">
+                        <i class='bx bx-check-circle'></i> <?= htmlspecialchars($success_msg) ?>
+                    </div>
+                <?php endif; ?>
                 <?php if (!empty($error)): ?>
-                    <div class="alert alert-error" style="padding: 12px 16px; background: #fee2e2; color: #991b1b; border-radius: 8px; margin-bottom: 1.5rem; max-width: 720px;">
+                    <div class="alert alert-error" style="padding: 12px 16px; background: #fee2e2; color: #991b1b; border-radius: 8px; margin-bottom: 1.5rem; max-width: 780px;">
                         <?= htmlspecialchars($error) ?>
                     </div>
                 <?php endif; ?>
 
-                <div class="form-card">
+                <!-- Reported Damaged Items on Vehicles Card -->
+                <div class="form-card" style="max-width: 780px; margin-bottom: 24px; border: 1.5px solid <?= !empty($productDamagedItems) ? '#fecaca' : '#e2e8f0' ?>;">
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem;">
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <i class='bx bx-error-circle' style="color: <?= !empty($productDamagedItems) ? '#dc2626' : '#64748b' ?>; font-size: 22px;"></i>
+                            <h3 style="font-size: 17px; font-weight: 700; color: #0f172a; margin: 0;">Reported Damaged Items on Delivery Vehicles</h3>
+                        </div>
+                        <?php 
+                        $totalDamagedInEdit = array_sum(array_column($productDamagedItems, 'damaged_cases'));
+                        if ($totalDamagedInEdit > 0): 
+                        ?>
+                            <span style="background: #fee2e2; color: #dc2626; font-size: 12px; font-weight: 800; padding: 4px 10px; border-radius: 20px;">
+                                <?= $totalDamagedInEdit ?> Cases Damaged
+                            </span>
+                        <?php endif; ?>
+                    </div>
+
+                    <?php if (empty($productDamagedItems)): ?>
+                        <div style="padding: 18px; background: #f8fafc; border-radius: 8px; font-size: 13px; color: #64748b; display: flex; align-items: center; gap: 8px;">
+                            <i class='bx bx-check-circle' style="color: #10b981; font-size: 18px;"></i>
+                            No active damaged items reported on any delivery vehicle for this product.
+                        </div>
+                    <?php else: ?>
+                        <div style="font-size: 12px; color: #92400e; background: #fffbeb; padding: 10px 14px; border-radius: 8px; margin-bottom: 14px; border: 1px solid #fef3c7;">
+                            Admin can remove reported damaged stock when <strong>Corrected</strong> (fixed on vehicle), <strong>Transferred</strong> (cases restored to warehouse stock), or <strong>Removed</strong>.
+                        </div>
+                        <div style="overflow-x: auto;">
+                            <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+                                <thead>
+                                    <tr style="background: #f8fafc; text-align: left;">
+                                        <th style="padding: 10px; border: 1px solid #e2e8f0; font-weight: 700; color: #334155;">Vehicle &amp; Zone</th>
+                                        <th style="padding: 10px; border: 1px solid #e2e8f0; font-weight: 700; color: #334155;">Damaged Cases</th>
+                                        <th style="padding: 10px; border: 1px solid #e2e8f0; font-weight: 700; color: #334155;">Reported At / Notes</th>
+                                        <th style="padding: 10px; border: 1px solid #e2e8f0; font-weight: 700; color: #334155; text-align: right;">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php foreach ($productDamagedItems as $di): 
+                                        $vNum = $di['vehicle_number'] ?: ('Vehicle #' . $di['vehicle_id']);
+                                        $vName = $di['vehicle_name'] ? " ({$di['vehicle_name']})" : "";
+                                    ?>
+                                        <tr>
+                                            <td style="padding: 10px; border: 1px solid #e2e8f0;">
+                                                <div style="font-weight: 700; color: #0f172a;"><?= htmlspecialchars($vNum . $vName) ?></div>
+                                                <div style="font-size: 11px; color: #64748b; margin-top: 2px;">
+                                                    <span style="background: #eff6ff; color: #1d4ed8; font-weight: 700; padding: 1px 5px; border-radius: 4px;"><?= htmlspecialchars($di['zone_name'] ?? 'Zone') ?></span>
+                                                    <?= !empty($di['driver_name']) ? ' &bull; Driver: ' . htmlspecialchars($di['driver_name']) : '' ?>
+                                                </div>
+                                            </td>
+                                            <td style="padding: 10px; border: 1px solid #e2e8f0;">
+                                                <span style="background: #fee2e2; color: #dc2626; font-weight: 800; font-size: 13px; padding: 3px 8px; border-radius: 6px; display: inline-flex; align-items: center; gap: 4px;">
+                                                    <i class='bx bx-error-circle'></i> <?= (int)$di['damaged_cases'] ?> cs
+                                                </span>
+                                            </td>
+                                            <td style="padding: 10px; border: 1px solid #e2e8f0;">
+                                                <div style="font-size: 11px; color: #64748b;"><?= date('d M Y, h:i A', strtotime($di['created_at'])) ?> (<?= htmlspecialchars($di['reported_by'] ?? 'Zone') ?>)</div>
+                                                <?php if (!empty($di['notes'])): ?>
+                                                    <div style="font-size: 12px; color: #b91c1c; margin-top: 2px;">
+                                                        <i class='bx bx-note'></i> <?= htmlspecialchars($di['notes']) ?>
+                                                    </div>
+                                                <?php endif; ?>
+                                            </td>
+                                            <td style="padding: 10px; border: 1px solid #e2e8f0; text-align: right;">
+                                                <div style="display: inline-flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap;">
+                                                    <form method="POST" action="edit.php?id=<?= $product_id ?>" style="display: inline;" onsubmit="return confirm('Mark <?= (int)$di['damaged_cases'] ?> cases as CORRECTED on vehicle?');">
+                                                        <input type="hidden" name="resolve_damaged_item" value="1">
+                                                        <input type="hidden" name="damaged_id" value="<?= (int)$di['id'] ?>">
+                                                        <input type="hidden" name="resolution_action" value="corrected">
+                                                        <input type="hidden" name="restore_to_warehouse" value="0">
+                                                        <button type="submit" style="padding: 5px 9px; font-size: 11px; font-weight: 700; background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; border-radius: 6px; cursor: pointer;">
+                                                            <i class='bx bx-check-circle'></i> Corrected
+                                                        </button>
+                                                    </form>
+                                                    <form method="POST" action="edit.php?id=<?= $product_id ?>" style="display: inline;" onsubmit="return confirm('Mark <?= (int)$di['damaged_cases'] ?> cases as TRANSFERRED and restore to warehouse stock?');">
+                                                        <input type="hidden" name="resolve_damaged_item" value="1">
+                                                        <input type="hidden" name="damaged_id" value="<?= (int)$di['id'] ?>">
+                                                        <input type="hidden" name="resolution_action" value="transferred">
+                                                        <input type="hidden" name="restore_to_warehouse" value="1">
+                                                        <button type="submit" style="padding: 5px 9px; font-size: 11px; font-weight: 700; background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; border-radius: 6px; cursor: pointer;">
+                                                            <i class='bx bx-transfer'></i> Transferred
+                                                        </button>
+                                                    </form>
+                                                    <form method="POST" action="edit.php?id=<?= $product_id ?>" style="display: inline;" onsubmit="return confirm('Remove / write-off this damaged record?');">
+                                                        <input type="hidden" name="resolve_damaged_item" value="1">
+                                                        <input type="hidden" name="damaged_id" value="<?= (int)$di['id'] ?>">
+                                                        <input type="hidden" name="resolution_action" value="resolved">
+                                                        <input type="hidden" name="restore_to_warehouse" value="0">
+                                                        <button type="submit" style="padding: 5px 9px; font-size: 11px; font-weight: 700; background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; border-radius: 6px; cursor: pointer;">
+                                                            <i class='bx bx-trash'></i> Remove
+                                                        </button>
+                                                    </form>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                    <?php endif; ?>
+                </div>
+
+                <div class="form-card" style="max-width: 780px;">
                     <h2 style="font-size: 20px; font-weight: 600; margin-bottom: 0.5rem; color: #111827;">Edit Warehouse Product</h2>
                     <p style="font-size: 13px; color: #6b7280; margin-bottom: 1.75rem;">
                         Update product specifications, case pricing, and Website stock levels.

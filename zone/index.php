@@ -74,6 +74,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['assign_vehicle'])) {
     }
 }
 
+// Handle quick recording of damaged items on a vehicle
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['record_vehicle_damaged'])) {
+    $vId = (int)($_POST['vehicle_id'] ?? 0);
+    $pId = (int)($_POST['product_id'] ?? 0);
+    $cases = (int)($_POST['damaged_cases'] ?? 0);
+    $notes = trim($_POST['notes'] ?? '');
+    $reportedBy = 'Zone Portal (' . ($current_zone['name'] ?? 'Zone') . ')';
+
+    if ($vId > 0 && $pId > 0 && $cases > 0) {
+        $res = recordVehicleDamagedItem($pdo, $vId, $pId, $cases, $zone_id, $notes, $reportedBy, true);
+        if (!empty($res['success'])) {
+            $msg = "Damaged stock ({$cases} cases) recorded successfully for vehicle.";
+            $msg_type = 'success';
+        } else {
+            $msg = $res['error'] ?? "Failed to record damaged item.";
+            $msg_type = 'error';
+        }
+    } else {
+        $msg = "Please select vehicle, product, and specify valid damaged cases (> 0).";
+        $msg_type = 'error';
+    }
+
+    if (!$isAjax) {
+        $_SESSION['zone_portal_flash'] = ['msg' => $msg, 'msg_type' => $msg_type];
+        $redirectUrl = zone_url($zone_slug) . (!empty($_SERVER['QUERY_STRING']) ? '?' . $_SERVER['QUERY_STRING'] : '');
+        header("Location: " . $redirectUrl);
+        exit;
+    } else {
+        header('Content-Type: application/json');
+        echo json_encode(['success' => ($msg_type === 'success'), 'message' => $msg, 'error' => ($msg_type !== 'success' ? $msg : null)]);
+        exit;
+    }
+}
+
 // Mark single unread order as read/checked
 if (isset($_GET['mark_read_id']) && (int)$_GET['mark_read_id'] > 0) {
     $markSingle = $pdo->prepare("UPDATE orders SET is_zone_read = 1, zone_read_at = NOW() WHERE zone_id = ? AND order_id = ?");
@@ -300,6 +334,11 @@ foreach ($orders as $ord) {
         ];
     }
 }
+
+// Active catalog products for damaged items reporting
+$allProductsList = $pdo->query("SELECT product_id, COALESCE(product_name, name) as name, case_price, net_content, net_content_unit FROM products WHERE status = 'active' ORDER BY name ASC")->fetchAll(PDO::FETCH_ASSOC) ?: [];
+// Active damaged items summary for vehicles in this zone
+$zoneDamagedSummary = getZoneVehicleDamagedSummary($pdo, $zone_id);
 
 // Helper function for WhatsApp link
 function buildWhatsAppLink($phone, $shop, $orderNum, $amount, $itemsText = '') {
@@ -1282,6 +1321,91 @@ function buildWhatsAppLink($phone, $shop, $orderNum, $amount, $itemsText = '') {
             letter-spacing: 0.02em;
         }
 
+        /* Vehicle Damaged Items Styling */
+        .vehicle-damaged-counter {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+            padding: 3px 8px;
+            border-radius: 8px;
+            color: #dc2626;
+            font-size: 11px;
+            font-weight: 700;
+        }
+        .vehicle-damaged-counter .counter-num {
+            font-size: 15px;
+            font-weight: 800;
+            color: #dc2626;
+            line-height: 1;
+        }
+        .vehicle-damaged-counter .counter-unit {
+            font-size: 10px;
+            font-weight: 700;
+            color: #b91c1c;
+            text-transform: uppercase;
+        }
+        .btn-add-damaged {
+            background: #ffffff;
+            border: 1px solid #fca5a5;
+            color: #dc2626;
+            font-size: 11px;
+            font-weight: 700;
+            padding: 4px 9px;
+            border-radius: 6px;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            transition: all 0.15s ease;
+            white-space: nowrap;
+        }
+        .btn-add-damaged:hover {
+            background: #fee2e2;
+            border-color: #ef4444;
+            color: #b91c1c;
+        }
+        .veh-damaged-breakdown-row {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 6px;
+            background: #fff5f5;
+            border: 1px dashed #fca5a5;
+            padding: 6px 10px;
+            border-radius: 8px;
+            margin-top: 4px;
+        }
+        .veh-damaged-label {
+            font-size: 11px;
+            font-weight: 700;
+            color: #dc2626;
+            display: inline-flex;
+            align-items: center;
+            gap: 3px;
+        }
+        .veh-damaged-pill {
+            background: #ffffff;
+            border: 1px solid #fecaca;
+            padding: 2px 7px;
+            border-radius: 5px;
+            font-size: 11px;
+            color: #7f1d1d;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .veh-damaged-pill .pill-damaged-qty {
+            font-weight: 800;
+            color: #dc2626;
+        }
+        .veh-damaged-pill .pill-damaged-note {
+            font-size: 10px;
+            color: #64748b;
+            font-style: italic;
+        }
+
         /* Order Cards Grid / List */
         .orders-list {
             display: flex;
@@ -2097,6 +2221,9 @@ function buildWhatsAppLink($phone, $shop, $orderNum, $amount, $itemsText = '') {
                             $loadedProds = $vData['loaded_products'] ?? [];
                             $cap = (int)($zv['capacity_cases'] ?? 0);
                             $pct = ($cap > 0) ? min(100, round(($totCases / $cap) * 100)) : null;
+                            $vDamaged = $zoneDamagedSummary[$vId] ?? null;
+                            $vDamagedCases = $vDamaged ? (int)$vDamaged['total_damaged_cases'] : 0;
+                            $vDamagedItems = $vDamaged['items'] ?? [];
                         ?>
                         <div class="vehicle-item-box">
                             <div class="vehicle-item-top">
@@ -2119,9 +2246,43 @@ function buildWhatsAppLink($phone, $shop, $orderNum, $amount, $itemsText = '') {
                                     <?php endif; ?>
                                 </div>
 
-                                <div class="vehicle-load-counter <?= ($totCases <= 0) ? 'counter-empty' : '' ?>" title="Remaining load cases in this vehicle">
-                                    <span class="counter-num"><?= $totCases ?></span>
-                                    <span class="counter-unit">Cases Left</span>
+                                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                                    <?php if ($vDamagedCases > 0): ?>
+                                        <div class="vehicle-damaged-counter" title="Reported damaged items on this vehicle">
+                                            <i class='bx bx-error-circle'></i>
+                                            <span class="counter-num"><?= $vDamagedCases ?></span>
+                                            <span class="counter-unit">Damaged cs</span>
+                                        </div>
+                                    <?php endif; ?>
+
+                                    <div class="vehicle-load-counter <?= ($totCases <= 0) ? 'counter-empty' : '' ?>" title="Remaining load cases in this vehicle">
+                                        <span class="counter-num"><?= $totCases ?></span>
+                                        <span class="counter-unit">Cases Left</span>
+                                    </div>
+
+                                    <?php
+                                    $loadedSummary = [];
+                                    if (!empty($loadedProds)) {
+                                        foreach ($loadedProds as $lp) {
+                                            if (!empty($lp['product_id'])) {
+                                                $loadedSummary[] = [
+                                                    'id'    => (int)$lp['product_id'],
+                                                    'name'  => (string)$lp['product_name'],
+                                                    'cases' => (int)($lp['loaded_cases'] ?? 0)
+                                                ];
+                                            }
+                                        }
+                                    }
+                                    ?>
+                                    <button type="button" 
+                                            class="btn-add-damaged" 
+                                            data-vehicle-id="<?= $vId ?>" 
+                                            data-vehicle-number="<?= htmlspecialchars($zv['vehicle_number'], ENT_QUOTES, 'UTF-8') ?>" 
+                                            data-loaded-json="<?= htmlspecialchars(json_encode($loadedSummary, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP), ENT_QUOTES, 'UTF-8') ?>" 
+                                            onclick="openVehicleDamagedModalFromBtn(this)" 
+                                            title="Report damaged items on this vehicle">
+                                        <i class='bx bx-plus-circle'></i> Add Damaged
+                                    </button>
                                 </div>
                             </div>
 
@@ -2148,6 +2309,21 @@ function buildWhatsAppLink($phone, $shop, $orderNum, $amount, $itemsText = '') {
                                     </span>
                                 <?php endif; ?>
                             </div>
+
+                            <?php if (!empty($vDamagedItems)): ?>
+                                <div class="veh-damaged-breakdown-row">
+                                    <span class="veh-damaged-label"><i class='bx bx-shield-x'></i> Damaged Items:</span>
+                                    <?php foreach ($vDamagedItems as $vdi): ?>
+                                        <span class="veh-damaged-pill" title="Reported: <?= date('d M Y, h:i A', strtotime($vdi['created_at'])) ?><?= !empty($vdi['notes']) ? ' &bull; Note: ' . htmlspecialchars($vdi['notes']) : '' ?>">
+                                            <strong><?= htmlspecialchars($vdi['product_name']) ?></strong>: 
+                                            <span class="pill-damaged-qty"><?= (int)$vdi['damaged_cases'] ?> cs</span>
+                                            <?php if (!empty($vdi['notes'])): ?>
+                                                <span class="pill-damaged-note">(<?= htmlspecialchars($vdi['notes']) ?>)</span>
+                                            <?php endif; ?>
+                                        </span>
+                                    <?php endforeach; ?>
+                                </div>
+                            <?php endif; ?>
                         </div>
                         <?php endforeach; ?>
                     </div>
@@ -2975,6 +3151,84 @@ function buildWhatsAppLink($phone, $shop, $orderNum, $amount, $itemsText = '') {
             };
         })();
 
+        // Vehicle Damaged Items Controller
+        window.allCatalogProducts = <?= json_encode($allProductsList) ?>;
+
+        window.openVehicleDamagedModalFromBtn = function(btn) {
+            if (!btn) return;
+            const vehicleId = btn.getAttribute('data-vehicle-id');
+            const vehicleNumber = btn.getAttribute('data-vehicle-number') || ('Vehicle #' + vehicleId);
+            let loadedProducts = [];
+            try {
+                const raw = btn.getAttribute('data-loaded-json');
+                if (raw) loadedProducts = JSON.parse(raw);
+            } catch (e) {
+                console.error("Error parsing loaded products JSON:", e);
+            }
+            openVehicleDamagedModal(vehicleId, vehicleNumber, loadedProducts);
+        };
+
+        window.openVehicleDamagedModal = function(vehicleId, vehicleNumber, loadedProducts) {
+            const vIdField = document.getElementById('modalDamagedVehId');
+            const vNumField = document.getElementById('modalDamagedVehNum');
+            const casesField = document.getElementById('modalDamagedCases');
+            const notesField = document.getElementById('modalDamagedNotes');
+            const select = document.getElementById('modalDamagedProdSelect');
+
+            if (vIdField) vIdField.value = vehicleId;
+            if (vNumField) vNumField.textContent = vehicleNumber;
+            if (casesField) casesField.value = '1';
+            if (notesField) notesField.value = '';
+
+            if (select) {
+                select.innerHTML = '<option value="">-- Choose Damaged Product --</option>';
+
+                // 1. Prioritize products currently loaded on this vehicle
+                if (Array.isArray(loadedProducts) && loadedProducts.length > 0) {
+                    const loadedGroup = document.createElement('optgroup');
+                    loadedGroup.label = "Currently Loaded on This Vehicle";
+                    loadedProducts.forEach(p => {
+                        if (p && p.id) {
+                            const opt = document.createElement('option');
+                            opt.value = p.id;
+                            opt.textContent = (p.name || 'Product') + ' (' + (p.cases || 0) + ' cs loaded)';
+                            loadedGroup.appendChild(opt);
+                        }
+                    });
+                    select.appendChild(loadedGroup);
+                }
+
+                // 2. All catalog products
+                if (Array.isArray(window.allCatalogProducts) && window.allCatalogProducts.length > 0) {
+                    const allGroup = document.createElement('optgroup');
+                    allGroup.label = "All Products Catalog";
+                    window.allCatalogProducts.forEach(p => {
+                        const opt = document.createElement('option');
+                        opt.value = p.product_id;
+                        opt.textContent = p.name;
+                        allGroup.appendChild(opt);
+                    });
+                    select.appendChild(allGroup);
+                }
+            }
+
+            const modal = document.getElementById('modalVehicleDamaged');
+            if (modal) modal.style.display = 'flex';
+        };
+
+        window.closeVehicleDamagedModal = function() {
+            const modal = document.getElementById('modalVehicleDamaged');
+            if (modal) modal.style.display = 'none';
+        };
+
+        window.submitVehicleDamaged = function(e) {
+            const btn = document.getElementById('btnSubmitDamaged');
+            if (btn) {
+                btn.disabled = true;
+                btn.innerHTML = "<i class='bx bx-loader-alt bx-spin'></i> Saving...";
+            }
+        };
+
         document.addEventListener('DOMContentLoaded', function() {
             const toggleBtn = document.getElementById('toggleMetricsBtn');
             const metricsGrid = document.getElementById('metricsGrid');
@@ -3024,6 +3278,66 @@ function buildWhatsAppLink($phone, $shop, $orderNum, $amount, $itemsText = '') {
                     <button type="button" onclick="closeAssignVehicleModalZone()" style="padding: 9px 16px; border-radius: 8px; border: 1px solid #cbd5e1; background: #fff; color: #475569; font-weight: 700; font-size: 13px; cursor: pointer;">Cancel</button>
                     <button type="submit" id="btnSubmitAssignVeh" style="padding: 9px 18px; border-radius: 8px; border: none; background: #2563eb; color: #fff; font-weight: 700; font-size: 13px; cursor: pointer; display: flex; align-items: center; gap: 6px;">
                         <i class='bx bxs-truck'></i> Assign Vehicle
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal: Record Vehicle Damaged Items -->
+    <div id="modalVehicleDamaged" style="display: none; position: fixed; inset: 0; background: rgba(15, 23, 42, 0.6); backdrop-filter: blur(4px); z-index: 10001; align-items: center; justify-content: center; padding: 16px;">
+        <div style="background: #ffffff; border-radius: 16px; width: 100%; max-width: 480px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.2); overflow: hidden;">
+            <div style="padding: 16px 20px; background: #fef2f2; border-bottom: 1px solid #fee2e2; display: flex; align-items: center; justify-content: space-between;">
+                <div style="font-weight: 800; font-size: 16px; color: #991b1b; display: flex; align-items: center; gap: 8px;">
+                    <i class='bx bx-error-circle' style="color: #dc2626; font-size: 22px;"></i>
+                    <span>Record Damaged Stock on Vehicle</span>
+                </div>
+                <button type="button" onclick="closeVehicleDamagedModal()" style="background: none; border: none; font-size: 24px; color: #94a3b8; cursor: pointer; line-height: 1;">&times;</button>
+            </div>
+            <form id="formVehicleDamaged" method="POST" action="" onsubmit="submitVehicleDamaged(event)" style="padding: 20px;">
+                <input type="hidden" name="record_vehicle_damaged" value="1">
+                <input type="hidden" name="vehicle_id" id="modalDamagedVehId" value="">
+
+                <div style="margin-bottom: 14px; background: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 10px; padding: 10px 14px; display: flex; align-items: center; justify-content: space-between;">
+                    <div>
+                        <div style="font-size: 11px; text-transform: uppercase; font-weight: 700; color: #64748b;">Selected Vehicle</div>
+                        <div id="modalDamagedVehNum" style="font-weight: 800; color: #0f172a; font-size: 15px; margin-top: 2px;"></div>
+                    </div>
+                    <span style="background: #eff6ff; color: #1d4ed8; font-size: 12px; font-weight: 700; padding: 3px 8px; border-radius: 6px;">
+                        <i class='bx bxs-truck'></i> <?= htmlspecialchars($zone_name) ?>
+                    </span>
+                </div>
+
+                <div style="margin-bottom: 16px;">
+                    <label for="modalDamagedProdSelect" style="display: block; font-size: 13px; font-weight: 700; color: #334155; margin-bottom: 6px;">
+                        Select Damaged Product <span style="color: #ef4444;">*</span>
+                    </label>
+                    <select name="product_id" id="modalDamagedProdSelect" required style="width: 100%; padding: 10px 12px; border-radius: 8px; border: 1.5px solid #cbd5e1; font-size: 14px; font-weight: 600; background: #fff;">
+                        <option value="">-- Choose Damaged Product --</option>
+                    </select>
+                </div>
+
+                <div style="margin-bottom: 16px;">
+                    <label for="modalDamagedCases" style="display: block; font-size: 13px; font-weight: 700; color: #334155; margin-bottom: 6px;">
+                        Number of Damaged Cases <span style="color: #ef4444;">*</span>
+                    </label>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <input type="number" name="damaged_cases" id="modalDamagedCases" min="1" max="9999" value="1" required style="width: 120px; padding: 10px 12px; border-radius: 8px; border: 1.5px solid #cbd5e1; font-size: 15px; font-weight: 700; color: #0f172a;">
+                        <span style="font-size: 13px; font-weight: 600; color: #64748b;">Cases (cartons/crates)</span>
+                    </div>
+                </div>
+
+                <div style="margin-bottom: 20px;">
+                    <label for="modalDamagedNotes" style="display: block; font-size: 13px; font-weight: 700; color: #334155; margin-bottom: 6px;">
+                        Reason / Notes (Optional)
+                    </label>
+                    <input type="text" name="notes" id="modalDamagedNotes" placeholder="e.g. Broken seal, bottle leak, crushed during transit" style="width: 100%; padding: 10px 12px; border-radius: 8px; border: 1.5px solid #cbd5e1; font-size: 13px; color: #334155;">
+                </div>
+
+                <div style="display: flex; gap: 10px; justify-content: flex-end;">
+                    <button type="button" onclick="closeVehicleDamagedModal()" style="padding: 10px 16px; border-radius: 8px; border: 1px solid #cbd5e1; background: #fff; color: #475569; font-weight: 700; font-size: 13px; cursor: pointer;">Cancel</button>
+                    <button type="submit" id="btnSubmitDamaged" style="padding: 10px 18px; border-radius: 8px; border: none; background: #dc2626; color: #fff; font-weight: 700; font-size: 13px; cursor: pointer; display: flex; align-items: center; gap: 6px; box-shadow: 0 4px 6px -1px rgba(220, 38, 38, 0.3);">
+                        <i class='bx bx-check-circle'></i> Save Damaged Stock
                     </button>
                 </div>
             </form>
