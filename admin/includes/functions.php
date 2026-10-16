@@ -371,7 +371,7 @@ function getAllShopsList(PDO $pdo): array {
  * @param mixed $filterZone Zone ID (int) or Zone slug (string) or 'all'
  * @return array
  */
-function getAllVehiclesWithLoads(PDO $pdo, $filterZone = null, $dateFilter = 'all'): array {
+function getAllVehiclesWithLoads(PDO $pdo, $filterZone = null, $dateFilter = 'all', $fromDate = '', $toDate = ''): array {
 	try {
 		// Resolve filter zone ID if slug passed
 		$filterZoneId = null;
@@ -457,18 +457,28 @@ function getAllVehiclesWithLoads(PDO $pdo, $filterZone = null, $dateFilter = 'al
 
 		// Date filter condition for delivered orders
 		$dateWhere = "";
-		if ($dateFilter === 'today') {
-			$dateWhere = " AND DATE(COALESCE(o.updated_at, o.created_at)) = CURDATE()";
+		$dateParams = [];
+		if ($dateFilter === 'custom' || (!empty($fromDate) || !empty($toDate))) {
+			if (!empty($fromDate)) {
+				$dateWhere .= " AND DATE(COALESCE(r.created_at, o.updated_at, o.created_at)) >= :from_date";
+				$dateParams[':from_date'] = $fromDate;
+			}
+			if (!empty($toDate)) {
+				$dateWhere .= " AND DATE(COALESCE(r.created_at, o.updated_at, o.created_at)) <= :to_date";
+				$dateParams[':to_date'] = $toDate;
+			}
+		} elseif ($dateFilter === 'today') {
+			$dateWhere = " AND DATE(COALESCE(r.created_at, o.updated_at, o.created_at)) = CURDATE()";
 		} elseif ($dateFilter === 'yesterday') {
-			$dateWhere = " AND DATE(COALESCE(o.updated_at, o.created_at)) = SUBDATE(CURDATE(), 1)";
+			$dateWhere = " AND DATE(COALESCE(r.created_at, o.updated_at, o.created_at)) = SUBDATE(CURDATE(), 1)";
 		} elseif ($dateFilter === 'weekly' || $dateFilter === 'this_week') {
-			$dateWhere = " AND YEARWEEK(COALESCE(o.updated_at, o.created_at), 1) = YEARWEEK(CURDATE(), 1)";
+			$dateWhere = " AND YEARWEEK(COALESCE(r.created_at, o.updated_at, o.created_at), 1) = YEARWEEK(CURDATE(), 1)";
 		} elseif ($dateFilter === 'monthly' || $dateFilter === 'this_month') {
-			$dateWhere = " AND YEAR(COALESCE(o.updated_at, o.created_at)) = YEAR(CURDATE()) AND MONTH(COALESCE(o.updated_at, o.created_at)) = MONTH(CURDATE())";
+			$dateWhere = " AND YEAR(COALESCE(r.created_at, o.updated_at, o.created_at)) = YEAR(CURDATE()) AND MONTH(COALESCE(r.created_at, o.updated_at, o.created_at)) = MONTH(CURDATE())";
 		}
 
-		// Count delivered orders and calculate total cases delivered per vehicle from authoritative orders & order_items
-		$delivStatsStmt = $pdo->query("
+		// Count delivered orders and calculate financials per vehicle
+		$delivStatsSql = "
 			SELECT 
 				o.vehicle_id,
 				COUNT(DISTINCT o.order_id) AS delivered_count,
@@ -478,20 +488,37 @@ function getAllVehiclesWithLoads(PDO $pdo, $filterZone = null, $dateFilter = 'al
 						o.quantity,
 						1
 					)
-				), 0) AS delivered_cases
+				), 0) AS delivered_cases,
+				COALESCE(SUM(COALESCE(r.total_amount, o.total_amount, 0)), 0) AS delivered_amount,
+				COALESCE(SUM(r.cash_amount), 0) AS total_cash,
+				COALESCE(SUM(r.credited_amount), 0) AS total_credit,
+				COALESCE(SUM(r.due_amount), 0) AS total_due
 			FROM orders o
+			LEFT JOIN receipts r ON o.order_id = r.order_id
 			WHERE o.vehicle_id IS NOT NULL 
 			  AND o.status = 'delivered'
 			  {$dateWhere}
 			GROUP BY o.vehicle_id
-		");
-		$delivStatsRows = $delivStatsStmt ? ($delivStatsStmt->fetchAll(PDO::FETCH_ASSOC) ?: []) : [];
+		";
+		$delivStatsStmt = $pdo->prepare($delivStatsSql);
+		$delivStatsStmt->execute($dateParams);
+		$delivStatsRows = $delivStatsStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
 		$delivOrdersMap = [];
 		$delivCasesMap  = [];
+		$delivAmountMap = [];
+		$delivCashMap   = [];
+		$delivCreditMap = [];
+		$delivDueMap    = [];
+
 		foreach ($delivStatsRows as $dsr) {
 			$vid = (int)$dsr['vehicle_id'];
 			$delivOrdersMap[$vid] = (int)$dsr['delivered_count'];
 			$delivCasesMap[$vid]  = (int)$dsr['delivered_cases'];
+			$delivAmountMap[$vid] = (float)$dsr['delivered_amount'];
+			$delivCashMap[$vid]   = (float)$dsr['total_cash'];
+			$delivCreditMap[$vid] = (float)$dsr['total_credit'];
+			$delivDueMap[$vid]    = (float)$dsr['total_due'];
 		}
 
 		// Count assigned active orders per vehicle
@@ -506,6 +533,12 @@ function getAllVehiclesWithLoads(PDO $pdo, $filterZone = null, $dateFilter = 'al
 		$currentZoneTotalCases = 0;
 		$grandTotalCases = 0;
 		$activeVehiclesCount = 0;
+		$fleetTotalCash = 0.0;
+		$fleetTotalCredit = 0.0;
+		$fleetTotalDue = 0.0;
+		$fleetDeliveredAmount = 0.0;
+		$fleetDeliveriesDone = 0;
+		$fleetLoadsDelivered = 0;
 
 		foreach ($vehicles as &$v) {
 			$vId = (int)$v['id'];
@@ -568,14 +601,20 @@ function getAllVehiclesWithLoads(PDO $pdo, $filterZone = null, $dateFilter = 'al
 				$activeVehiclesCount++;
 			}
 
-			// Live delivery statistics from completed delivered orders (respecting date filter)
-			if ($dateFilter !== 'all') {
-				$deliveriesDone = (int)($delivOrdersMap[$vId] ?? 0);
-				$loadsDelivered = (int)($delivCasesMap[$vId] ?? 0);
-			} else {
-				$deliveriesDone = isset($delivOrdersMap[$vId]) ? $delivOrdersMap[$vId] : (int)($v['total_deliveries_done'] ?? 0);
-				$loadsDelivered = isset($delivCasesMap[$vId]) ? $delivCasesMap[$vId] : (int)($v['total_loads_delivered'] ?? 0);
-			}
+			// Delivery stats and financial totals (live, authoritative)
+			$deliveriesDone   = (int)($delivOrdersMap[$vId] ?? 0);
+			$loadsDelivered   = (int)($delivCasesMap[$vId] ?? 0);
+			$totalDelivAmount = (float)($delivAmountMap[$vId] ?? 0.0);
+			$totalCash        = (float)($delivCashMap[$vId] ?? 0.0);
+			$totalCredit      = (float)($delivCreditMap[$vId] ?? 0.0);
+			$totalDue         = (float)($delivDueMap[$vId] ?? 0.0);
+
+			$fleetDeliveriesDone  += $deliveriesDone;
+			$fleetLoadsDelivered  += $loadsDelivered;
+			$fleetTotalCash       += $totalCash;
+			$fleetTotalCredit     += $totalCredit;
+			$fleetTotalDue        += $totalDue;
+			$fleetDeliveredAmount += $totalDelivAmount;
 
 			$v['total_cases_loaded']        = $totalLoaded;
 			$v['current_zone_cases']        = $currentZoneCases;
@@ -589,6 +628,10 @@ function getAllVehiclesWithLoads(PDO $pdo, $filterZone = null, $dateFilter = 'al
 			$v['deliveries_done']           = $deliveriesDone;
 			$v['loads_delivered']           = $loadsDelivered;
 			$v['loads_taken_to_delivery']   = $loadsDelivered;
+			$v['total_delivered_amount']    = $totalDelivAmount;
+			$v['total_cash']                = $totalCash;
+			$v['total_credit']              = $totalCredit;
+			$v['total_due']                 = $totalDue;
 		}
 		unset($v);
 
@@ -600,7 +643,13 @@ function getAllVehiclesWithLoads(PDO $pdo, $filterZone = null, $dateFilter = 'al
 				'active_vehicles'          => $activeVehiclesCount,
 				'current_zone_cases_total' => $currentZoneTotalCases,
 				'grand_total_cases'        => $grandTotalCases,
-				'filter_zone_id'           => $filterZoneId
+				'filter_zone_id'           => $filterZoneId,
+				'fleet_deliveries_done'    => $fleetDeliveriesDone,
+				'fleet_loads_delivered'    => $fleetLoadsDelivered,
+				'fleet_total_cash'         => $fleetTotalCash,
+				'fleet_total_credit'       => $fleetTotalCredit,
+				'fleet_total_due'          => $fleetTotalDue,
+				'fleet_delivered_amount'   => $fleetDeliveredAmount
 			]
 		];
 	} catch (Exception $e) {
@@ -613,9 +662,166 @@ function getAllVehiclesWithLoads(PDO $pdo, $filterZone = null, $dateFilter = 'al
 				'active_vehicles'          => 0,
 				'current_zone_cases_total' => 0,
 				'grand_total_cases'        => 0,
-				'filter_zone_id'           => null
+				'filter_zone_id'           => null,
+				'fleet_deliveries_done'    => 0,
+				'fleet_loads_delivered'    => 0,
+				'fleet_total_cash'         => 0,
+				'fleet_total_credit'       => 0,
+				'fleet_total_due'          => 0,
+				'fleet_delivered_amount'   => 0
 			]
 		];
+	}
+}
+
+/**
+ * Retrieve comprehensive delivery history and financials for a single vehicle.
+ *
+ * @param PDO $pdo
+ * @param int $vehicleId
+ * @param string $dateFilter 'all', 'today', 'yesterday', 'weekly', 'monthly', 'custom'
+ * @param string $fromDate YYYY-MM-DD
+ * @param string $toDate YYYY-MM-DD
+ * @param string $search Shop name, customer name, phone, bill number, or order number
+ * @return array
+ */
+function getVehicleDeliveredOrdersDetails(PDO $pdo, int $vehicleId, string $dateFilter = 'all', string $fromDate = '', string $toDate = '', string $search = ''): array {
+	try {
+		$vStmt = $pdo->prepare("
+			SELECT v.*, z.name AS home_zone_name, z.slug AS home_zone_slug
+			FROM vehicles v
+			LEFT JOIN zones z ON v.zone_id = z.id
+			WHERE v.id = ?
+			LIMIT 1
+		");
+		$vStmt->execute([$vehicleId]);
+		$vehicle = $vStmt->fetch(PDO::FETCH_ASSOC);
+		if (!$vehicle) {
+			return ['success' => false, 'error' => 'Vehicle not found'];
+		}
+
+		$dateWhere = "";
+		$params = [':vehicle_id' => $vehicleId];
+
+		if ($dateFilter === 'custom' || (!empty($fromDate) || !empty($toDate))) {
+			if (!empty($fromDate)) {
+				$dateWhere .= " AND DATE(COALESCE(r.created_at, o.updated_at, o.created_at)) >= :from_date";
+				$params[':from_date'] = $fromDate;
+			}
+			if (!empty($toDate)) {
+				$dateWhere .= " AND DATE(COALESCE(r.created_at, o.updated_at, o.created_at)) <= :to_date";
+				$params[':to_date'] = $toDate;
+			}
+		} elseif ($dateFilter === 'today') {
+			$dateWhere = " AND DATE(COALESCE(r.created_at, o.updated_at, o.created_at)) = CURDATE()";
+		} elseif ($dateFilter === 'yesterday') {
+			$dateWhere = " AND DATE(COALESCE(r.created_at, o.updated_at, o.created_at)) = SUBDATE(CURDATE(), 1)";
+		} elseif ($dateFilter === 'weekly' || $dateFilter === 'this_week') {
+			$dateWhere = " AND YEARWEEK(COALESCE(r.created_at, o.updated_at, o.created_at), 1) = YEARWEEK(CURDATE(), 1)";
+		} elseif ($dateFilter === 'monthly' || $dateFilter === 'this_month') {
+			$dateWhere = " AND YEAR(COALESCE(r.created_at, o.updated_at, o.created_at)) = YEAR(CURDATE()) AND MONTH(COALESCE(r.created_at, o.updated_at, o.created_at)) = MONTH(CURDATE())";
+		}
+
+		$search = trim($search);
+		if ($search !== '') {
+			$dateWhere .= " AND (o.shop_name LIKE :search1 OR o.customer_name LIKE :search2 OR o.phone LIKE :search3 OR r.bill_number LIKE :search4 OR o.order_number LIKE :search5)";
+			$term = '%' . $search . '%';
+			$params[':search1'] = $term;
+			$params[':search2'] = $term;
+			$params[':search3'] = $term;
+			$params[':search4'] = $term;
+			$params[':search5'] = $term;
+		}
+
+		$ordStmt = $pdo->prepare("
+			SELECT 
+				o.order_id,
+				o.order_number,
+				o.shop_name,
+				o.customer_name,
+				o.phone,
+				o.location,
+				o.address,
+				o.total_amount,
+				o.payment_method,
+				o.payment_status,
+				o.created_at as order_created_at,
+				o.updated_at as order_updated_at,
+				z.name as zone_name,
+				r.bill_number,
+				COALESCE(r.cash_amount, 0) as cash_amount,
+				COALESCE(r.credited_amount, 0) as credited_amount,
+				COALESCE(r.due_amount, 0) as due_amount,
+				r.payment_type,
+				COALESCE(r.created_at, o.updated_at, o.created_at) as delivered_at,
+				(SELECT COUNT(*) FROM order_items oi WHERE oi.order_id = o.order_id) as items_count,
+				COALESCE(
+					(SELECT SUM(quantity) FROM order_items oi WHERE oi.order_id = o.order_id),
+					o.quantity,
+					1
+				) as total_cases,
+				(SELECT GROUP_CONCAT(CONCAT(COALESCE(p.product_name, p.name), ' (', oi.quantity, ' cs)') SEPARATOR ', ')
+				 FROM order_items oi
+				 JOIN products p ON oi.product_id = p.product_id
+				 WHERE oi.order_id = o.order_id) as items_detail
+			FROM orders o
+			LEFT JOIN receipts r ON o.order_id = r.order_id
+			LEFT JOIN zones z ON o.zone_id = z.id
+			WHERE o.vehicle_id = :vehicle_id 
+			  AND o.status = 'delivered'
+			  {$dateWhere}
+			ORDER BY COALESCE(r.created_at, o.updated_at, o.created_at) DESC
+		");
+		$ordStmt->execute($params);
+		$orders = $ordStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+		$totalCases  = 0;
+		$totalSales  = 0.0;
+		$totalCash   = 0.0;
+		$totalCredit = 0.0;
+		$totalDue    = 0.0;
+
+		foreach ($orders as &$ord) {
+			$c = (int)$ord['total_cases'];
+			$s = (float)$ord['total_amount'];
+			$ca = (float)$ord['cash_amount'];
+			$cr = (float)$ord['credited_amount'];
+			$d = (float)$ord['due_amount'];
+
+			$totalCases  += $c;
+			$totalSales  += $s;
+			$totalCash   += $ca;
+			$totalCredit += $cr;
+			$totalDue    += $d;
+
+			$ord['formatted_date']   = date('d M Y, h:i A', strtotime($ord['delivered_at']));
+			$ord['formatted_total']  = '₹' . number_format($s, 2);
+			$ord['formatted_cash']   = '₹' . number_format($ca, 2);
+			$ord['formatted_credit'] = '₹' . number_format($cr, 2);
+			$ord['formatted_due']    = '₹' . number_format($d, 2);
+		}
+		unset($ord);
+
+		return [
+			'success' => true,
+			'vehicle' => $vehicle,
+			'summary' => [
+				'total_orders'     => count($orders),
+				'total_cases'      => $totalCases,
+				'total_sales'      => $totalSales,
+				'total_cash'       => $totalCash,
+				'total_credit'     => $totalCredit,
+				'total_due'        => $totalDue,
+				'formatted_sales'  => '₹' . number_format($totalSales, 2),
+				'formatted_cash'   => '₹' . number_format($totalCash, 2),
+				'formatted_credit' => '₹' . number_format($totalCredit, 2),
+				'formatted_due'    => '₹' . number_format($totalDue, 2),
+			],
+			'orders' => $orders
+		];
+	} catch (Exception $e) {
+		error_log("Error in getVehicleDeliveredOrdersDetails: " . $e->getMessage());
+		return ['success' => false, 'error' => $e->getMessage()];
 	}
 }
 

@@ -5,6 +5,14 @@ require_once __DIR__ . '/zone_context.php';
 $msg = '';
 $msg_type = 'success';
 
+if (!empty($_SESSION['zone_portal_flash'])) {
+    $msg = $_SESSION['zone_portal_flash']['msg'] ?? '';
+    $msg_type = $_SESSION['zone_portal_flash']['msg_type'] ?? 'success';
+    unset($_SESSION['zone_portal_flash']);
+}
+
+$isAjax = (!empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest') || isset($_GET['ajax']);
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_status'])) {
     $order_id = (int)($_POST['order_id'] ?? 0);
     $new_status = $_POST['status'] ?? '';
@@ -31,6 +39,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_status'])) {
                 }
             }
         }
+    }
+    if (!$isAjax) {
+        $_SESSION['zone_portal_flash'] = ['msg' => $msg, 'msg_type' => $msg_type];
+        $redirectUrl = zone_url($zone_slug) . (!empty($_SERVER['QUERY_STRING']) ? '?' . $_SERVER['QUERY_STRING'] : '');
+        header("Location: " . $redirectUrl);
+        exit;
+    }
+}
+
+// Handle quick vehicle assignment from zone portal
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['assign_vehicle'])) {
+    $order_id = (int)($_POST['order_id'] ?? 0);
+    $vehicle_id = (int)($_POST['vehicle_id'] ?? 0);
+    if ($order_id > 0) {
+        if ($vehicle_id > 0) {
+            $res = assignOrderToVehicle($pdo, $order_id, $vehicle_id);
+            if (!empty($res['success'])) {
+                $msg = "Vehicle assigned successfully.";
+            } else {
+                $msg = $res['error'] ?? "Failed to assign vehicle.";
+                $msg_type = 'error';
+            }
+        } else {
+            unassignOrderFromVehicle($pdo, $order_id);
+            $msg = "Vehicle unassigned from order.";
+        }
+    }
+    if (!$isAjax) {
+        $_SESSION['zone_portal_flash'] = ['msg' => $msg, 'msg_type' => $msg_type];
+        $redirectUrl = zone_url($zone_slug) . (!empty($_SERVER['QUERY_STRING']) ? '?' . $_SERVER['QUERY_STRING'] : '');
+        header("Location: " . $redirectUrl);
+        exit;
     }
 }
 
@@ -1983,6 +2023,10 @@ function buildWhatsAppLink($phone, $shop, $orderNum, $amount, $itemsText = '') {
                                         <span class="veh-cases-chip"><?= $nvCases ?> cs left</span>
                                     <?php endif; ?>
                                 </span>
+                            <?php else: ?>
+                                <span class="order-veh-badge badge-veh-unassigned" style="font-size: 10px; padding: 2px 6px; border-radius: 5px; margin-left: 6px; background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; font-weight: 700;" title="No vehicle assigned to this order yet">
+                                    <i class='bx bx-error-circle' style="color: #ef4444;"></i> Vehicle is not assigned
+                                </span>
                             <?php endif; ?>
                         </div>
                         <div class="notif-meta">
@@ -2006,9 +2050,15 @@ function buildWhatsAppLink($phone, $shop, $orderNum, $amount, $itemsText = '') {
                         <a href="<?= zone_url($zone_slug, 'order', ['id' => $nOrdId]) ?>" class="btn-card-action btn-card-secondary" style="padding: 6px 12px; font-size: 12px; min-height: 36px;">
                             View Order
                         </a>
-                        <a href="<?= zone_url($zone_slug, 'generate-receipt', ['order_id' => $nOrdId]) ?>" class="btn-card-action btn-deliver-primary" style="padding: 6px 14px; font-size: 12px; min-height: 36px;">
-                            <i class='bx bx-receipt'></i> Deliver &amp; Bill
-                        </a>
+                        <?php if (empty($notif['assigned_vehicle_number'])): ?>
+                            <button type="button" class="btn-card-action btn-card-unassigned-veh" onclick="openAssignVehicleModalZone(<?= $nOrdId ?>, <?= htmlspecialchars(json_encode($nShop), ENT_QUOTES, 'UTF-8') ?>, <?= htmlspecialchars(json_encode((string)$nOrdNum), ENT_QUOTES, 'UTF-8') ?>)" style="padding: 6px 14px; font-size: 12px; min-height: 36px; background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; font-weight: 700;" title="Assign Vehicle to Bill">
+                                <i class='bx bxs-truck'></i> Assign Vehicle
+                            </button>
+                        <?php else: ?>
+                            <a href="<?= zone_url($zone_slug, 'generate-receipt', ['order_id' => $nOrdId]) ?>" class="btn-card-action btn-deliver-primary" style="padding: 6px 14px; font-size: 12px; min-height: 36px;">
+                                <i class='bx bx-receipt'></i> Deliver &amp; Bill
+                            </a>
+                        <?php endif; ?>
                     </div>
                 </div>
                 <?php endforeach; ?>
@@ -2343,6 +2393,11 @@ function buildWhatsAppLink($phone, $shop, $orderNum, $amount, $itemsText = '') {
                                             <span class="veh-cases-chip"><?= $ovCases ?> cs left</span>
                                         <?php endif; ?>
                                     </span>
+                                <?php else: ?>
+                                    <span class="order-veh-badge badge-veh-unassigned" style="background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; font-weight: 700;" title="No vehicle assigned to this order yet">
+                                        <i class='bx bx-error-circle' style="color: #ef4444;"></i>
+                                        <span>Vehicle is not assigned</span>
+                                    </span>
                                 <?php endif; ?>
                                 <?php if ((int)$order['is_zone_read'] === 0): ?>
                                     <span class="badge-unread-chip" id="unread-tag-<?= $ordId ?>" title="Not yet checked by zone staff">
@@ -2437,10 +2492,17 @@ function buildWhatsAppLink($phone, $shop, $orderNum, $amount, $itemsText = '') {
     <!-- Row of 3 buttons: (Bill/Receipt), Details, and Discount -->
     <div class="action-btn-group">
         <?php if (!$hasReceipt): ?>
-            <a href="<?= zone_url($zone_slug, 'generate-receipt', ['order_id' => $ordId]) ?>" class="btn-card-action btn-deliver-primary">
-                <i class='bx bx-receipt' style="font-size: 18px;"></i> 
-                <span><?= $hasReceipt ? 'View' : 'Bill' ?></span>
-            </a>
+            <?php if (empty($order['assigned_vehicle_number'])): ?>
+                <!-- <button type="button" class="btn-card-action btn-card-unassigned-veh" onclick="openAssignVehicleModalZone(<?= $ordId ?>, <?= htmlspecialchars(json_encode($shop), ENT_QUOTES, 'UTF-8') ?>, <?= htmlspecialchars(json_encode((string)$ordNum), ENT_QUOTES, 'UTF-8') ?>)" style="background: #fef2f2; color: #b91c1c; border-color: #fecaca; font-weight: 700;" title="Assign Vehicle to Bill">
+                    <i class='bx bxs-truck' style="font-size: 18px;"></i> 
+                    <span>Assign Vehicle</span>
+                </button> -->
+            <?php else: ?>
+                <a href="<?= zone_url($zone_slug, 'generate-receipt', ['order_id' => $ordId]) ?>" class="btn-card-action btn-deliver-primary">
+                    <i class='bx bx-receipt' style="font-size: 18px;"></i> 
+                    <span><?= $hasReceipt ? 'View' : 'Bill' ?></span>
+                </a>
+            <?php endif; ?>
         <?php else: ?>
             <a href="<?= zone_url($zone_slug, 'receipt', ['id' => $ordId]) ?>" target="_blank" class="btn-card-action btn-receipt-view">
                 <i class='bx bx-printer' style="font-size: 17px;"></i> 
@@ -2851,19 +2913,121 @@ function buildWhatsAppLink($phone, $shop, $orderNum, $amount, $itemsText = '') {
                     }
                 });
             };
-        })();
-        document.addEventListener('DOMContentLoaded', function() {
-    const toggleBtn = document.getElementById('toggleMetricsBtn');
-    const metricsGrid = document.getElementById('metricsGrid');
 
-    if (toggleBtn && metricsGrid) {
-        toggleBtn.addEventListener('click', function() {
-            const isOpen = metricsGrid.classList.toggle('show-mobile');
-            toggleBtn.classList.toggle('is-open', isOpen);
-            toggleBtn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+            window.openAssignVehicleModalZone = function(orderId, shopName, orderNum) {
+                const modal = document.getElementById('modalAssignVehicleZone');
+                const ordInput = document.getElementById('modalVehOrderId');
+                const infoDiv = document.getElementById('modalVehOrderInfo');
+                const select = document.getElementById('modalVehSelect');
+                if (!modal) return;
+                ordInput.value = orderId;
+                infoDiv.textContent = `${orderNum ? orderNum : '#' + orderId} — ${shopName}`;
+                if (select) select.value = '';
+                modal.style.display = 'flex';
+            };
+
+            window.closeAssignVehicleModalZone = function() {
+                const modal = document.getElementById('modalAssignVehicleZone');
+                if (modal) modal.style.display = 'none';
+            };
+
+            window.submitAssignVehicleZone = function(e) {
+                e.preventDefault();
+                const orderId = document.getElementById('modalVehOrderId').value;
+                const vehicleId = document.getElementById('modalVehSelect').value;
+                const btn = document.getElementById('btnSubmitAssignVeh');
+                if (!orderId || !vehicleId) {
+                    alert('Please select a vehicle.');
+                    return;
+                }
+                if (btn) {
+                    btn.disabled = true;
+                    btn.innerHTML = "<i class='bx bx-loader-alt bx-spin'></i> Assigning...";
+                }
+                const fd = new FormData();
+                fd.append('action', 'assign_vehicle');
+                fd.append('order_id', orderId);
+                fd.append('vehicle_id', vehicleId);
+
+                fetch(pollUrl, { method: 'POST', body: fd })
+                    .then(r => r.json())
+                    .then(res => {
+                        if (btn) {
+                            btn.disabled = false;
+                            btn.innerHTML = "<i class='bx bxs-truck'></i> Assign Vehicle";
+                        }
+                        if (res.success) {
+                            closeAssignVehicleModalZone();
+                            showToast('Vehicle Assigned', res.message || 'Vehicle assigned successfully.', null, 'bxs-truck');
+                            setTimeout(refreshZonePage, 300);
+                        } else {
+                            alert(res.error || 'Failed to assign vehicle.');
+                        }
+                    })
+                    .catch(err => {
+                        if (btn) {
+                            btn.disabled = false;
+                            btn.innerHTML = "<i class='bx bxs-truck'></i> Assign Vehicle";
+                        }
+                        console.error('Assign vehicle error:', err);
+                        alert('Could not assign vehicle. Please try again.');
+                    });
+            };
+        })();
+
+        document.addEventListener('DOMContentLoaded', function() {
+            const toggleBtn = document.getElementById('toggleMetricsBtn');
+            const metricsGrid = document.getElementById('metricsGrid');
+
+            if (toggleBtn && metricsGrid) {
+                toggleBtn.addEventListener('click', function() {
+                    const isOpen = metricsGrid.classList.toggle('show-mobile');
+                    toggleBtn.classList.toggle('is-open', isOpen);
+                    toggleBtn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+                });
+            }
         });
-    }
-});
     </script>
+
+    <!-- Modal: Quick Vehicle Assignment -->
+    <div id="modalAssignVehicleZone" style="display: none; position: fixed; inset: 0; background: rgba(15, 23, 42, 0.6); backdrop-filter: blur(4px); z-index: 10000; align-items: center; justify-content: center; padding: 16px;">
+        <div style="background: #ffffff; border-radius: 16px; width: 100%; max-width: 440px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.2); overflow: hidden;">
+            <div style="padding: 16px 20px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; display: flex; align-items: center; justify-content: space-between;">
+                <div style="font-weight: 800; font-size: 16px; color: #0f172a; display: flex; align-items: center; gap: 8px;">
+                    <i class='bx bxs-truck' style="color: #2563eb; font-size: 20px;"></i>
+                    <span>Assign Vehicle to Order</span>
+                </div>
+                <button type="button" onclick="closeAssignVehicleModalZone()" style="background: none; border: none; font-size: 24px; color: #64748b; cursor: pointer; line-height: 1;">&times;</button>
+            </div>
+            <form id="formAssignVehicleZone" onsubmit="submitAssignVehicleZone(event)" style="padding: 20px;">
+                <input type="hidden" name="order_id" id="modalVehOrderId" value="">
+                <div style="margin-bottom: 14px; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 10px; padding: 10px 14px;">
+                    <div style="font-size: 11px; text-transform: uppercase; font-weight: 700; color: #1e40af;">Order Details</div>
+                    <div id="modalVehOrderInfo" style="font-weight: 700; color: #1e293b; font-size: 14px; margin-top: 2px;"></div>
+                </div>
+                <div style="margin-bottom: 18px;">
+                    <label for="modalVehSelect" style="display: block; font-size: 13px; font-weight: 700; color: #334155; margin-bottom: 6px;">
+                        Select Delivery Vehicle <span style="color: #ef4444;">*</span>
+                    </label>
+                    <select name="vehicle_id" id="modalVehSelect" required style="width: 100%; padding: 10px 12px; border-radius: 8px; border: 1.5px solid #cbd5e1; font-size: 14px; font-weight: 600; background: #fff;">
+                        <option value="">-- Choose a Vehicle --</option>
+                        <?php foreach ($zoneVehicles as $zv): 
+                            $zvLoad = $vehiclesLoadMap[(int)$zv['id']]['total_cases'] ?? 0;
+                        ?>
+                            <option value="<?= (int)$zv['id'] ?>">
+                                <?= htmlspecialchars($zv['vehicle_number']) ?><?= !empty($zv['vehicle_name']) ? ' (' . htmlspecialchars($zv['vehicle_name']) . ')' : '' ?> &bull; <?= (int)$zvLoad ?> cs loaded
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div style="display: flex; gap: 10px; justify-content: flex-end;">
+                    <button type="button" onclick="closeAssignVehicleModalZone()" style="padding: 9px 16px; border-radius: 8px; border: 1px solid #cbd5e1; background: #fff; color: #475569; font-weight: 700; font-size: 13px; cursor: pointer;">Cancel</button>
+                    <button type="submit" id="btnSubmitAssignVeh" style="padding: 9px 18px; border-radius: 8px; border: none; background: #2563eb; color: #fff; font-weight: 700; font-size: 13px; cursor: pointer; display: flex; align-items: center; gap: 6px;">
+                        <i class='bx bxs-truck'></i> Assign Vehicle
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
 </body>
 </html>

@@ -1759,7 +1759,10 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
                         <?php if (!empty($order['assigned_vehicle_number'])): ?>
                             <div class="assigned-veh-info-strip" style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 8px 12px; margin-bottom: 12px; font-size: 12px;">
                                 <div style="display: flex; align-items: center; justify-content: space-between; gap: 6px;">
-                                  
+                                    <span style="font-weight: 700; color: #1e40af; display: inline-flex; align-items: center; gap: 5px;">
+                                        <i class='bx bxs-truck' style="color: #2563eb; font-size: 15px;"></i>
+                                        <span><?= htmlspecialchars($order['assigned_vehicle_number']) ?><?= !empty($order['assigned_vehicle_name']) ? ' (' . htmlspecialchars($order['assigned_vehicle_name']) . ')' : '' ?></span>
+                                    </span>
                                     <a href="<?= BASE_URL ?>/zone/orders/dashboard/vehicles/?search=<?= urlencode($order['assigned_vehicle_number']) ?>" target="_blank" style="font-size: 11px; color: #2563eb; text-decoration: none; font-weight: 700; display: inline-flex; align-items: center; gap: 2px;">
                                         <span>View Vehicle</span> <i class='bx bx-right-arrow-alt'></i>
                                     </a>
@@ -1770,6 +1773,15 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
                                         <div><strong>Vehicle Stock:</strong> <?= htmlspecialchars($order['vehicle_buffer_stock']) ?></div>
                                     </div>
                                 <?php endif; ?>
+                            </div>
+                        <?php else: ?>
+                            <div class="assigned-veh-info-strip" style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 7px 12px; margin-bottom: 12px; font-size: 12px; color: #b91c1c; display: flex; align-items: center; justify-content: space-between;">
+                                <span style="font-weight: 700; display: inline-flex; align-items: center; gap: 5px;">
+                                    <i class='bx bx-error-circle' style="font-size: 15px; color: #ef4444;"></i> Vehicle is not assigned
+                                </span>
+                                <button type="button" onclick="promptAssignVehicle(<?= $orderId ?>)" style="background: none; border: none; color: #b91c1c; font-weight: 800; font-size: 11px; cursor: pointer; text-decoration: underline;">
+                                    Assign Now &rarr;
+                                </button>
                             </div>
                         <?php endif; ?>
 
@@ -1821,10 +1833,16 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
                                 </button> -->
 
                                 <?php if (!empty($order['zone_slug'])): ?>
-                                    <a href="<?= BASE_URL ?>/zone/generate-receipt.php?zone=<?= urlencode($order['zone_slug']) ?>&order_id=<?= $orderId ?>" 
-                                       target="_blank" class="btn-card-action btn-card-primary" title="Receipt">
-                                        <i class='bx bx-receipt'></i> Bill
-                                    </a>
+                                    <?php if (empty($order['vehicle_id']) || (int)$order['vehicle_id'] <= 0): ?>
+                                        <!-- <button type="button" class="btn-card-action btn-card-unassigned-veh" id="btnBill_<?= $orderId ?>" data-zoneslug="<?= htmlspecialchars($order['zone_slug'] ?? '') ?>" onclick="promptAssignVehicle(<?= $orderId ?>)" style="background: #fef2f2; color: #b91c1c; border-color: #fecaca; font-weight: 700;" title="Assign Vehicle to Bill">
+                                            <i class='bx bxs-truck'></i> Assign Vehicle
+                                        </button> -->
+                                    <?php else: ?>
+                                        <a href="<?= BASE_URL ?>/zone/generate-receipt.php?zone=<?= urlencode($order['zone_slug']) ?>&order_id=<?= $orderId ?>" 
+                                           target="_blank" class="btn-card-action btn-card-primary" id="btnBill_<?= $orderId ?>" data-zoneslug="<?= htmlspecialchars($order['zone_slug'] ?? '') ?>" title="Receipt">
+                                            <i class='bx bx-receipt'></i> Bill
+                                        </a>
+                                    <?php endif; ?>
                                 <?php endif; ?>
 
                                 <?php if ($isUnread): ?>
@@ -2323,6 +2341,24 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
             };
 
             // 1b. Assign / Unassign Order to Vehicle via AJAX
+            window.promptAssignVehicle = function(orderId) {
+                const parsedId = parseInt(orderId || 0);
+                if (!parsedId) return;
+                const selectElem = document.getElementById('orderVehSelect_' + parsedId);
+                if (selectElem) {
+                    selectElem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                    selectElem.focus();
+                    selectElem.style.transition = 'all 0.2s ease';
+                    selectElem.style.boxShadow = '0 0 0 4px rgba(239, 68, 68, 0.4)';
+                    selectElem.style.borderColor = '#ef4444';
+                    setTimeout(() => {
+                        selectElem.style.boxShadow = '';
+                        selectElem.style.borderColor = '#cbd5e1';
+                    }, 2500);
+                }
+                showToast('Vehicle Assignment Required', 'Please assign a vehicle to this order before generating the delivery bill.');
+            };
+
             window.assignOrderToVehicleFromCard = function(orderId, vehicleId) {
                 const parsedId = parseInt(orderId || 0);
                 if (!parsedId || parsedId <= 0) {
@@ -2347,6 +2383,35 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
                         if (selectElem) selectElem.disabled = false;
                         if (res.success) {
                             showToast('Vehicle Assigned', res.message || 'Vehicle assignment updated successfully.');
+                            
+                            // Immediately toggle Bill button state on the card
+                            const billBtn = document.getElementById('btnBill_' + parsedId);
+                            if (billBtn) {
+                                const zoneSlug = billBtn.getAttribute('data-zoneslug') || '';
+                                if (vehicleId && parseInt(vehicleId) > 0) {
+                                    const newLink = document.createElement('a');
+                                    newLink.href = `${BASE_URL}/zone/generate-receipt.php?zone=${encodeURIComponent(zoneSlug)}&order_id=${parsedId}`;
+                                    newLink.target = '_blank';
+                                    newLink.className = 'btn-card-action btn-card-primary';
+                                    newLink.id = 'btnBill_' + parsedId;
+                                    newLink.setAttribute('data-zoneslug', zoneSlug);
+                                    newLink.title = 'Receipt';
+                                    newLink.innerHTML = "<i class='bx bx-receipt'></i> Bill";
+                                    billBtn.replaceWith(newLink);
+                                } else {
+                                    const newBtn = document.createElement('button');
+                                    newBtn.type = 'button';
+                                    newBtn.className = 'btn-card-action btn-card-unassigned-veh';
+                                    newBtn.id = 'btnBill_' + parsedId;
+                                    newBtn.setAttribute('data-zoneslug', zoneSlug);
+                                    newBtn.onclick = function() { promptAssignVehicle(parsedId); };
+                                    newBtn.style.cssText = 'background: #fef2f2; color: #b91c1c; border-color: #fecaca; font-weight: 700;';
+                                    newBtn.title = 'Assign Vehicle to Bill';
+                                    newBtn.innerHTML = "<i class='bx bxs-truck'></i> Assign Vehicle";
+                                    billBtn.replaceWith(newBtn);
+                                }
+                            }
+
                             if (typeof refreshVehiclesData === 'function') refreshVehiclesData();
                             setTimeout(pollOrders, 300);
                         } else {
@@ -2499,11 +2564,17 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
                                 ` : ''}
 
                                 <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:20px;">
-                                    ${o.zone_slug ? `
-                                        <a href="${BASE_URL}/zone/generate-receipt.php?zone=${encodeURIComponent(o.zone_slug)}&order_id=${o.order_id}" target="_blank" class="btn-card-action btn-card-primary" style="padding:8px 16px;">
-                                            <i class='bx bx-receipt'></i> Generate / View Receipt
-                                        </a>
-                                    ` : ''}
+                                    ${o.zone_slug ? (
+                                        (!o.vehicle_id || parseInt(o.vehicle_id) <= 0) ? `
+                                            <button type="button" class="btn-card-action" onclick="closeOrderModal(); promptAssignVehicle(${o.order_id});" style="background:#fef2f2; color:#b91c1c; border:1px solid #fecaca; font-weight:700; padding:8px 16px;" title="Assign Vehicle to Bill">
+                                                <i class='bx bxs-truck'></i> Assign Vehicle to Bill
+                                            </button>
+                                        ` : `
+                                            <a href="${BASE_URL}/zone/generate-receipt.php?zone=${encodeURIComponent(o.zone_slug)}&order_id=${o.order_id}" target="_blank" class="btn-card-action btn-card-primary" style="padding:8px 16px;">
+                                                <i class='bx bx-receipt'></i> Generate / View Receipt
+                                            </a>
+                                        `
+                                    ) : ''}
                                     <button type="button" class="btn-card-action" onclick="closeOrderModal()" style="padding:8px 16px;">Close</button>
                                 </div>
                             </div>

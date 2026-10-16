@@ -68,10 +68,104 @@ $rewardThreshold = (int)getSystemSetting($pdo, 'reward_threshold', 10);
 if ($rewardThreshold <= 0) $rewardThreshold = 10;
 
 // Filters
-$tabFilter = trim($_GET['tab'] ?? 'all');
-$search = trim($_GET['search'] ?? '');
+$tabFilter  = trim($_GET['tab'] ?? 'all');
+$search     = trim($_GET['search'] ?? '');
+$filterDate = trim($_GET['date'] ?? 'all');
+$fromDate   = trim($_GET['from_date'] ?? '');
+$toDate     = trim($_GET['to_date'] ?? '');
 
-// Fetch all distinct shops with delivery orders stats
+$validDate = function ($date) {
+    if (empty($date)) return false;
+    $d = DateTime::createFromFormat('!Y-m-d', $date);
+    return $d && $d->format('Y-m-d') === $date;
+};
+
+if (($fromDate !== '' && $validDate($fromDate)) || ($toDate !== '' && $validDate($toDate))) {
+    $filterDate = 'custom';
+}
+if (!in_array($filterDate, ['all', 'today', 'yesterday', 'weekly', 'this_week', 'monthly', 'this_month', 'custom'])) {
+    $filterDate = 'all';
+}
+
+if ($filterDate === 'custom') {
+    if (!empty($fromDate) && !empty($toDate)) {
+        $currentDateLabel = date('d M Y', strtotime($fromDate)) . ' to ' . date('d M Y', strtotime($toDate));
+    } elseif (!empty($fromDate)) {
+        $currentDateLabel = 'From ' . date('d M Y', strtotime($fromDate));
+    } else {
+        $currentDateLabel = 'Up to ' . date('d M Y', strtotime($toDate));
+    }
+} else {
+    $dateLabels = [
+        'all'        => 'All Time',
+        'today'      => 'Today (Daily)',
+        'yesterday'  => 'Yesterday (Daily)',
+        'weekly'     => 'This Week',
+        'this_week'  => 'This Week',
+        'monthly'    => 'This Month (Monthly)',
+        'this_month' => 'This Month (Monthly)'
+    ];
+    $currentDateLabel = $dateLabels[$filterDate] ?? 'All Time';
+}
+
+// Function to generate period date condition with unique parameter names to prevent PDO reuse errors
+function buildPeriodDateCondition(string $filterDate, string $fromDate, string $toDate, string $suffix, array &$params): string {
+    if ($filterDate === 'custom' || (!empty($fromDate) || !empty($toDate))) {
+        if (!empty($fromDate) && !empty($toDate)) {
+            $params[":from_{$suffix}"] = $fromDate;
+            $params[":to_{$suffix}"]   = $toDate;
+            return "DATE(COALESCE(r.created_at, o.updated_at, o.created_at)) >= :from_{$suffix} AND DATE(COALESCE(r.created_at, o.updated_at, o.created_at)) <= :to_{$suffix}";
+        } elseif (!empty($fromDate)) {
+            $params[":from_{$suffix}"] = $fromDate;
+            return "DATE(COALESCE(r.created_at, o.updated_at, o.created_at)) >= :from_{$suffix}";
+        } elseif (!empty($toDate)) {
+            $params[":to_{$suffix}"] = $toDate;
+            return "DATE(COALESCE(r.created_at, o.updated_at, o.created_at)) <= :to_{$suffix}";
+        }
+    } elseif ($filterDate === 'today') {
+        return "DATE(COALESCE(r.created_at, o.updated_at, o.created_at)) = CURDATE()";
+    } elseif ($filterDate === 'yesterday') {
+        return "DATE(COALESCE(r.created_at, o.updated_at, o.created_at)) = SUBDATE(CURDATE(), 1)";
+    } elseif ($filterDate === 'weekly' || $filterDate === 'this_week') {
+        return "YEARWEEK(COALESCE(r.created_at, o.updated_at, o.created_at), 1) = YEARWEEK(CURDATE(), 1)";
+    } elseif ($filterDate === 'monthly' || $filterDate === 'this_month') {
+        return "YEAR(COALESCE(r.created_at, o.updated_at, o.created_at)) = YEAR(CURDATE()) AND MONTH(COALESCE(r.created_at, o.updated_at, o.created_at)) = MONTH(CURDATE())";
+    }
+    return "1 = 1";
+}
+
+$queryParams = [];
+$condDeliv = buildPeriodDateCondition($filterDate, $fromDate, $toDate, 'deliv', $queryParams);
+$condTotal = buildPeriodDateCondition($filterDate, $fromDate, $toDate, 'total', $queryParams);
+$condCases = buildPeriodDateCondition($filterDate, $fromDate, $toDate, 'cases', $queryParams);
+
+// Helper for maintaining filter state across URLs
+function buildRewardsUrl(array $overrides = []): string {
+    $params = [
+        'tab'       => $_GET['tab'] ?? 'all',
+        'search'    => $_GET['search'] ?? '',
+        'date'      => $_GET['date'] ?? 'all',
+        'from_date' => $_GET['from_date'] ?? '',
+        'to_date'   => $_GET['to_date'] ?? ''
+    ];
+    $merged = array_merge($params, $overrides);
+    if (isset($overrides['date']) && $overrides['date'] !== 'custom') {
+        $merged['from_date'] = '';
+        $merged['to_date']   = '';
+    }
+    if (!empty($merged['from_date']) || !empty($merged['to_date'])) {
+        $merged['date'] = 'custom';
+    }
+    $queryParts = [];
+    foreach ($merged as $k => $v) {
+        if ($v !== '' && $v !== 'all' && $v !== null) {
+            $queryParts[$k] = $v;
+        }
+    }
+    return 'index.php' . (!empty($queryParts) ? '?' . http_build_query($queryParts) : '');
+}
+
+// Fetch all distinct shops with delivery orders stats (both period activity and lifetime progress)
 $shopsQuery = "
     SELECT 
         TRIM(COALESCE(NULLIF(o.shop_name, ''), o.customer_name)) AS shop_name,
@@ -79,9 +173,17 @@ $shopsQuery = "
         MAX(o.location) AS location,
         MAX(z.name) AS zone_name,
         MAX(z.slug) AS zone_slug,
-        SUM(CASE WHEN o.status = 'delivered' THEN 1 ELSE 0 END) AS completed_orders,
-        COUNT(o.order_id) AS total_orders,
-        COALESCE(SUM(CASE WHEN o.status = 'delivered' THEN COALESCE(r.delivered_quantity, o.quantity) ELSE 0 END), 0) AS total_cases_delivered,
+
+        -- Period counts for selected date filter
+        SUM(CASE WHEN o.status = 'delivered' AND ({$condDeliv}) THEN 1 ELSE 0 END) AS period_completed_orders,
+        SUM(CASE WHEN ({$condTotal}) THEN 1 ELSE 0 END) AS period_total_orders,
+        COALESCE(SUM(CASE WHEN o.status = 'delivered' AND ({$condCases}) THEN COALESCE(r.delivered_quantity, o.quantity) ELSE 0 END), 0) AS period_cases_delivered,
+
+        -- Lifetime cumulative counts
+        SUM(CASE WHEN o.status = 'delivered' THEN 1 ELSE 0 END) AS lifetime_completed_orders,
+        COUNT(o.order_id) AS lifetime_total_orders,
+        COALESCE(SUM(CASE WHEN o.status = 'delivered' THEN COALESCE(r.delivered_quantity, o.quantity) ELSE 0 END), 0) AS lifetime_cases_delivered,
+
         MAX(rew.reward_status) AS db_reward_status,
         MAX(rew.id) AS reward_id
     FROM orders o
@@ -91,37 +193,71 @@ $shopsQuery = "
     WHERE (o.shop_name IS NOT NULL AND TRIM(o.shop_name) != '')
        OR (o.customer_name IS NOT NULL AND TRIM(o.customer_name) != '')
     GROUP BY TRIM(COALESCE(NULLIF(o.shop_name, ''), o.customer_name))
-    ORDER BY completed_orders DESC, shop_name ASC
+    ORDER BY " . ($filterDate !== 'all' ? "period_completed_orders DESC, period_total_orders DESC, " : "") . "lifetime_completed_orders DESC, shop_name ASC
 ";
-$allShops = $pdo->query($shopsQuery)->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+$stmt = $pdo->prepare($shopsQuery);
+$stmt->execute($queryParams);
+$allShops = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
 $eligibleCount = 0;
 $inProgressCount = 0;
 $claimedCount = 0;
+$totalPeriodCompletedOrders = 0;
+$totalPeriodCasesDelivered = 0;
+$totalPeriodActiveShops = 0;
+$lifetimeTotalDeliveredOrders = 0;
+$lifetimeTotalCasesDelivered = 0;
+
+foreach ($allShops as $s) {
+    $comp = (int)$s['lifetime_completed_orders'];
+    $periodComp = (int)$s['period_completed_orders'];
+    $periodCases = (int)$s['period_cases_delivered'];
+    $periodTot = (int)$s['period_total_orders'];
+
+    if ($periodTot > 0 || $periodComp > 0) {
+        $totalPeriodActiveShops++;
+    }
+    $totalPeriodCompletedOrders += $periodComp;
+    $totalPeriodCasesDelivered += $periodCases;
+    $lifetimeTotalDeliveredOrders += $comp;
+    $lifetimeTotalCasesDelivered += (int)$s['lifetime_cases_delivered'];
+
+    $dbStat = $s['db_reward_status'];
+    if ($dbStat === 'claimed') {
+        $claimedCount++;
+    } elseif ($comp >= $rewardThreshold) {
+        $eligibleCount++;
+    } else {
+        $inProgressCount++;
+    }
+}
 
 $filteredShops = [];
 foreach ($allShops as $s) {
-    $comp = (int)$s['completed_orders'];
+    $comp = (int)$s['lifetime_completed_orders'];
     $dbStat = $s['db_reward_status'];
 
     if ($dbStat === 'claimed') {
         $status = 'claimed';
-        $claimedCount++;
     } elseif ($comp >= $rewardThreshold) {
         $status = 'eligible';
-        $eligibleCount++;
     } else {
         $status = 'in_progress';
-        $inProgressCount++;
     }
 
     $s['computed_status'] = $status;
     $s['percent'] = min(100, round(($comp / $rewardThreshold) * 100));
     $s['remaining'] = max(0, $rewardThreshold - $comp);
 
-    // Apply Filter & Search
-    $matchTab = ($tabFilter === 'all') || ($status === $tabFilter);
-    $matchSearch = empty($search) || (stripos($s['shop_name'], $search) !== false) || (stripos($s['customer_phone'] ?? '', $search) !== false);
+    // Apply Tab & Search Filters
+    $matchTab = ($tabFilter === 'all') 
+        || ($status === $tabFilter)
+        || ($tabFilter === 'active_period' && ((int)$s['period_total_orders'] > 0 || (int)$s['period_completed_orders'] > 0));
+
+    $matchSearch = empty($search) 
+        || (stripos($s['shop_name'], $search) !== false) 
+        || (stripos($s['customer_phone'] ?? '', $search) !== false);
 
     if ($matchTab && $matchSearch) {
         $filteredShops[] = $s;
@@ -379,6 +515,103 @@ $totalShopsCount = count($allShops);
             transition: all 0.15s ease;
         }
         .btn-v-secondary:hover { background: #f1f5f9; color: #0f172a; border-color: #94a3b8; }
+
+        .btn-v-primary {
+            background: #2563eb;
+            color: #ffffff;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 700;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            cursor: pointer;
+            text-decoration: none;
+            transition: background 0.15s ease;
+        }
+        .btn-v-primary:hover { background: #1d4ed8; color: #ffffff; }
+
+        .date-preset-pill {
+            font-size: 12px;
+            font-weight: 600;
+            padding: 5px 12px;
+            border-radius: 20px;
+            border: 1px solid #cbd5e1;
+            background: #ffffff;
+            color: #475569;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            transition: all 0.15s ease;
+        }
+        .date-preset-pill:hover {
+            background: #f1f5f9;
+            color: #0f172a;
+            border-color: #94a3b8;
+        }
+        .date-preset-pill.active {
+            background: #2563eb;
+            color: #ffffff;
+            border-color: #2563eb;
+            font-weight: 700;
+        }
+
+        .rew-date-inputs {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .rew-date-group {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            font-weight: 600;
+            color: #475569;
+        }
+        .rew-date-group input[type="date"] {
+            border: 1px solid #cbd5e1;
+            border-radius: 8px;
+            padding: 6px 10px;
+            font-size: 12px;
+            color: #0f172a;
+            background: #f8fafc;
+            outline: none;
+        }
+        .rew-date-group input[type="date"]:focus {
+            border-color: #2563eb;
+            background: #ffffff;
+        }
+
+        .rew-active-strip {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 8px;
+            padding: 8px 12px;
+            background: #f1f5f9;
+            border-radius: 8px;
+            font-size: 12px;
+            color: #334155;
+            margin-top: 10px;
+            width: 100%;
+            box-sizing: border-box;
+        }
+        .rew-filter-tag {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            background: #ffffff;
+            border: 1px solid #cbd5e1;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-weight: 600;
+        }
     </style>
 </head>
 <body>
@@ -425,8 +658,38 @@ $totalShopsCount = count($allShops);
                             <i class='bx bx-store-alt'></i>
                         </div>
                         <div>
-                            <div class="rew-stat-num"><?= $totalShopsCount ?></div>
-                            <div class="rew-stat-label">Total Outlets & Shops</div>
+                            <div class="rew-stat-num">
+                                <?= ($filterDate !== 'all') ? "{$totalPeriodActiveShops} <span style='font-size:14px; font-weight:600; color:#64748b;'>/ {$totalShopsCount}</span>" : $totalShopsCount ?>
+                            </div>
+                            <div class="rew-stat-label"><?= ($filterDate !== 'all') ? "Active Shops in Period" : "Total Outlets & Shops" ?></div>
+                        </div>
+                    </div>
+
+                    <div class="rew-stat-card" style="border-color: #a7f3d0; background: #f0fdf4;">
+                        <div class="rew-stat-icon" style="background: #dcfce7; color: #15803d;">
+                            <i class='bx bx-check-circle'></i>
+                        </div>
+                        <div>
+                            <div class="rew-stat-num" style="color: #15803d;">
+                                <?= ($filterDate !== 'all') ? number_format($totalPeriodCompletedOrders) : number_format($lifetimeTotalDeliveredOrders) ?>
+                            </div>
+                            <div class="rew-stat-label" style="color: #166534;">
+                                <?= ($filterDate !== 'all') ? "Orders Delivered (Period)" : "Lifetime Delivered Orders" ?>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="rew-stat-card" style="border-color: #bfdbfe; background: #eff6ff;">
+                        <div class="rew-stat-icon" style="background: #dbeafe; color: #1d4ed8;">
+                            <i class='bx bx-layer'></i>
+                        </div>
+                        <div>
+                            <div class="rew-stat-num" style="color: #1d4ed8;">
+                                <?= ($filterDate !== 'all') ? number_format($totalPeriodCasesDelivered) : number_format($lifetimeTotalCasesDelivered) ?> cs
+                            </div>
+                            <div class="rew-stat-label" style="color: #1e40af;">
+                                <?= ($filterDate !== 'all') ? "Cases Delivered (Period)" : "Total Delivered Cases" ?>
+                            </div>
                         </div>
                     </div>
 
@@ -441,16 +704,6 @@ $totalShopsCount = count($allShops);
                     </div>
 
                     <div class="rew-stat-card">
-                        <div class="rew-stat-icon" style="background: #fffbeb; color: #d97706;">
-                            <i class='bx bx-time-five'></i>
-                        </div>
-                        <div>
-                            <div class="rew-stat-num"><?= $inProgressCount ?></div>
-                            <div class="rew-stat-label">⏳ In Progress (&lt; <?= $rewardThreshold ?> orders)</div>
-                        </div>
-                    </div>
-
-                    <div class="rew-stat-card">
                         <div class="rew-stat-icon" style="background: #f1f5f9; color: #64748b;">
                             <i class='bx bx-check-double'></i>
                         </div>
@@ -461,29 +714,113 @@ $totalShopsCount = count($allShops);
                     </div>
                 </div>
 
-                <!-- Filter & Search Bar -->
-                <div class="rewards-filter-bar">
-                    <div class="rewards-tabs-row">
-                        <a href="?tab=all&search=<?= urlencode($search) ?>" class="tab-pill <?= ($tabFilter === 'all') ? 'active' : '' ?>">
-                            All Shops (<?= $totalShopsCount ?>)
-                        </a>
-                        <a href="?tab=eligible&search=<?= urlencode($search) ?>" class="tab-pill tab-eligible <?= ($tabFilter === 'eligible') ? 'active' : '' ?>">
-                            🎉 Eligible (<?= $eligibleCount ?>)
-                        </a>
-                        <a href="?tab=in_progress&search=<?= urlencode($search) ?>" class="tab-pill <?= ($tabFilter === 'in_progress') ? 'active' : '' ?>">
-                            ⏳ In Progress (<?= $inProgressCount ?>)
-                        </a>
-                        <a href="?tab=claimed&search=<?= urlencode($search) ?>" class="tab-pill tab-claimed <?= ($tabFilter === 'claimed') ? 'active' : '' ?>">
-                            ✅ Claimed (<?= $claimedCount ?>)
-                        </a>
+                <!-- Filter & Search Bar with Date Presets & Custom Range -->
+                <div class="rewards-filter-bar" style="flex-direction: column; align-items: stretch; gap: 14px;">
+                    <!-- Top Row: Status Tabs & Search -->
+                    <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+                        <div class="rewards-tabs-row">
+                            <a href="<?= buildRewardsUrl(['tab' => 'all']) ?>" class="tab-pill <?= ($tabFilter === 'all') ? 'active' : '' ?>">
+                                All Shops (<?= $totalShopsCount ?>)
+                            </a>
+                            <?php if ($filterDate !== 'all'): ?>
+                                <a href="<?= buildRewardsUrl(['tab' => 'active_period']) ?>" class="tab-pill <?= ($tabFilter === 'active_period') ? 'active' : '' ?>" style="background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe;">
+                                    <i class='bx bx-trending-up'></i> Active in Period (<?= $totalPeriodActiveShops ?>)
+                                </a>
+                            <?php endif; ?>
+                            <a href="<?= buildRewardsUrl(['tab' => 'eligible']) ?>" class="tab-pill tab-eligible <?= ($tabFilter === 'eligible') ? 'active' : '' ?>">
+                                🎉 Eligible (<?= $eligibleCount ?>)
+                            </a>
+                            <a href="<?= buildRewardsUrl(['tab' => 'in_progress']) ?>" class="tab-pill <?= ($tabFilter === 'in_progress') ? 'active' : '' ?>">
+                                ⏳ In Progress (<?= $inProgressCount ?>)
+                            </a>
+                            <a href="<?= buildRewardsUrl(['tab' => 'claimed']) ?>" class="tab-pill tab-claimed <?= ($tabFilter === 'claimed') ? 'active' : '' ?>">
+                                ✅ Claimed (<?= $claimedCount ?>)
+                            </a>
+                        </div>
+
+                        <!-- Search Form -->
+                        <form action="" method="GET" style="margin: 0;">
+                            <input type="hidden" name="tab" value="<?= htmlspecialchars($tabFilter) ?>">
+                            <input type="hidden" name="date" value="<?= htmlspecialchars($filterDate) ?>">
+                            <input type="hidden" name="from_date" value="<?= htmlspecialchars($fromDate) ?>">
+                            <input type="hidden" name="to_date" value="<?= htmlspecialchars($toDate) ?>">
+                            <div class="search-box-wrap">
+                                <i class='bx bx-search' style="color: #94a3b8;"></i>
+                                <input type="search" name="search" placeholder="Search shop name or phone..." value="<?= htmlspecialchars($search) ?>">
+                            </div>
+                        </form>
                     </div>
 
-                    <form action="" method="GET">
+                    <!-- Bottom Row: Date Presets & Custom Date Range Filter -->
+                    <form action="" method="GET" style="display: flex; flex-direction: column; gap: 10px; padding-top: 10px; border-top: 1px dashed #e2e8f0; margin: 0;">
                         <input type="hidden" name="tab" value="<?= htmlspecialchars($tabFilter) ?>">
-                        <div class="search-box-wrap">
-                            <i class='bx bx-search' style="color: #94a3b8;"></i>
-                            <input type="search" name="search" placeholder="Search shop name or phone..." value="<?= htmlspecialchars($search) ?>">
+                        <input type="hidden" name="search" value="<?= htmlspecialchars($search) ?>">
+
+                        <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+                            <!-- Presets Row -->
+                            <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                                <span style="font-size: 12px; font-weight: 700; color: #475569; margin-right: 4px;">Period:</span>
+                                <a href="<?= buildRewardsUrl(['date' => 'all']) ?>" class="date-preset-pill <?= ($filterDate === 'all') ? 'active' : '' ?>">
+                                    All Time
+                                </a>
+                                <a href="<?= buildRewardsUrl(['date' => 'today']) ?>" class="date-preset-pill <?= ($filterDate === 'today') ? 'active' : '' ?>">
+                                    <i class='bx bx-sun'></i> Today
+                                </a>
+                                <a href="<?= buildRewardsUrl(['date' => 'yesterday']) ?>" class="date-preset-pill <?= ($filterDate === 'yesterday') ? 'active' : '' ?>">
+                                    Yesterday
+                                </a>
+                                <a href="<?= buildRewardsUrl(['date' => 'this_week']) ?>" class="date-preset-pill <?= in_array($filterDate, ['weekly', 'this_week']) ? 'active' : '' ?>">
+                                    This Week
+                                </a>
+                                <a href="<?= buildRewardsUrl(['date' => 'this_month']) ?>" class="date-preset-pill <?= in_array($filterDate, ['monthly', 'this_month']) ? 'active' : '' ?>">
+                                    <i class='bx bx-calendar'></i> This Month
+                                </a>
+                            </div>
+
+                            <!-- Custom Date Inputs -->
+                            <div class="rew-date-inputs">
+                                <div class="rew-date-group">
+                                    <span>From:</span>
+                                    <input type="date" name="from_date" value="<?= htmlspecialchars($fromDate) ?>">
+                                </div>
+                                <div class="rew-date-group">
+                                    <span>To:</span>
+                                    <input type="date" name="to_date" value="<?= htmlspecialchars($toDate) ?>">
+                                </div>
+                                <button type="submit" class="btn-v-primary" style="padding: 6px 14px; font-size: 12px;">
+                                    <i class='bx bx-filter-alt'></i> Filter Dates
+                                </button>
+                                <?php if ($filterDate !== 'all' || !empty($search) || !empty($fromDate) || !empty($toDate)): ?>
+                                    <a href="index.php" class="btn-v-secondary" style="padding: 6px 12px; font-size: 12px;" title="Reset all filters">
+                                        <i class='bx bx-reset'></i> Reset
+                                    </a>
+                                <?php endif; ?>
+                            </div>
                         </div>
+
+                        <!-- Active Filter Notification Strip -->
+                        <?php if ($filterDate !== 'all' || !empty($search)): ?>
+                            <div class="rew-active-strip">
+                                <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                                    <span style="font-weight: 700; color: #0f172a;">Active Filters:</span>
+                                    <?php if ($filterDate !== 'all'): ?>
+                                        <span class="rew-filter-tag">
+                                            <i class='bx bx-calendar'></i> Date Period: "<strong><?= htmlspecialchars($currentDateLabel) ?></strong>"
+                                            <a href="<?= buildRewardsUrl(['date' => 'all']) ?>" style="color: #ef4444; text-decoration: none; font-weight: 800; margin-left: 2px;">&times;</a>
+                                        </span>
+                                    <?php endif; ?>
+                                    <?php if (!empty($search)): ?>
+                                        <span class="rew-filter-tag">
+                                            <i class='bx bx-search'></i> Search: "<strong><?= htmlspecialchars($search) ?></strong>"
+                                            <a href="<?= buildRewardsUrl(['search' => '']) ?>" style="color: #ef4444; text-decoration: none; font-weight: 800; margin-left: 2px;">&times;</a>
+                                        </span>
+                                    <?php endif; ?>
+                                </div>
+                                <div style="font-weight: 700; color: #2563eb;">
+                                    <?= count($filteredShops) ?> matching shop<?= count($filteredShops) === 1 ? '' : 's' ?>
+                                </div>
+                            </div>
+                        <?php endif; ?>
                     </form>
                 </div>
 
@@ -511,17 +848,22 @@ $totalShopsCount = count($allShops);
                             <tbody>
                                 <?php foreach ($filteredShops as $shop): 
                                     $sName = $shop['shop_name'];
-                                    $completed = (int)$shop['completed_orders'];
+                                    $lifetimeCompleted = (int)$shop['lifetime_completed_orders'];
+                                    $periodCompleted = (int)$shop['period_completed_orders'];
+                                    $periodCases = (int)$shop['period_cases_delivered'];
+                                    $lifetimeCases = (int)$shop['lifetime_cases_delivered'];
                                     $status = $shop['computed_status'];
                                     $percent = (int)$shop['percent'];
                                     $phone = $shop['customer_phone'];
                                 ?>
                                     <tr>
                                         <td>
-                                            <div style="font-weight: 700; color: #0f172a;"><?= htmlspecialchars($sName) ?></div>
+                                            <div style="font-weight: 700; color: #0f172a; font-size: 14px;"><?= htmlspecialchars($sName) ?></div>
                                             <?php if (!empty($phone)): ?>
-                                                <div style="font-size: 12px; color: #64748b;">
-                                                    <i class='bx bx-phone'></i> <?= htmlspecialchars($phone) ?>
+                                                <div style="font-size: 12px; color: #64748b; margin-top: 2px;">
+                                                    <a href="tel:<?= htmlspecialchars($phone) ?>" style="color: #2563eb; text-decoration: none; font-weight: 600;">
+                                                        <i class='bx bx-phone'></i> <?= htmlspecialchars($phone) ?>
+                                                    </a>
                                                 </div>
                                             <?php endif; ?>
                                         </td>
@@ -529,22 +871,43 @@ $totalShopsCount = count($allShops);
                                             <div style="font-weight: 600; color: #334155;">
                                                 <?= htmlspecialchars($shop['zone_name'] ?: 'All Zones') ?>
                                             </div>
-                                         <?php if (!empty($shop['location'])): ?>
-    <div style="font-size: 12px; color: #64748b;">
-        <?= nl2br(htmlspecialchars(wordwrap($shop['location'], 30, "\n", true))) ?>
-    </div>
-<?php endif; ?>
+                                            <?php if (!empty($shop['location'])): ?>
+                                                <div style="font-size: 12px; color: #64748b;">
+                                                    <?= nl2br(htmlspecialchars(wordwrap($shop['location'], 30, "\n", true))) ?>
+                                                </div>
+                                            <?php endif; ?>
                                         </td>
                                         <td>
-                                            <span style="font-weight: 700; color: #0f172a; font-size: 14px;"><?= $completed ?></span>
-                                            <span style="font-size: 12px; color: #64748b;"> / <?= $rewardThreshold ?> required</span>
+                                            <?php if ($filterDate !== 'all'): ?>
+                                                <div style="display: flex; align-items: baseline; gap: 6px;">
+                                                    <span style="font-weight: 800; color: #2563eb; font-size: 16px;"><?= $periodCompleted ?></span>
+                                                    <span style="font-size: 11px; font-weight: 700; color: #15803d; background: #dcfce7; padding: 2px 6px; border-radius: 4px; border: 1px solid #86efac;">
+                                                        Delivered (<?= htmlspecialchars($currentDateLabel) ?>)
+                                                    </span>
+                                                </div>
+                                                <div style="font-size: 11px; color: #64748b; margin-top: 3px;">
+                                                    Lifetime: <strong><?= $lifetimeCompleted ?></strong> / <?= $rewardThreshold ?> required
+                                                </div>
+                                            <?php else: ?>
+                                                <span style="font-weight: 700; color: #0f172a; font-size: 14px;"><?= $lifetimeCompleted ?></span>
+                                                <span style="font-size: 12px; color: #64748b;"> / <?= $rewardThreshold ?> required</span>
+                                            <?php endif; ?>
                                         </td>
                                         <td>
-                                            <span style="font-weight: 700; color: #2563eb;"><?= (int)$shop['total_cases_delivered'] ?></span> Cases
+                                            <?php if ($filterDate !== 'all'): ?>
+                                                <div style="font-weight: 800; color: #047857; font-size: 15px;">
+                                                    <?= $periodCases ?> <span style="font-size: 12px; font-weight: 600; color: #059669;">cs in period</span>
+                                                </div>
+                                                <div style="font-size: 11px; color: #64748b; margin-top: 3px;">
+                                                    Lifetime: <?= $lifetimeCases ?> cs
+                                                </div>
+                                            <?php else: ?>
+                                                <span style="font-weight: 700; color: #2563eb;"><?= $lifetimeCases ?></span> Cases
+                                            <?php endif; ?>
                                         </td>
                                         <td style="min-width: 140px;">
                                             <div style="display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 4px; font-weight: 600;">
-                                                <span><?= $completed ?> / <?= $rewardThreshold ?></span>
+                                                <span><?= $lifetimeCompleted ?> / <?= $rewardThreshold ?></span>
                                                 <span><?= $percent ?>%</span>
                                             </div>
                                             <div style="height: 6px; background: #e2e8f0; border-radius: 999px; overflow: hidden;">

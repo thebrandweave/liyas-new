@@ -102,7 +102,8 @@ $vZoneStmt = $pdo->prepare("
 $vZoneStmt->execute([$zone_id, $zone_id, $zone_id]);
 $availVehicles = $vZoneStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
-if ($assignedVehicleId <= 0 && !empty($availVehicles)) {
+// Only auto-pick first vehicle if this is a new spot delivery without prior order
+if ($assignedVehicleId <= 0 && $order_id <= 0 && !empty($availVehicles)) {
     $assignedVehicleId = (int)$availVehicles[0]['id'];
 }
 $assignedVehicle = null;
@@ -354,8 +355,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['generate_receipt'])) 
                     if ($assignedVehicleId <= 0) {
                         $assignedVehicleId = (int)($_POST['vehicle_id'] ?? 0);
                     }
-                    if ($assignedVehicleId <= 0 && !empty($availVehicles)) {
-                        $assignedVehicleId = (int)$availVehicles[0]['id'];
+                    if ($assignedVehicleId <= 0) {
+                        throw new Exception("Please assign a delivery vehicle before generating the delivery receipt.");
+                    } else {
+                        assignOrderToVehicle($pdo, $order_id, $assignedVehicleId);
                     }
 
                     // 2. Update orders record
@@ -1066,19 +1069,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['items']) && is_array(
                     <i class='bx bx-store-alt' style="color: #2563eb;"></i> Shop &amp; Delivery Details
                 </div>
 
-                <?php if ($order_id <= 0 && count($availVehicles) > 1): ?>
-                <div class="form-group" style="margin-bottom: 16px;">
-                    <label class="form-label" for="vehicleSelect">
-                        <i class='bx bxs-truck' style="color: #2563eb;"></i> Delivering Vehicle
-                    </label>
-                    <select name="vehicle_id" id="vehicleSelect" class="form-control" onchange="window.location.href = '<?= zone_url($zone_slug, 'generate-receipt') ?>?vehicle_id=' + this.value;">
-                        <?php foreach ($availVehicles as $av): ?>
-                            <option value="<?= $av['id'] ?>" <?= ($assignedVehicleId === (int)$av['id']) ? 'selected' : '' ?>>
-                                <?= htmlspecialchars($av['vehicle_number']) ?><?= !empty($av['vehicle_name']) ? ' - ' . htmlspecialchars($av['vehicle_name']) : '' ?><?= !empty($av['driver_name']) ? ' (' . htmlspecialchars($av['driver_name']) . ')' : '' ?>
-                            </option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
+                <?php if ($order_id > 0 && empty($assignedVehicle)): ?>
+                    <div style="background: #fef2f2; border: 1.5px solid #fecaca; border-radius: 12px; padding: 14px 16px; margin-bottom: 18px;">
+                        <div style="font-weight: 800; font-size: 14px; color: #b91c1c; display: flex; align-items: center; gap: 6px; margin-bottom: 4px;">
+                            <i class='bx bx-error-circle' style="font-size: 20px; color: #ef4444;"></i> Vehicle is not assigned to this order
+                        </div>
+                        <p style="font-size: 12px; color: #7f1d1d; margin: 0 0 10px 0;">
+                            Please choose a delivery vehicle below to assign it before generating this delivery receipt.
+                        </p>
+                        <select name="vehicle_id" id="vehicleSelect" class="form-control" required style="border-color: #f87171; font-weight: 700;" onchange="document.getElementById('assignedVehicleIdInput').value = this.value; window.location.href = '<?= zone_url($zone_slug, 'generate-receipt', ['order_id' => $order_id]) ?>&vehicle_id=' + this.value;">
+                            <option value="">-- Select Delivery Vehicle * --</option>
+                            <?php foreach ($availVehicles as $av): ?>
+                                <option value="<?= $av['id'] ?>" <?= ($assignedVehicleId === (int)$av['id']) ? 'selected' : '' ?>>
+                                    <?= htmlspecialchars($av['vehicle_number']) ?><?= !empty($av['vehicle_name']) ? ' - ' . htmlspecialchars($av['vehicle_name']) : '' ?><?= !empty($av['driver_name']) ? ' (' . htmlspecialchars($av['driver_name']) . ')' : '' ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                <?php elseif ($order_id <= 0 && count($availVehicles) > 1): ?>
+                    <div class="form-group" style="margin-bottom: 16px;">
+                        <label class="form-label" for="vehicleSelect">
+                            <i class='bx bxs-truck' style="color: #2563eb;"></i> Delivering Vehicle
+                        </label>
+                        <select name="vehicle_id" id="vehicleSelect" class="form-control" onchange="window.location.href = '<?= zone_url($zone_slug, 'generate-receipt') ?>?vehicle_id=' + this.value;">
+                            <?php foreach ($availVehicles as $av): ?>
+                                <option value="<?= $av['id'] ?>" <?= ($assignedVehicleId === (int)$av['id']) ? 'selected' : '' ?>>
+                                    <?= htmlspecialchars($av['vehicle_number']) ?><?= !empty($av['vehicle_name']) ? ' - ' . htmlspecialchars($av['vehicle_name']) : '' ?><?= !empty($av['driver_name']) ? ' (' . htmlspecialchars($av['driver_name']) . ')' : '' ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                <?php elseif (!empty($assignedVehicle)): ?>
+                    <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 10px; padding: 10px 14px; margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+                        <div style="font-size: 13px; font-weight: 700; color: #1e40af; display: flex; align-items: center; gap: 6px;">
+                            <i class='bx bxs-truck' style="font-size: 18px; color: #2563eb;"></i>
+                            <span>Delivering Vehicle: <strong><?= htmlspecialchars($assignedVehicle['vehicle_number']) ?></strong><?= !empty($assignedVehicle['vehicle_name']) ? ' (' . htmlspecialchars($assignedVehicle['vehicle_name']) . ')' : '' ?></span>
+                        </div>
+                    </div>
                 <?php endif; ?>
 
                 <div class="form-group">
@@ -1314,11 +1341,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['items']) && is_array(
                     <!-- Interactive Settlement Options -->
                     <div style="background: #ffffff; border: 1.5px solid #fed7d7; border-radius: 8px; padding: 12px;">
                         <label class="chk-label" for="collect_prior_due" style="color: #0f172a;">
-                            <input type="checkbox" name="collect_prior_due" id="collect_prior_due" class="chk-input" <?= (isset($_POST['collect_prior_due']) || !empty($priorDues['has_due'])) ? 'checked' : '' ?> onchange="togglePriorDueBox(this.checked)">
+                            <input type="checkbox" name="collect_prior_due" id="collect_prior_due" class="chk-input" <?= isset($_POST['collect_prior_due']) ? 'checked' : '' ?> onchange="togglePriorDueBox(this.checked)">
                             <span>Collect / Clear Earlier Due with this Delivery</span>
                         </label>
 
-                        <div id="priorDueInputFields" style="<?= (isset($_POST['collect_prior_due']) || !empty($priorDues['has_due'])) ? 'display: block;' : 'display: none;' ?> margin-top: 10px; border-top: 1px dashed #e2e8f0; padding-top: 10px;">
+                        <div id="priorDueInputFields" style="<?= isset($_POST['collect_prior_due']) ? 'display: block;' : 'display: none;' ?> margin-top: 10px; border-top: 1px dashed #e2e8f0; padding-top: 10px;">
                             <div style="display: grid; grid-template-columns: 1fr; gap: 10px;">
                                 <div>
                                     <label class="form-label" style="font-size: 12px; margin-bottom: 4px;">Amount of Earlier Due to Clear (₹):</label>

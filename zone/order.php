@@ -19,10 +19,14 @@ $stmt = $pdo->prepare("
         r.credited_amount as receipt_credit,
         r.due_amount as receipt_due,
         r.payment_type as receipt_pay_type,
-        r.created_at as receipt_date
+        r.created_at as receipt_date,
+        COALESCE(o.vehicle_id, (SELECT vl.vehicle_id FROM vehicle_loads vl WHERE vl.order_id = o.order_id AND vl.is_active = 1 LIMIT 1)) AS resolved_vehicle_id,
+        veh.vehicle_number AS assigned_vehicle_number,
+        veh.vehicle_name AS assigned_vehicle_name
     FROM orders o
     LEFT JOIN products p ON o.product_id = p.product_id
     LEFT JOIN receipts r ON o.order_id = r.order_id
+    LEFT JOIN vehicles veh ON veh.id = COALESCE(o.vehicle_id, (SELECT vl.vehicle_id FROM vehicle_loads vl WHERE vl.order_id = o.order_id AND vl.is_active = 1 LIMIT 1))
     WHERE o.order_id = ? AND o.zone_id = ?
 ");
 $stmt->execute([$order_id, $zone_id]);
@@ -33,6 +37,19 @@ if (!$order) {
     echo renderZoneNotFound("Order not found in " . htmlspecialchars($zone_name) . ".");
     exit;
 }
+
+// Available active vehicles operating in this zone
+$vZoneStmt = $pdo->prepare("
+    SELECT DISTINCT v.id, v.vehicle_number, v.vehicle_name, v.driver_name, v.driver_phone 
+    FROM vehicles v
+    WHERE v.status != 'inactive' 
+      AND (v.zone_id = ? 
+          OR v.id IN (SELECT vehicle_id FROM vehicle_loads WHERE zone_id = ? AND is_active = 1) 
+          OR v.id IN (SELECT vehicle_id FROM orders WHERE zone_id = ? AND vehicle_id IS NOT NULL))
+    ORDER BY v.vehicle_number ASC
+");
+$vZoneStmt->execute([$zone_id, $zone_id, $zone_id]);
+$availVehicles = $vZoneStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
 // Mark order as read/checked for zone notification system
 if ((int)$order['is_zone_read'] === 0) {
@@ -47,6 +64,34 @@ $priorDues = getShopPendingDueDetails($pdo, $shopName, $order['phone'] ?? '', $o
 $msg = '';
 $error_msg = '';
 
+if (!empty($_SESSION['zone_order_flash'])) {
+    $msg = $_SESSION['zone_order_flash']['msg'] ?? '';
+    $error_msg = $_SESSION['zone_order_flash']['error_msg'] ?? '';
+    unset($_SESSION['zone_order_flash']);
+}
+
+$redirectCurrentZoneOrder = function() use ($zone_slug, $order_id) {
+    header("Location: " . zone_url($zone_slug, 'order', ['id' => $order_id]));
+    exit;
+};
+
+// Handle vehicle assignment from order view
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['assign_vehicle'])) {
+    $newVehId = (int)($_POST['vehicle_id'] ?? 0);
+    if ($newVehId > 0) {
+        $res = assignOrderToVehicle($pdo, $order_id, $newVehId);
+        if (!empty($res['success'])) {
+            $_SESSION['zone_order_flash'] = ['msg' => "Vehicle assigned successfully.", 'error_msg' => ''];
+        } else {
+            $_SESSION['zone_order_flash'] = ['msg' => '', 'error_msg' => $res['error'] ?? "Failed to assign vehicle."];
+        }
+    } else {
+        unassignOrderFromVehicle($pdo, $order_id);
+        $_SESSION['zone_order_flash'] = ['msg' => "Vehicle unassigned from order.", 'error_msg' => ''];
+    }
+    $redirectCurrentZoneOrder();
+}
+
 // Handle quick settlement of prior dues directly from order view
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['settle_prior_due'])) {
     $clearAmount = (float)($_POST['prior_clear_amount'] ?? 0);
@@ -59,12 +104,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['settle_prior_due'])) 
         }
         $settleRes = settleShopPriorDuesFifo($pdo, $shopName, $order['phone'] ?? '', $clearAmount, $clearMode, $refNote, $order_id, $zone_id);
         if (!empty($settleRes['success'])) {
-            $msg = "Successfully cleared ₹" . number_format($settleRes['total_cleared'], 2) . " of earlier dues via " . ucfirst($clearMode) . "! Remaining prior due: ₹" . number_format($settleRes['remaining_balance'], 2);
-            $priorDues = getShopPendingDueDetails($pdo, $shopName, $order['phone'] ?? '', $order_id, $zone_id);
+            $_SESSION['zone_order_flash'] = [
+                'msg' => "Successfully cleared ₹" . number_format($settleRes['total_cleared'], 2) . " of earlier dues via " . ucfirst($clearMode) . "! Remaining prior due: ₹" . number_format($settleRes['remaining_balance'], 2),
+                'error_msg' => ''
+            ];
         } else {
-            $error_msg = "Could not settle prior due balance.";
+            $_SESSION['zone_order_flash'] = ['msg' => '', 'error_msg' => "Could not settle prior due balance."];
         }
     }
+    $redirectCurrentZoneOrder();
 }
 
 // Update status
@@ -79,10 +127,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_status'])) {
 
         if ($new_status === 'delivered' || $old_status === 'delivered' || $new_status === 'cancelled') {
             updateShopRewardProgress($pdo, $shopName, $order['phone']);
-            $rewardInfo = getShopRewardInfo($pdo, $shopName);
         }
-        $msg = "Order status updated to " . ucfirst($new_status);
+        $_SESSION['zone_order_flash'] = ['msg' => "Order status updated to " . ucfirst($new_status), 'error_msg' => ''];
     }
+    $redirectCurrentZoneOrder();
 }
 
 $displayOrderNum = $order['order_number'] ?: ('#' . $order['order_id']);
@@ -619,6 +667,22 @@ $stepLevel = $statusSteps[$currentStatus] ?? 1;
             </div>
             <?php endif; ?>
 
+            <div class="item-row" style="align-items: center;">
+                <span class="lbl">Delivery Vehicle:</span>
+                <span class="val">
+                    <?php if (!empty($order['assigned_vehicle_number'])): ?>
+                        <span style="font-weight: 700; color: #1e40af; display: inline-flex; align-items: center; gap: 5px;">
+                            <i class='bx bxs-truck' style="color: #2563eb; font-size: 16px;"></i>
+                            <?= htmlspecialchars($order['assigned_vehicle_number']) ?><?= !empty($order['assigned_vehicle_name']) ? ' (' . htmlspecialchars($order['assigned_vehicle_name']) . ')' : '' ?>
+                        </span>
+                    <?php else: ?>
+                        <span style="background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; font-size: 11px; font-weight: 800; padding: 4px 10px; border-radius: 6px; display: inline-flex; align-items: center; gap: 5px;">
+                            <i class='bx bx-error-circle' style="color: #ef4444; font-size: 15px;"></i> Vehicle is not assigned
+                        </span>
+                    <?php endif; ?>
+                </span>
+            </div>
+
             <!-- Action shortcuts: Call, WhatsApp, Maps -->
             <div class="contact-grid">
                 <?php if (!empty($order['phone'])): ?>
@@ -638,6 +702,22 @@ $stepLevel = $statusSteps[$currentStatus] ?? 1;
                     <span>Directions</span>
                 </a>
             </div>
+
+            <!-- Vehicle Quick Assignment Form -->
+            <form action="<?= zone_url($zone_slug, 'order', ['id' => $order_id]) ?>" method="POST" style="margin-top: 14px; padding-top: 12px; border-top: 1px dashed #e2e8f0; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                <input type="hidden" name="assign_vehicle" value="1">
+                <select name="vehicle_id" id="vehSelectOrder" class="status-select-control" style="flex: 1; min-width: 180px; font-size: 13px; padding: 8px 12px;">
+                    <option value="">-- Assign Delivery Vehicle --</option>
+                    <?php foreach ($availVehicles as $av): ?>
+                        <option value="<?= $av['id'] ?>" <?= ((int)($order['resolved_vehicle_id'] ?? ($order['vehicle_id'] ?? 0)) === (int)$av['id']) ? 'selected' : '' ?>>
+                            <?= htmlspecialchars($av['vehicle_number']) ?><?= !empty($av['vehicle_name']) ? ' (' . htmlspecialchars($av['vehicle_name']) . ')' : '' ?>
+                        </option>
+                    <?php endforeach; ?>
+                </select>
+                <button type="submit" class="btn-update-status" style="padding: 8px 16px; font-size: 13px;">
+                    <?= !empty($order['assigned_vehicle_number']) ? 'Change Vehicle' : 'Assign Vehicle' ?>
+                </button>
+            </form>
         </section>
 
         <!-- Prior Unpaid Dues Card -->
@@ -873,10 +953,23 @@ $stepLevel = $statusSteps[$currentStatus] ?? 1;
                 </div>
             <?php else: ?>
                 <div style="text-align: center; padding: 8px 0;">
-                 
-                    <a href="<?= zone_url($zone_slug, 'generate-receipt', ['order_id' => $order_id]) ?>" class="btn-action-large btn-primary-green">
-                        <i class='bx bx-check-shield' style="font-size: 20px;"></i> Generate Delivery Receipt
-                    </a>
+                    <?php if (empty($order['assigned_vehicle_number']) && empty($order['resolved_vehicle_id'])): ?>
+                        <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 10px; padding: 14px; margin-bottom: 12px; color: #b91c1c; font-weight: 700; text-align: center;">
+                            <div style="display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 14px; margin-bottom: 4px;">
+                                <i class='bx bx-error-circle' style="font-size: 18px; color: #ef4444;"></i> Vehicle is not assigned
+                            </div>
+                            <div style="font-size: 12px; color: #7f1d1d; font-weight: 500;">
+                                Please assign a vehicle to this order before generating the delivery receipt.
+                            </div>
+                        </div>
+                        <button type="button" class="btn-action-large" style="background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; cursor: pointer;" onclick="const s = document.getElementById('vehSelectOrder'); if(s){ s.focus(); s.scrollIntoView({behavior:'smooth'}); s.style.boxShadow='0 0 0 4px rgba(239,68,68,0.3)'; setTimeout(()=>s.style.boxShadow='', 2000); }">
+                            <i class='bx bxs-truck' style="font-size: 20px;"></i> Assign Vehicle to Bill
+                        </button>
+                    <?php else: ?>
+                        <a href="<?= zone_url($zone_slug, 'generate-receipt', ['order_id' => $order_id]) ?>" class="btn-action-large btn-primary-green">
+                            <i class='bx bx-check-shield' style="font-size: 20px;"></i> Generate Delivery Receipt
+                        </a>
+                    <?php endif; ?>
                 </div>
             <?php endif; ?>
         </section>

@@ -31,6 +31,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         ]);
         exit;
     }
+
+    if ($action === 'assign_vehicle' && $order_id > 0) {
+        $vehicle_id = (int)($_POST['vehicle_id'] ?? 0);
+        if ($vehicle_id > 0) {
+            $res = assignOrderToVehicle($pdo, $order_id, $vehicle_id);
+            if (!empty($res['success'])) {
+                $vStmt = $pdo->prepare("SELECT vehicle_number, vehicle_name FROM vehicles WHERE id = ?");
+                $vStmt->execute([$vehicle_id]);
+                $vRow = $vStmt->fetch(PDO::FETCH_ASSOC);
+                echo json_encode([
+                    'success' => true,
+                    'order_id' => $order_id,
+                    'vehicle_id' => $vehicle_id,
+                    'vehicle_number' => $vRow['vehicle_number'] ?? '',
+                    'message' => 'Vehicle assigned successfully!'
+                ]);
+            } else {
+                echo json_encode(['success' => false, 'error' => $res['error'] ?? 'Failed to assign vehicle.']);
+            }
+        } else {
+            unassignOrderFromVehicle($pdo, $order_id);
+            echo json_encode([
+                'success' => true,
+                'order_id' => $order_id,
+                'vehicle_id' => null,
+                'message' => 'Vehicle unassigned.'
+            ]);
+        }
+        exit;
+    }
 }
 
 // Fetch all active unread orders for this zone

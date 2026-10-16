@@ -19,10 +19,33 @@ $current_page = "revenue";
 $page_title   = "Revenue & Multi-Zone Sales";
 $admin_name   = htmlspecialchars($_SESSION['admin_name'] ?? 'Admin');
 
-// Handle quick order status update from this table
+// Flash message setup
 $success_msg = '';
 $error_msg = '';
 
+if (!empty($_SESSION['flash_msg'])) {
+    if (isset($_SESSION['flash_msg']['type']) && $_SESSION['flash_msg']['type'] === 'success') {
+        $success_msg = $_SESSION['flash_msg']['text'] ?? '';
+    } elseif (isset($_SESSION['flash_msg']['type']) && $_SESSION['flash_msg']['type'] === 'error') {
+        $error_msg = $_SESSION['flash_msg']['text'] ?? '';
+    }
+    unset($_SESSION['flash_msg']);
+}
+
+// Generate one-time settlement token if none exists
+if (empty($_SESSION['due_settle_token'])) {
+    $_SESSION['due_settle_token'] = bin2hex(random_bytes(16));
+}
+$due_settle_token = $_SESSION['due_settle_token'];
+
+// Helper for redirect preserving query string (Post-Redirect-Get pattern)
+$redirectCurrentRevenuePage = function() {
+    $query = !empty($_SERVER['QUERY_STRING']) ? '?' . $_SERVER['QUERY_STRING'] : '';
+    header("Location: index.php" . $query);
+    exit;
+};
+
+// Handle quick order status update from this table
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_order_status'])) {
     $order_id   = (int)($_POST['order_id'] ?? 0);
     $new_status = $_POST['status'] ?? '';
@@ -52,15 +75,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_order_status']
             }
 
             quickLog($pdo, 'update_status', 'order', $order_id, "Updated order #{$order_id} status to {$new_status} via Revenue module");
-            $success_msg = "Order #{$order_id} status updated to " . ucfirst($new_status);
+            $_SESSION['flash_msg'] = [
+                'type' => 'success',
+                'text' => "Order #{$order_id} status updated to " . ucfirst($new_status)
+            ];
         } catch (PDOException $e) {
-            $error_msg = "Error updating order: " . $e->getMessage();
+            $_SESSION['flash_msg'] = [
+                'type' => 'error',
+                'text' => "Error updating order: " . $e->getMessage()
+            ];
         }
     }
+    $redirectCurrentRevenuePage();
 }
 
 // Handle clear / settle outstanding due balance with custom inputs
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['settle_due_balance'])) {
+    $submittedToken = $_POST['settle_token'] ?? '';
+    $sessionToken = $_SESSION['due_settle_token'] ?? '';
+
+    // Check one-time token to prevent browser refresh re-posts and duplicate submissions
+    if (empty($submittedToken) || $submittedToken !== $sessionToken) {
+        $_SESSION['flash_msg'] = [
+            'type' => 'error',
+            'text' => "This due settlement request was already processed or expired. Refresh avoided duplicate payment."
+        ];
+        $redirectCurrentRevenuePage();
+    }
+    // Rotate token immediately so this form submission cannot be replayed on refresh
+    $_SESSION['due_settle_token'] = bin2hex(random_bytes(16));
+
     $order_id = (int)($_POST['order_id'] ?? 0);
     $settle_mode = trim($_POST['settle_mode'] ?? 'cash');
     $ref_no = trim($_POST['ref_no'] ?? '');
@@ -124,14 +168,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['settle_due_balance'])
                 } catch (Exception $e) {}
 
                 quickLog($pdo, 'settle_due', 'receipt', $rec['id'], "Cleared ₹{$dueCleared} due for order #{$order_id} via {$settle_mode}. Remaining due: ₹{$newDue}");
-                $success_msg = "Outstanding due of ₹" . number_format($dueCleared, 2) . " for order #{$order_id} was successfully cleared via " . ucfirst($settle_mode) . "! Remaining due balance: ₹" . number_format($newDue, 2);
+                $_SESSION['flash_msg'] = [
+                    'type' => 'success',
+                    'text' => "Outstanding due of ₹" . number_format($dueCleared, 2) . " for order #{$order_id} was successfully cleared via " . ucfirst($settle_mode) . "! Remaining due balance: ₹" . number_format($newDue, 2)
+                ];
             } else {
-                $error_msg = "No outstanding due balance found for this order.";
+                $_SESSION['flash_msg'] = [
+                    'type' => 'error',
+                    'text' => "No outstanding due balance found for this order."
+                ];
             }
         } catch (PDOException $e) {
-            $error_msg = "Error clearing due: " . $e->getMessage();
+            $_SESSION['flash_msg'] = [
+                'type' => 'error',
+                'text' => "Error clearing due: " . $e->getMessage()
+            ];
         }
     }
+    $redirectCurrentRevenuePage();
 }
 
 // Filters from GET request
@@ -1923,15 +1977,15 @@ $cleanBaseUrl = rtrim(BASE_URL, '/');
                                                     Settled (₹0) <i class='bx bx-history' style="font-size: 13px;"></i>
                                                 </button>
                                             <?php else: ?>
-                                                <a href="<?= htmlspecialchars(buildFilterUrl(['payment_status' => 'unbilled'])) ?>" style="text-decoration: none; color: #94a3b8; font-size: 12px;" title="Filter unbilled orders">
-                                                    Pending
+                                                <a href="<?= htmlspecialchars(buildFilterUrl(['payment_status' => 'unbilled'])) ?>" style="text-decoration: none; color: #94a3b8; font-size: 11px; font-weight: 600; display: inline-flex; align-items: center; gap: 3px;" title="Filter unbilled orders">
+                                                    <i class='bx bx-receipt'></i> Unbilled
                                                 </a>
                                             <?php endif; ?>
                                         </td>
 
                                         <!-- Order Status & Inline Updater -->
                                         <td>
-                                            <form action="index.php" method="POST" style="margin: 0;">
+                                            <form action="index.php<?= !empty($_SERVER['QUERY_STRING']) ? '?' . htmlspecialchars($_SERVER['QUERY_STRING']) : '' ?>" method="POST" style="margin: 0;">
                                                 <input type="hidden" name="update_order_status" value="1">
                                                 <input type="hidden" name="order_id" value="<?= $ordId ?>">
                                                 <select name="status" onchange="this.form.submit()" class="tbl-status-select" aria-label="Update status">
@@ -2053,6 +2107,26 @@ $cleanBaseUrl = rtrim(BASE_URL, '/');
             });
             fTo.addEventListener('change', function() {
                 if (this.value) fPeriod.value = 'all';
+            });
+        }
+
+        // Clean browser history state so refreshing the page never prompts form re-submission
+        if (window.history.replaceState) {
+            window.history.replaceState(null, null, window.location.href);
+        }
+
+        // Prevent double form submission on custom due clearance
+        const dueModalForm = document.querySelector('#revenueDueModal form');
+        if (dueModalForm) {
+            dueModalForm.addEventListener('submit', function() {
+                const submitBtn = this.querySelector('button[type="submit"]');
+                if (submitBtn) {
+                    setTimeout(function() {
+                        submitBtn.disabled = true;
+                        submitBtn.style.opacity = '0.7';
+                        submitBtn.innerHTML = "<i class='bx bx-loader-alt bx-spin'></i> Processing...";
+                    }, 10);
+                }
             });
         }
     });
@@ -2252,6 +2326,7 @@ $cleanBaseUrl = rtrim(BASE_URL, '/');
             </div>
             <form action="index.php<?= !empty($_SERVER['QUERY_STRING']) ? '?' . htmlspecialchars($_SERVER['QUERY_STRING']) : '' ?>" method="POST" style="padding: 20px;" onsubmit="return confirm('Confirm clearing custom due amount?');">
                 <input type="hidden" name="settle_due_balance" value="1">
+                <input type="hidden" name="settle_token" value="<?= htmlspecialchars($due_settle_token) ?>">
                 <input type="hidden" name="order_id" id="revModalOrderId" value="0">
 
                 <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 10px 14px; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center;">

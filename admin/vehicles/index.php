@@ -14,6 +14,19 @@ $admin_name   = htmlspecialchars($_SESSION['admin_name'] ?? 'Admin');
 $current_page = "vehicles";
 $page_title   = "Vehicles & Loading Hub";
 
+// --- AJAX VEHICLE DELIVERIES & FINANCIAL DETAILS ---
+if (isset($_GET['ajax']) && $_GET['ajax'] === 'vehicle_details') {
+    header('Content-Type: application/json; charset=utf-8');
+    $vId     = (int)($_GET['vehicle_id'] ?? 0);
+    $dFilter = trim($_GET['date'] ?? 'all');
+    $fDate   = trim($_GET['from_date'] ?? '');
+    $tDate   = trim($_GET['to_date'] ?? '');
+    
+    $res = getVehicleDeliveredOrdersDetails($pdo, $vId, $dFilter, $fDate, $tDate);
+    echo json_encode($res);
+    exit;
+}
+
 // --- FLASH MESSAGES ---
 $success_msg = $_SESSION['success_message'] ?? null;
 $error_msg   = $_SESSION['error_message'] ?? null;
@@ -152,34 +165,67 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $filterZone   = trim($_GET['zone'] ?? 'all');
 $filterStatus = trim($_GET['status'] ?? 'all');
 $filterDate   = trim($_GET['date'] ?? 'all');
+$fromDate     = trim($_GET['from_date'] ?? '');
+$toDate       = trim($_GET['to_date'] ?? '');
 $searchQuery  = trim($_GET['search'] ?? '');
 $viewMode     = trim($_GET['view'] ?? 'cards'); // 'cards' or 'table'
 
+$validDate = function ($date) {
+    if (empty($date)) return false;
+    $d = DateTime::createFromFormat('!Y-m-d', $date);
+    return $d && $d->format('Y-m-d') === $date;
+};
+
+// Custom date range takes priority if from_date or to_date is provided
+if (($fromDate !== '' && $validDate($fromDate)) || ($toDate !== '' && $validDate($toDate))) {
+    $filterDate = 'custom';
+}
+
 // Validate and normalize filterDate
-if (!in_array($filterDate, ['all', 'today', 'yesterday', 'weekly', 'monthly', 'this_week', 'this_month'])) {
+if (!in_array($filterDate, ['all', 'today', 'yesterday', 'weekly', 'monthly', 'this_week', 'this_month', 'custom'])) {
     $filterDate = 'all';
 }
 
-$dateLabels = [
-    'all'        => 'All Time',
-    'today'      => 'Today',
-    'yesterday'  => 'Yesterday',
-    'weekly'     => 'This Week',
-    'this_week'  => 'This Week',
-    'monthly'    => 'This Month',
-    'this_month' => 'This Month'
-];
-$currentDateLabel = $dateLabels[$filterDate] ?? 'All Time';
+if ($filterDate === 'custom') {
+    if (!empty($fromDate) && !empty($toDate)) {
+        $currentDateLabel = date('d M Y', strtotime($fromDate)) . ' to ' . date('d M Y', strtotime($toDate));
+    } elseif (!empty($fromDate)) {
+        $currentDateLabel = 'From ' . date('d M Y', strtotime($fromDate));
+    } else {
+        $currentDateLabel = 'Up to ' . date('d M Y', strtotime($toDate));
+    }
+} else {
+    $dateLabels = [
+        'all'        => 'All Time',
+        'today'      => 'Today (Daily)',
+        'yesterday'  => 'Yesterday (Daily)',
+        'weekly'     => 'This Week',
+        'this_week'  => 'This Week',
+        'monthly'    => 'This Month (Monthly)',
+        'this_month' => 'This Month (Monthly)'
+    ];
+    $currentDateLabel = $dateLabels[$filterDate] ?? 'All Time';
+}
 
 // URL builder helper for maintaining filter state across tabs
 function buildVehiclesUrl(array $overrides = []): string {
     $params = [
-        'zone'   => $_GET['zone'] ?? 'all',
-        'status' => $_GET['status'] ?? 'all',
-        'date'   => $_GET['date'] ?? 'all',
-        'search' => $_GET['search'] ?? ''
+        'zone'      => $_GET['zone'] ?? 'all',
+        'status'    => $_GET['status'] ?? 'all',
+        'date'      => $_GET['date'] ?? 'all',
+        'from_date' => $_GET['from_date'] ?? '',
+        'to_date'   => $_GET['to_date'] ?? '',
+        'search'    => $_GET['search'] ?? ''
     ];
     $merged = array_merge($params, $overrides);
+    // If setting a preset date, clear custom dates
+    if (isset($overrides['date']) && $overrides['date'] !== 'custom') {
+        $merged['from_date'] = '';
+        $merged['to_date']   = '';
+    }
+    if (!empty($merged['from_date']) || !empty($merged['to_date'])) {
+        $merged['date'] = 'custom';
+    }
     $queryParts = [];
     foreach ($merged as $k => $v) {
         if ($v !== '' && $v !== 'all' && $v !== null) {
@@ -189,7 +235,24 @@ function buildVehiclesUrl(array $overrides = []): string {
     return 'index.php' . (!empty($queryParts) ? '?' . http_build_query($queryParts) : '');
 }
 
-$fleetData = getAllVehiclesWithLoads($pdo, $filterZone, $filterDate);
+// URL builder helper for navigating to dedicated vehicle view.php page
+function buildVehicleViewUrl(int $vId): string {
+    $params = [
+        'id'        => $vId,
+        'date'      => $_GET['date'] ?? 'all',
+        'from_date' => $_GET['from_date'] ?? '',
+        'to_date'   => $_GET['to_date'] ?? ''
+    ];
+    $queryParts = [];
+    foreach ($params as $k => $v) {
+        if ($v !== '' && $v !== 'all' && $v !== null) {
+            $queryParts[$k] = $v;
+        }
+    }
+    return 'view.php?' . http_build_query($queryParts);
+}
+
+$fleetData = getAllVehiclesWithLoads($pdo, $filterZone, $filterDate, $fromDate, $toDate);
 $vehicles  = $fleetData['vehicles'] ?? [];
 $zonesList = $fleetData['zones'] ?? [];
 $summary   = $fleetData['summary'] ?? [];
@@ -212,12 +275,12 @@ foreach ($vehicles as $v) {
 }
 
 // Fleet-wide cumulative delivery & loads statistics
-$fleetDeliveriesDone = 0;
-$fleetLoadsDelivered = 0;
-foreach ($fleetData['vehicles'] as $fv) {
-    $fleetDeliveriesDone += (int)($fv['deliveries_done'] ?? 0);
-    $fleetLoadsDelivered += (int)($fv['loads_taken_to_delivery'] ?? ($fv['loads_delivered'] ?? 0));
-}
+$fleetDeliveriesDone  = (int)($summary['fleet_deliveries_done'] ?? 0);
+$fleetLoadsDelivered  = (int)($summary['fleet_loads_delivered'] ?? 0);
+$fleetTotalCash       = (float)($summary['fleet_total_cash'] ?? 0.0);
+$fleetTotalCredit     = (float)($summary['fleet_total_credit'] ?? 0.0);
+$fleetTotalDue        = (float)($summary['fleet_total_due'] ?? 0.0);
+$fleetDeliveredAmount = (float)($summary['fleet_delivered_amount'] ?? 0.0);
 
 // Apply client search & status filters
 if (!empty($searchQuery)) {
@@ -489,13 +552,14 @@ foreach ($fleetData['vehicles'] as $v) {
             display: flex;
             flex-direction: column;
             justify-content: space-between;
-            transition: transform 0.15s ease, box-shadow 0.15s ease;
+            transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
             position: relative;
+            cursor: pointer;
         }
         .v-card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 18px -4px rgba(0,0,0,0.08);
-            border-color: #cbd5e1;
+            transform: translateY(-3px);
+            box-shadow: 0 12px 25px -4px rgba(37,99,235,0.12), 0 4px 6px -2px rgba(0,0,0,0.04);
+            border-color: #93c5fd;
         }
 
         .v-card-top {
@@ -617,6 +681,67 @@ foreach ($fleetData['vehicles'] as $v) {
             font-weight: 600;
             color: #64748b;
             margin-top: 2px;
+        }
+
+        /* Vehicle Card Financial Breakdown (Cash, Credit, Due) */
+        .v-finance-box {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 6px;
+            margin-bottom: 12px;
+        }
+        .v-finance-pill {
+            border-radius: 8px;
+            padding: 7px 6px;
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            transition: transform 0.15s ease;
+        }
+        .v-finance-pill:hover { transform: translateY(-1px); }
+        .v-fin-cash {
+            background: #ecfdf5;
+            border: 1px solid #a7f3d0;
+        }
+        .v-fin-cash .v-fin-lbl { color: #065f46; }
+        .v-fin-cash .v-fin-val { color: #047857; }
+
+        .v-fin-credit {
+            background: #f5f3ff;
+            border: 1px solid #ddd6fe;
+        }
+        .v-fin-credit .v-fin-lbl { color: #5b21b6; }
+        .v-fin-credit .v-fin-val { color: #6d28d9; }
+
+        .v-fin-due {
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+        }
+        .v-fin-due .v-fin-lbl { color: #991b1b; }
+        .v-fin-due .v-fin-val { color: #b91c1c; }
+        .v-fin-due.has-due {
+            background: #fee2e2;
+            border-color: #fca5a5;
+        }
+        .v-fin-lbl {
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.02em;
+            margin-bottom: 2px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 3px;
+        }
+        .v-fin-val {
+            font-size: 13px;
+            font-weight: 800;
+            line-height: 1.2;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
         /* Loading metric block */
@@ -749,6 +874,179 @@ foreach ($fleetData['vehicles'] as $v) {
             border-color: #fecaca;
         }
         .btn-act-reset:hover { background: #fee2e2; }
+
+        /* Card CTA Prompt */
+        .v-card-cta {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 8px 12px;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 12px;
+            font-weight: 600;
+            color: #2563eb;
+            transition: all 0.15s ease;
+        }
+        .v-card:hover .v-card-cta {
+            background: #eff6ff;
+            border-color: #bfdbfe;
+            color: #1d4ed8;
+        }
+        .v-cta-text {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .v-cta-arrow {
+            display: inline-flex;
+            align-items: center;
+            gap: 2px;
+            font-weight: 700;
+        }
+
+        /* Filter Toolbar Enhancements */
+        .v-date-filter-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 10px;
+            width: 100%;
+            padding-top: 10px;
+            margin-top: 10px;
+            border-top: 1px dashed #e2e8f0;
+        }
+        .v-date-presets {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+        .v-filter-section-lbl {
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            color: #475569;
+            margin-right: 4px;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .v-custom-date-form {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+        .v-date-input-group {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 11px;
+            font-weight: 700;
+            color: #64748b;
+            text-transform: uppercase;
+        }
+        .form-input-sm {
+            padding: 5px 8px !important;
+            font-size: 12px !important;
+            width: 130px !important;
+            border-radius: 6px !important;
+        }
+        .btn-sm {
+            padding: 6px 12px !important;
+            font-size: 12px !important;
+            border-radius: 6px !important;
+        }
+        .v-active-filter-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 8px;
+            width: 100%;
+            margin-top: 8px;
+            padding: 8px 12px;
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 12px;
+        }
+        .v-active-filter-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            color: #334155;
+            flex-wrap: wrap;
+        }
+        .v-chip-sep {
+            color: #cbd5e1;
+        }
+        .btn-clear-all {
+            color: #dc2626;
+            text-decoration: none;
+            font-weight: 700;
+            font-size: 11px;
+            display: inline-flex;
+            align-items: center;
+            gap: 3px;
+        }
+        .btn-clear-all:hover {
+            text-decoration: underline;
+        }
+
+        /* Large Details Modal Styles */
+        .v-modal-dialog-lg {
+            max-width: 960px !important;
+            max-height: 92vh;
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+        }
+        .v-modal-kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+            gap: 10px;
+            margin-bottom: 12px;
+        }
+        .v-modal-kpi-card {
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 10px;
+            padding: 12px 14px;
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+        .v-modal-kpi-val {
+            font-size: 20px;
+            font-weight: 800;
+            line-height: 1.1;
+        }
+        .v-modal-kpi-lbl {
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            color: #64748b;
+            margin-top: 4px;
+        }
+        .v-modal-kpi-sub {
+            font-size: 10px;
+            font-weight: 600;
+            color: #64748b;
+            margin-top: 2px;
+        }
+        .v-details-table th, .v-details-table td {
+            padding: 9px 12px;
+            font-size: 12px;
+        }
+        .v-details-table tr:hover {
+            background: #f8fafc;
+        }
 
         /* Modal Styles */
         .v-modal-backdrop {
@@ -939,7 +1237,7 @@ foreach ($fleetData['vehicles'] as $v) {
                         </div>
                     </div>
 
-                    <!-- Deliveries Done (Lifetime - Never Reset) -->
+                    <!-- Deliveries Done -->
                     <div class="v-stat-card">
                         <div>
                             <div class="v-stat-num" style="color: #047857;"><?= number_format($fleetDeliveriesDone) ?></div>
@@ -955,7 +1253,7 @@ foreach ($fleetData['vehicles'] as $v) {
                         </div>
                     </div>
 
-                    <!-- Loads Taken to Delivery (Lifetime Cases - Never Reset) -->
+                    <!-- Loads Delivered -->
                     <div class="v-stat-card">
                         <div>
                             <div class="v-stat-num" style="color: #1d4ed8;">
@@ -973,7 +1271,7 @@ foreach ($fleetData['vehicles'] as $v) {
                         </div>
                     </div>
 
-                    <!-- Current Active Cases Loaded -->
+                    <!-- Current Active Cases Loaded in Yard -->
                     <div class="v-stat-card">
                         <div>
                             <div class="v-stat-num" style="color: #d97706;">
@@ -983,6 +1281,54 @@ foreach ($fleetData['vehicles'] as $v) {
                         </div>
                         <div class="v-stat-icon-wrap v-icon-amber">
                             <i class='bx bx-package'></i>
+                        </div>
+                    </div>
+
+                    <!-- Total Cash Collected -->
+                    <div class="v-stat-card" style="border-color: #a7f3d0;">
+                        <div>
+                            <div class="v-stat-num" style="color: #047857; font-size: 22px;">₹<?= number_format($fleetTotalCash, 2) ?></div>
+                            <div class="v-stat-label">
+                                Fleet Cash Collected
+                                <?php if ($filterDate !== 'all'): ?>
+                                    <span style="display: block; font-size: 10px; color: #059669; font-weight: 700;"><?= htmlspecialchars($currentDateLabel) ?></span>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                        <div class="v-stat-icon-wrap v-icon-emerald">
+                            <i class='bx bx-money'></i>
+                        </div>
+                    </div>
+
+                    <!-- Total Credited Amount -->
+                    <div class="v-stat-card" style="border-color: #ddd6fe;">
+                        <div>
+                            <div class="v-stat-num" style="color: #6d28d9; font-size: 22px;">₹<?= number_format($fleetTotalCredit, 2) ?></div>
+                            <div class="v-stat-label">
+                                Fleet Credited Amount
+                                <?php if ($filterDate !== 'all'): ?>
+                                    <span style="display: block; font-size: 10px; color: #7c3aed; font-weight: 700;"><?= htmlspecialchars($currentDateLabel) ?></span>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                        <div class="v-stat-icon-wrap v-icon-purple">
+                            <i class='bx bx-credit-card'></i>
+                        </div>
+                    </div>
+
+                    <!-- Total Outstanding Due -->
+                    <div class="v-stat-card" style="border-color: #fecaca;">
+                        <div>
+                            <div class="v-stat-num" style="color: #b91c1c; font-size: 22px;">₹<?= number_format($fleetTotalDue, 2) ?></div>
+                            <div class="v-stat-label">
+                                Fleet Outstanding Due
+                                <?php if ($filterDate !== 'all'): ?>
+                                    <span style="display: block; font-size: 10px; color: #dc2626; font-weight: 700;"><?= htmlspecialchars($currentDateLabel) ?></span>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                        <div class="v-stat-icon-wrap" style="background: #fef2f2; color: #dc2626;">
+                            <i class='bx bx-error-circle'></i>
                         </div>
                     </div>
                 </div>
@@ -1019,6 +1365,8 @@ foreach ($fleetData['vehicles'] as $v) {
                         <form method="GET" action="index.php" style="display: flex; gap: 8px;">
                             <input type="hidden" name="zone" value="<?= htmlspecialchars($filterZone) ?>">
                             <input type="hidden" name="date" value="<?= htmlspecialchars($filterDate) ?>">
+                            <input type="hidden" name="from_date" value="<?= htmlspecialchars($fromDate) ?>">
+                            <input type="hidden" name="to_date" value="<?= htmlspecialchars($toDate) ?>">
                             
                             <select name="status" class="form-select-v" style="padding: 7px 10px; font-size: 12px; width: 120px;" onchange="this.form.submit()">
                                 <option value="all" <?= ($filterStatus === 'all') ? 'selected' : '' ?>>All Status</option>
@@ -1033,7 +1381,7 @@ foreach ($fleetData['vehicles'] as $v) {
                                 <input type="text" name="search" value="<?= htmlspecialchars($searchQuery) ?>" placeholder="Search plate / driver...">
                             </div>
 
-                            <?php if ($searchQuery || $filterStatus !== 'all' || $filterDate !== 'all'): ?>
+                            <?php if ($searchQuery || $filterStatus !== 'all' || $filterDate !== 'all' || $fromDate !== '' || $toDate !== ''): ?>
                                 <a href="index.php?zone=<?= urlencode($filterZone) ?>" class="btn-v-secondary" style="padding: 7px 10px;" title="Reset Filters">
                                     <i class='bx bx-x'></i>
                                 </a>
@@ -1041,11 +1389,12 @@ foreach ($fleetData['vehicles'] as $v) {
                         </form>
                     </div>
 
-                    <!-- Date Filter Bar (Loads Gone: Today, Yesterday, Weekly, Monthly, All) -->
-                    <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; width: 100%; padding-top: 10px; margin-top: 10px; border-top: 1px dashed #e2e8f0;">
-                        <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
-                            <span style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #475569; margin-right: 4px; display: inline-flex; align-items: center; gap: 4px;">
-                                <i class='bx bx-calendar' style="color: #2563eb; font-size: 14px;"></i> Loads Gone:
+                    <!-- Dedicated Date Filter Row: Daily, Monthly, Weekly, Custom Date Range -->
+                    <div class="v-date-filter-row">
+                        <!-- Presets (Daily, Monthly, All Time, Weekly) -->
+                        <div class="v-date-presets">
+                            <span class="v-filter-section-lbl">
+                                <i class='bx bx-calendar' style="color: #2563eb; font-size: 14px;"></i> Date Filter:
                             </span>
 
                             <a href="<?= buildVehiclesUrl(['date' => 'all']) ?>" 
@@ -1054,33 +1403,81 @@ foreach ($fleetData['vehicles'] as $v) {
                             </a>
 
                             <a href="<?= buildVehiclesUrl(['date' => 'today']) ?>" 
-                               class="v-zone-tab <?= ($filterDate === 'today') ? 'active' : '' ?>">
-                                <i class='bx bx-time'></i> Today
+                               class="v-zone-tab <?= ($filterDate === 'today') ? 'active' : '' ?>" title="Today (Daily)">
+                                <i class='bx bx-time'></i> Today (Daily)
                             </a>
 
                             <a href="<?= buildVehiclesUrl(['date' => 'yesterday']) ?>" 
-                               class="v-zone-tab <?= ($filterDate === 'yesterday') ? 'active' : '' ?>">
-                                <i class='bx bx-history'></i> Yesterday
+                               class="v-zone-tab <?= ($filterDate === 'yesterday') ? 'active' : '' ?>" title="Yesterday (Daily)">
+                                <i class='bx bx-history'></i> Yesterday (Daily)
                             </a>
 
                             <a href="<?= buildVehiclesUrl(['date' => 'weekly']) ?>" 
                                class="v-zone-tab <?= ($filterDate === 'weekly') ? 'active' : '' ?>">
-                                <i class='bx bx-calendar-week'></i> Weekly
+                                <i class='bx bx-calendar-week'></i> This Week
                             </a>
 
                             <a href="<?= buildVehiclesUrl(['date' => 'monthly']) ?>" 
-                               class="v-zone-tab <?= ($filterDate === 'monthly') ? 'active' : '' ?>">
-                                <i class='bx bx-calendar-event'></i> Monthly
+                               class="v-zone-tab <?= ($filterDate === 'monthly') ? 'active' : '' ?>" title="This Month (Monthly)">
+                                <i class='bx bx-calendar-event'></i> This Month (Monthly)
                             </a>
                         </div>
 
-                        <?php if ($filterDate !== 'all'): ?>
-                            <div style="font-size: 12px; font-weight: 600; color: #1e40af; background: #eff6ff; border: 1px solid #bfdbfe; padding: 4px 10px; border-radius: 6px; display: inline-flex; align-items: center; gap: 6px;">
-                                <span>Showing: <strong><?= htmlspecialchars($currentDateLabel) ?></strong> (<?= number_format($fleetLoadsDelivered) ?> cs delivered)</span>
-                                <a href="<?= buildVehiclesUrl(['date' => 'all']) ?>" style="color: #ef4444; text-decoration: none; font-weight: 700;" title="Clear Date Filter">&times;</a>
+                        <!-- Custom Date Range Form -->
+                        <form method="GET" action="index.php" class="v-custom-date-form">
+                            <input type="hidden" name="zone" value="<?= htmlspecialchars($filterZone) ?>">
+                            <input type="hidden" name="status" value="<?= htmlspecialchars($filterStatus) ?>">
+                            <input type="hidden" name="search" value="<?= htmlspecialchars($searchQuery) ?>">
+                            <input type="hidden" name="date" value="custom">
+
+                            <span class="v-filter-section-lbl">
+                                <i class='bx bx-calendar-edit' style="color: #2563eb;"></i> Custom Date:
+                            </span>
+
+                            <div class="v-date-input-group">
+                                <label for="veh_from_date">From</label>
+                                <input type="date" id="veh_from_date" name="from_date" value="<?= htmlspecialchars($fromDate) ?>" max="<?= date('Y-m-d') ?>" class="form-input-v form-input-sm" required>
                             </div>
-                        <?php endif; ?>
+
+                            <div class="v-date-input-group">
+                                <label for="veh_to_date">To</label>
+                                <input type="date" id="veh_to_date" name="to_date" value="<?= htmlspecialchars($toDate) ?>" max="<?= date('Y-m-d') ?>" class="form-input-v form-input-sm" required>
+                            </div>
+
+                            <button type="submit" class="btn-v-primary btn-sm">
+                                <i class='bx bx-filter-alt'></i> Apply
+                            </button>
+
+                            <?php if ($filterDate !== 'all'): ?>
+                                <a href="<?= buildVehiclesUrl(['date' => 'all']) ?>" class="btn-v-secondary btn-sm" title="Clear Date Filter" style="color: #dc2626;">
+                                    <i class='bx bx-x'></i> Clear Date
+                                </a>
+                            <?php endif; ?>
+                        </form>
                     </div>
+
+                    <!-- Active Filter Context Banner -->
+                    <?php if ($filterDate !== 'all'): ?>
+                        <div class="v-active-filter-bar">
+                            <div class="v-active-filter-chip">
+                                <i class='bx bx-calendar-check' style="color: #2563eb; font-size: 16px;"></i>
+                                <span>Active Period: <strong><?= htmlspecialchars($currentDateLabel) ?></strong></span>
+                                <span class="v-chip-sep">&bull;</span>
+                                <span>Deliveries: <strong><?= number_format($fleetDeliveriesDone) ?></strong></span>
+                                <span class="v-chip-sep">&bull;</span>
+                                <span>Cases Delivered: <strong><?= number_format($fleetLoadsDelivered) ?> cs</strong></span>
+                                <span class="v-chip-sep">&bull;</span>
+                                <span>Cash: <strong style="color: #047857;">₹<?= number_format($fleetTotalCash, 2) ?></strong></span>
+                                <span class="v-chip-sep">&bull;</span>
+                                <span>Credit: <strong style="color: #6d28d9;">₹<?= number_format($fleetTotalCredit, 2) ?></strong></span>
+                                <span class="v-chip-sep">&bull;</span>
+                                <span>Due: <strong style="color: #b91c1c;">₹<?= number_format($fleetTotalDue, 2) ?></strong></span>
+                            </div>
+                            <a href="<?= buildVehiclesUrl(['date' => 'all']) ?>" class="btn-clear-all" title="Reset date filter">
+                                <i class='bx bx-x-circle'></i> Clear Date Filter
+                            </a>
+                        </div>
+                    <?php endif; ?>
                 </div>
 
                 <!-- 3. Vehicles Fleet Grid: Every Vehicle Details, Amount of Cases Loaded & Zones -->
@@ -1141,7 +1538,13 @@ if ($percent > 85) {
     $fillClass = 'fill-amber';
 }
                             ?>
-                            <div class="v-card" id="card_vehicle_<?= $vId ?>">
+                            <?php
+                                $vCash    = (float)($v['total_cash'] ?? 0);
+                                $vCredit  = (float)($v['total_credit'] ?? 0);
+                                $vDue     = (float)($v['total_due'] ?? 0);
+                                $vViewUrl = buildVehicleViewUrl($vId);
+                            ?>
+                            <div class="v-card" id="card_vehicle_<?= $vId ?>" onclick="window.location.href='<?= $vViewUrl ?>'" title="Click to view full delivery details & orders for <?= $vNum ?>">
                                 <div>
                                     <!-- Header: Plate Number, Model & Status Badge -->
                                     <div class="v-card-top">
@@ -1166,7 +1569,7 @@ if ($percent > 85) {
                                             <strong><?= $driverName ?></strong>
                                         </span>
                                         <?php if (!empty($driverPhone)): ?>
-                                            <a href="tel:<?= $driverPhone ?>" title="Call Driver">
+                                            <a href="tel:<?= $driverPhone ?>" onclick="event.stopPropagation();" title="Call Driver">
                                                 <i class='bx bx-phone'></i> <?= $driverPhone ?>
                                             </a>
                                         <?php else: ?>
@@ -1174,9 +1577,9 @@ if ($percent > 85) {
                                         <?php endif; ?>
                                     </div>
 
-                                    <!-- Lifetime Persistent Metrics (Deliveries Done & Loads Taken to Delivery) -->
+                                    <!-- Deliveries Done & Loads Taken to Delivery -->
                                     <div class="v-lifetime-stats-box">
-                                        <div class="v-stat-pill-box green" title="Total delivered orders completed by this vehicle (<?= htmlspecialchars($currentDateLabel) ?>)">
+                                        <div class="v-stat-pill-box green" title="Delivered orders completed by this vehicle (<?= htmlspecialchars($currentDateLabel) ?>)">
                                             <div class="v-stat-pill-lbl">
                                                 <i class='bx bx-check-circle'></i> Deliveries Done
                                                 <?php if ($filterDate !== 'all'): ?>
@@ -1196,6 +1599,22 @@ if ($percent > 85) {
                                         </div>
                                     </div>
 
+                                    <!-- FINANCIAL BREAKDOWN ON CARD: Total Credited, Cash, Due -->
+                                    <div class="v-finance-box">
+                                        <div class="v-finance-pill v-fin-cash" title="Cash Collected (<?= htmlspecialchars($currentDateLabel) ?>): ₹<?= number_format($vCash, 2) ?>">
+                                            <div class="v-fin-lbl"><i class='bx bx-money'></i> Cash</div>
+                                            <div class="v-fin-val">₹<?= number_format($vCash, 2) ?></div>
+                                        </div>
+                                        <div class="v-finance-pill v-fin-credit" title="Total Credited (<?= htmlspecialchars($currentDateLabel) ?>): ₹<?= number_format($vCredit, 2) ?>">
+                                            <div class="v-fin-lbl"><i class='bx bx-credit-card'></i> Credited</div>
+                                            <div class="v-fin-val">₹<?= number_format($vCredit, 2) ?></div>
+                                        </div>
+                                        <div class="v-finance-pill v-fin-due <?= $vDue > 0 ? 'has-due' : '' ?>" title="Outstanding Due (<?= htmlspecialchars($currentDateLabel) ?>): ₹<?= number_format($vDue, 2) ?>">
+                                            <div class="v-fin-lbl"><i class='bx bx-error-circle'></i> Due</div>
+                                            <div class="v-fin-val">₹<?= number_format($vDue, 2) ?></div>
+                                        </div>
+                                    </div>
+
                                     <!-- Zone-Specific Case Count -->
                                     <div class="v-load-zone-focus">
                                         <i class='bx bx-info-circle'></i>
@@ -1209,7 +1628,7 @@ if ($percent > 85) {
                                     <!-- Zones Breakdown: Exact Cases Loaded for Each Zone -->
                                     <div class="v-breakdown-sec">
                                         <div class="v-breakdown-title">
-                                            <i class='bx bx-map-alt'></i> Zones Breakdown:
+                                            <i class='bx bx-map-alt'></i> Yard Load Zones:
                                         </div>
                                         <div class="v-zone-chips-wrap">
                                             <?php if (!empty($v['zone_breakdown'])): ?>
@@ -1221,7 +1640,7 @@ if ($percent > 85) {
                                                     </span>
                                                 <?php endforeach; ?>
                                             <?php else: ?>
-                                                <span style="font-size: 12px; color: #94a3b8; font-style: italic;">
+                                                <span style="font-size: 11px; color: #94a3b8; font-style: italic;">
                                                     No cases loaded yet &bull; Vehicle empty
                                                 </span>
                                             <?php endif; ?>
@@ -1229,7 +1648,29 @@ if ($percent > 85) {
                                     </div>
                                 </div>
 
-                             
+                                <!-- Card Footer: Interactive CTA & Action Buttons -->
+                                <div>
+                                    <div class="v-card-cta" onclick="window.location.href='<?= $vViewUrl ?>'">
+                                        <span class="v-cta-text">
+                                            <i class='bx bx-detail'></i> 
+                                            Click to view <strong><?= $deliveriesDone ?></strong> delivered order<?= $deliveriesDone === 1 ? '' : 's' ?> & full details
+                                        </span>
+                                        <span class="v-cta-arrow">
+                                            Open Page <i class='bx bx-right-arrow-alt'></i>
+                                        </span>
+                                    </div>
+
+                                    <div class="v-card-footer" onclick="event.stopPropagation();">
+                                        <button type="button" class="v-action-btn btn-act-load" onclick="event.stopPropagation(); openLoadCasesModal(<?= $vId ?>, '<?= addslashes($vNum) ?>')">
+                                            <i class='bx bx-package'></i> Load Cases
+                                        </button>
+                                        <div style="display: flex; gap: 4px;">
+                                            <button type="button" class="v-action-btn" onclick="event.stopPropagation(); openEditVehicleModal(<?= htmlspecialchars(json_encode($v), ENT_QUOTES, 'UTF-8') ?>)" title="Edit Vehicle Details">
+                                                <i class='bx bx-edit'></i> Edit
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         <?php endforeach; ?>
                     </div>
@@ -1412,8 +1853,39 @@ if ($percent > 85) {
         </div>
     </div>
 
-    <!-- Vehicles Modal Interaction Scripts -->
+    <!-- Scripts -->
     <script>
+        const CURRENT_DATE_FILTER = <?= json_encode($filterDate) ?>;
+        const CURRENT_FROM_DATE   = <?= json_encode($fromDate) ?>;
+        const CURRENT_TO_DATE     = <?= json_encode($toDate) ?>;
+        const CURRENT_DATE_LABEL  = <?= json_encode($currentDateLabel) ?>;
+
+        function openVehicleDetailsModal(vId) {
+            let url = 'view.php?id=' + encodeURIComponent(vId);
+            if (CURRENT_DATE_FILTER && CURRENT_DATE_FILTER !== 'all') {
+                url += '&date=' + encodeURIComponent(CURRENT_DATE_FILTER);
+            }
+            if (CURRENT_FROM_DATE) {
+                url += '&from_date=' + encodeURIComponent(CURRENT_FROM_DATE);
+            }
+            if (CURRENT_TO_DATE) {
+                url += '&to_date=' + encodeURIComponent(CURRENT_TO_DATE);
+            }
+            window.location.href = url;
+        }
+
+        function closeVehicleDetailsModal() {}
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            return String(text)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
+
         function openAddVehicleModal() {
             const m = document.getElementById('modalAddVehicle');
             if (m) m.classList.add('open');
@@ -1469,6 +1941,16 @@ if ($percent > 85) {
                 closeAddVehicleModal();
                 closeLoadCasesModal();
                 closeEditVehicleModal();
+                closeVehicleDetailsModal();
+            }
+        });
+
+        // Automatically open modal if ?vehicle_id=ID is present in URL
+        window.addEventListener('DOMContentLoaded', function() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const vId = urlParams.get('vehicle_id');
+            if (vId) {
+                openVehicleDetailsModal(parseInt(vId, 10));
             }
         });
     </script>
