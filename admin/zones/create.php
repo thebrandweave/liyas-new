@@ -127,30 +127,66 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_zone'])) {
     <link href='https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css' rel='stylesheet'>
     <link rel="stylesheet" href="../assets/css/prody-admin.css">
     <style>
-        body { font-family: 'Poppins', sans-serif; }
+        html, body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            font-family: 'Poppins', sans-serif;
+        }
+        .container {
+            height: 100vh;
+            overflow: hidden;
+            display: flex;
+        }
+        .main-content {
+            height: 100vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+        }
+        .content-area {
+            flex: 1;
+            overflow-y: auto;
+            overflow-x: hidden;
+            padding: 1.25rem 1.5rem;
+        }
         .form-card {
             background: #fff;
             border: 1px solid var(--border-light);
             border-radius: 12px;
-            padding: 2rem;
-            max-width: 650px;
+            padding: 1.25rem 1.75rem;
+            max-width: 960px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+        }
+        .form-grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1.15fr;
+            gap: 20px;
+            align-items: start;
+        }
+        @media (max-width: 860px) {
+            .form-grid-2 {
+                grid-template-columns: 1fr;
+            }
         }
         .form-group {
-            margin-bottom: 1.5rem;
+            margin-bottom: 0.9rem;
         }
         .form-label {
             display: block;
-            margin-bottom: 0.5rem;
-            font-size: 13px;
-            font-weight: 500;
+            margin-bottom: 0.35rem;
+            font-size: 12.5px;
+            font-weight: 600;
             color: #374151;
         }
         .form-control {
             width: 100%;
-            padding: 0.65rem 0.85rem;
+            padding: 0.55rem 0.8rem;
             border: 1px solid #d1d5db;
             border-radius: 8px;
-            font-size: 14px;
+            font-size: 13px;
             font-family: inherit;
         }
         .form-control:focus {
@@ -161,11 +197,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_zone'])) {
         .route-preview {
             background: #f8fafc;
             border: 1px dashed #cbd5e1;
-            padding: 10px 14px;
-            border-radius: 8px;
-            font-size: 13px;
+            padding: 6px 10px;
+            border-radius: 6px;
+            font-size: 12px;
             color: #475569;
-            margin-top: 6px;
+            margin-top: 5px;
             display: flex;
             align-items: center;
             gap: 6px;
@@ -173,7 +209,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_zone'])) {
         .route-preview strong {
             color: #2563eb;
             font-family: monospace;
-            font-size: 14px;
+            font-size: 13px;
         }
     </style>
 </head>
@@ -197,105 +233,117 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_zone'])) {
             
             <div class="content-area">
                 <?php if (!empty($error)): ?>
-                    <div class="alert alert-error" style="padding: 12px 16px; background: #fee2e2; color: #991b1b; border-radius: 8px; margin-bottom: 1.5rem; max-width: 650px;">
+                    <div class="alert alert-error" style="padding: 10px 14px; background: #fee2e2; color: #991b1b; border-radius: 8px; margin-bottom: 1rem; max-width: 960px; font-size: 13px;">
                         <?= htmlspecialchars($error) ?>
                     </div>
                 <?php endif; ?>
 
                 <div class="form-card">
-                    <h2 style="font-size: 20px; font-weight: 600; margin-bottom: 0.5rem; color: #111827;">Create New Delivery Zone</h2>
-                    <p style="font-size: 13px; color: #6b7280; margin-bottom: 1.75rem;">
-                        A dedicated delivery portal route will be generated dynamically for this zone.
-                    </p>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.1rem; border-bottom: 1px solid #f1f5f9; padding-bottom: 0.75rem;">
+                        <div>
+                            <h2 style="font-size: 18px; font-weight: 700; margin: 0 0 2px 0; color: #111827;">Create New Delivery Zone</h2>
+                            <p style="font-size: 12px; color: #6b7280; margin: 0;">
+                                Add a zone portal and assign a delivery vehicle
+                            </p>
+                        </div>
+                    </div>
 
                     <form action="create.php" method="POST" id="zoneForm">
-                        <div class="form-group">
-                            <label class="form-label" for="name">Zone Name <span style="color: #ef4444;">*</span></label>
-                            <input type="text" name="name" id="name" class="form-control" placeholder="e.g. Mangalore, Vitla, Bantwal" required value="<?= htmlspecialchars($_POST['name'] ?? '') ?>" autofocus>
-                            <small style="color: #94a3b8; font-size: 12px;">Example: "Mangalore Zone" or "Bantwal"</small>
-                        </div>
+                        <div class="form-grid-2">
+                            <!-- Left Column: Zone & Route Details -->
+                            <div style="background: #fbfcfe; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px 16px;">
+                                <div style="display: flex; align-items: center; gap: 7px; margin-bottom: 12px; border-bottom: 1px solid #f1f5f9; padding-bottom: 8px;">
+                                    <span style="width: 26px; height: 26px; border-radius: 6px; background: #eff6ff; color: #2563eb; display: inline-flex; align-items: center; justify-content: center; font-size: 15px;">
+                                        <i class='bx bx-map-pin'></i>
+                                    </span>
+                                    <strong style="color: #0f172a; font-size: 13px;">Zone &amp; Portal Information</strong>
+                                </div>
 
-                        <div class="form-group">
-                            <label class="form-label" for="slug">Portal Route Slug</label>
-                            <input type="text" name="slug" id="slug" class="form-control" placeholder="Auto-generated (e.g. bantwal)" value="<?= htmlspecialchars($_POST['slug'] ?? '') ?>">
-                            <div class="route-preview">
-                                <i class='bx bx-link'></i>
-                                Portal URL: <span id="previewUrl"><strong><?= BASE_URL ?>/<span>...</span></strong></span>
+                                <div class="form-group">
+                                    <label class="form-label" for="name">Zone Name <span style="color: #ef4444;">*</span></label>
+                                    <input type="text" name="name" id="name" class="form-control" placeholder="e.g. Mangalore, Vitla, Bantwal" required value="<?= htmlspecialchars($_POST['name'] ?? '') ?>" autofocus>
+                                </div>
+
+                                <div class="form-group">
+                                    <label class="form-label" for="slug">Portal Route Slug <span style="font-size: 11px; color: #64748b; font-weight: 400;"></span></label>
+                                    <input type="text" name="slug" id="slug" class="form-control" placeholder="e.g. mangalore, vitla, tata" value="<?= htmlspecialchars($_POST['slug'] ?? '') ?>">
+                                    <div class="route-preview">
+                                        <i class='bx bx-link'></i>
+                                        <span>Portal: <span id="previewUrl"><strong><?= BASE_URL ?>/<span>...</span></strong></span></span>
+                                    </div>
+                                </div>
+
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label class="form-label" for="status">Zone Status</label>
+                                    <select name="status" id="status" class="form-control">
+                                        <option value="active" <?= (($_POST['status'] ?? 'active') === 'active') ? 'selected' : '' ?>>Active (Enabled)</option>
+                                        <option value="inactive" <?= (($_POST['status'] ?? '') === 'inactive') ? 'selected' : '' ?>>Inactive (Disabled)</option>
+                                    </select>
+                                </div>
                             </div>
-                        </div>
 
-                        <!-- VEHICLE ASSIGNMENT / REGISTRATION SECTION -->
-                        <div class="vehicle-assign-section" style="background: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 10px; padding: 18px; margin-top: 1.5rem; margin-bottom: 1.5rem;">
-                            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
-                                <div style="display: flex; align-items: center; gap: 8px;">
-                                    <span style="width: 32px; height: 32px; border-radius: 8px; background: #eff6ff; color: #2563eb; display: inline-flex; align-items: center; justify-content: center; font-size: 18px;">
+                            <!-- Right Column: Vehicle Assignment -->
+                            <div style="background: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 10px; padding: 14px 16px;">
+                                <div style="display: flex; align-items: center; gap: 7px; margin-bottom: 12px; border-bottom: 1px solid #e2e8f0; padding-bottom: 8px;">
+                                    <span style="width: 26px; height: 26px; border-radius: 6px; background: #eff6ff; color: #2563eb; display: inline-flex; align-items: center; justify-content: center; font-size: 15px;">
                                         <i class='bx bxs-truck'></i>
                                     </span>
                                     <div>
-                                        <strong style="color: #0f172a; font-size: 14px;">Assign Delivery Vehicle</strong>
-                                        <div style="font-size: 12px; color: #64748b;">Fix a vehicle plate number to this delivery zone</div>
+                                        <strong style="color: #0f172a; font-size: 13px;">Assign Delivery Vehicle</strong>
+                                        <div style="font-size: 11px; color: #64748b;">Fix a vehicle plate number to this delivery zone</div>
+                                    </div>
+                                </div>
+
+                                <div class="form-group" style="margin-bottom: 10px;">
+                                    <label class="form-label" for="existing_vehicle_select">Select Fleet Vehicle (Optional)</label>
+                                    <select name="existing_vehicle_id" id="existing_vehicle_select" class="form-control" onchange="handleExistingVehicleSelect(this)">
+                                        <option value="">-- Or enter new vehicle below --</option>
+                                        <?php foreach ($allVehicles as $av): 
+                                            $zoneText = !empty($av['zone_name']) ? (' (Assigned: ' . htmlspecialchars($av['zone_name']) . ')') : ' (Unassigned)';
+                                        ?>
+                                            <option value="<?= $av['id'] ?>" 
+                                                data-plate="<?= htmlspecialchars($av['vehicle_number']) ?>"
+                                                data-name="<?= htmlspecialchars($av['vehicle_name'] ?? '') ?>"
+                                                data-driver="<?= htmlspecialchars($av['driver_name'] ?? '') ?>"
+                                                data-phone="<?= htmlspecialchars($av['driver_phone'] ?? '') ?>"
+                                                <?= ((int)($_POST['existing_vehicle_id'] ?? 0) === (int)$av['id']) ? 'selected' : '' ?>>
+                                                <?= htmlspecialchars($av['vehicle_number']) ?> <?= !empty($av['vehicle_name']) ? ' &bull; ' . htmlspecialchars($av['vehicle_name']) : '' ?><?= $zoneText ?>
+                                            </option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </div>
+
+                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
+                                    <div class="form-group" style="margin-bottom: 0;">
+                                        <label class="form-label" for="vehicle_number">Vehicle Plate Number</label>
+                                        <input type="text" name="vehicle_number" id="vehicle_number" class="form-control" placeholder="e.g. KA20MP5673" style="text-transform: uppercase; font-weight: 600;" value="<?= htmlspecialchars($_POST['vehicle_number'] ?? '') ?>">
+                                    </div>
+
+                                    <div class="form-group" style="margin-bottom: 0;">
+                                        <label class="form-label" for="vehicle_name">Vehicle Name / Model</label>
+                                        <input type="text" name="vehicle_name" id="vehicle_name" class="form-control" placeholder="e.g. Tata Ace" value="<?= htmlspecialchars($_POST['vehicle_name'] ?? '') ?>">
+                                    </div>
+                                </div>
+
+                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                                    <div class="form-group" style="margin-bottom: 0;">
+                                        <label class="form-label" for="driver_name">Driver Name</label>
+                                        <input type="text" name="driver_name" id="driver_name" class="form-control" placeholder="e.g. Abbas" value="<?= htmlspecialchars($_POST['driver_name'] ?? '') ?>">
+                                    </div>
+
+                                    <div class="form-group" style="margin-bottom: 0;">
+                                        <label class="form-label" for="driver_phone">Driver Phone</label>
+                                        <input type="tel" name="driver_phone" id="driver_phone" class="form-control" placeholder="e.g. 9876543210" value="<?= htmlspecialchars($_POST['driver_phone'] ?? '') ?>">
                                     </div>
                                 </div>
                             </div>
-
-                            <div class="form-group" style="margin-bottom: 1rem;">
-                                <label class="form-label" for="existing_vehicle_select">Select From Existing Fleet Vehicles (Optional)</label>
-                                <select name="existing_vehicle_id" id="existing_vehicle_select" class="form-control" onchange="handleExistingVehicleSelect(this)">
-                                    <option value="">-- Or enter a new vehicle below --</option>
-                                    <?php foreach ($allVehicles as $av): 
-                                        $zoneText = !empty($av['zone_name']) ? (' (Assigned: ' . htmlspecialchars($av['zone_name']) . ')') : ' (Unassigned)';
-                                    ?>
-                                        <option value="<?= $av['id'] ?>" 
-                                            data-plate="<?= htmlspecialchars($av['vehicle_number']) ?>"
-                                            data-name="<?= htmlspecialchars($av['vehicle_name'] ?? '') ?>"
-                                            data-driver="<?= htmlspecialchars($av['driver_name'] ?? '') ?>"
-                                            data-phone="<?= htmlspecialchars($av['driver_phone'] ?? '') ?>"
-                                            <?= ((int)($_POST['existing_vehicle_id'] ?? 0) === (int)$av['id']) ? 'selected' : '' ?>>
-                                            <?= htmlspecialchars($av['vehicle_number']) ?> <?= !empty($av['vehicle_name']) ? ' &bull; ' . htmlspecialchars($av['vehicle_name']) : '' ?><?= $zoneText ?>
-                                        </option>
-                                    <?php endforeach; ?>
-                                </select>
-                            </div>
-
-                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
-                                <div class="form-group" style="margin-bottom: 0.75rem;">
-                                    <label class="form-label" for="vehicle_number">Vehicle Plate Number</label>
-                                    <input type="text" name="vehicle_number" id="vehicle_number" class="form-control" placeholder="e.g. KA20MP5673" style="text-transform: uppercase; font-weight: 600; letter-spacing: 0.5px;" value="<?= htmlspecialchars($_POST['vehicle_number'] ?? '') ?>">
-                                    <small style="color: #94a3b8; font-size: 11px;">Plate number will be fixed to this zone</small>
-                                </div>
-
-                                <div class="form-group" style="margin-bottom: 0.75rem;">
-                                    <label class="form-label" for="vehicle_name">Vehicle Name / Model</label>
-                                    <input type="text" name="vehicle_name" id="vehicle_name" class="form-control" placeholder="e.g. Ashok Leyland, Tata Ace" value="<?= htmlspecialchars($_POST['vehicle_name'] ?? '') ?>">
-                                </div>
-                            </div>
-
-                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 4px;">
-                                <div class="form-group" style="margin-bottom: 0;">
-                                    <label class="form-label" for="driver_name">Driver Name</label>
-                                    <input type="text" name="driver_name" id="driver_name" class="form-control" placeholder="e.g. Abbas" value="<?= htmlspecialchars($_POST['driver_name'] ?? '') ?>">
-                                </div>
-
-                                <div class="form-group" style="margin-bottom: 0;">
-                                    <label class="form-label" for="driver_phone">Driver Phone</label>
-                                    <input type="tel" name="driver_phone" id="driver_phone" class="form-control" placeholder="e.g. 9876543210" value="<?= htmlspecialchars($_POST['driver_phone'] ?? '') ?>">
-                                </div>
-                            </div>
                         </div>
 
-                        <div class="form-group">
-                            <label class="form-label" for="status">Status</label>
-                            <select name="status" id="status" class="form-control">
-                                <option value="active" <?= (($_POST['status'] ?? 'active') === 'active') ? 'selected' : '' ?>>Active (Enabled)</option>
-                                <option value="inactive" <?= (($_POST['status'] ?? '') === 'inactive') ? 'selected' : '' ?>>Inactive (Disabled)</option>
-                            </select>
-                        </div>
-
-                        <div style="display: flex; gap: 12px; margin-top: 2rem;">
-                            <button type="submit" name="save_zone" class="btn-primary" style="padding: 0.65rem 1.5rem; background: #2563eb; color: #fff; border: none; border-radius: 8px; font-weight: 500; cursor: pointer;">
-                                Create Zone
+                        <div style="display: flex; gap: 10px; margin-top: 1.25rem; padding-top: 0.75rem; border-top: 1px solid #f1f5f9;">
+                            <button type="submit" name="save_zone" class="btn-primary" style="padding: 0.55rem 1.4rem; background: #2563eb; color: #fff; border: none; border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;">
+                                <i class='bx bx-check'></i> Create Zone
                             </button>
-                            <a href="index.php" style="padding: 0.65rem 1.25rem; background: #f1f5f9; color: #475569; text-decoration: none; border-radius: 8px; font-weight: 500; display: inline-flex; align-items: center;">
+                            <a href="index.php" style="padding: 0.55rem 1.2rem; background: #f1f5f9; color: #475569; text-decoration: none; border-radius: 8px; font-weight: 500; font-size: 13px; display: inline-flex; align-items: center;">
                                 Cancel
                             </a>
                         </div>
@@ -307,35 +355,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_zone'])) {
 
     <script>
         const baseUrl = <?= json_encode(BASE_URL) ?>;
-        const nameInput = document.getElementById('name');
         const slugInput = document.getElementById('slug');
         const previewUrl = document.getElementById('previewUrl');
 
-        function generateSlug(text) {
-            // Strip 'zone' word if present
-            let cleaned = text.replace(/\bzone\b/gi, '').trim();
-            if (!cleaned) cleaned = text;
-            return cleaned.toLowerCase()
+        function sanitizeSlug(text) {
+            return text.toLowerCase()
                 .replace(/[^a-z0-9]+/g, '-')
                 .replace(/^-+|-+$/g, '');
         }
 
         function updatePreview() {
-            const slugVal = slugInput.value.trim() || generateSlug(nameInput.value.trim()) || '...';
-            previewUrl.innerHTML = `<strong>${baseUrl}/${slugVal}</strong>`;
+            const rawVal = slugInput ? slugInput.value.trim() : '';
+            if (rawVal) {
+                previewUrl.innerHTML = `<strong>${baseUrl}/${sanitizeSlug(rawVal)}</strong>`;
+            } else {
+                previewUrl.innerHTML = `<strong>${baseUrl}/<span>...</span></strong>`;
+            }
         }
 
-        nameInput.addEventListener('input', function() {
-            if (!slugInput.dataset.manual) {
-                slugInput.value = generateSlug(this.value);
-            }
-            updatePreview();
-        });
-
-        slugInput.addEventListener('input', function() {
-            this.dataset.manual = "true";
-            updatePreview();
-        });
+        if (slugInput) {
+            slugInput.addEventListener('input', updatePreview);
+        }
 
         function handleExistingVehicleSelect(selectEl) {
             const opt = selectEl.options[selectEl.selectedIndex];
