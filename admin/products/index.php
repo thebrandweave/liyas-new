@@ -57,17 +57,78 @@ if (isset($_GET['action']) && $_GET['action'] === 'get_product_data') {
         exit;
     }
     $damagedList = getProductDamagedItems($pdo, $pid, 'reported');
+    $vStmt = $pdo->query("SELECT id, vehicle_number, name FROM vehicles WHERE status != 'inactive' ORDER BY vehicle_number ASC");
+    $vehicles = $vStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+    // Calculate cases in transit
+    $inTransitStmt = $pdo->prepare("
+        SELECT (
+            COALESCE((
+                SELECT SUM(oi.quantity)
+                FROM order_items oi
+                JOIN orders ord ON oi.order_id = ord.order_id
+                WHERE oi.product_id = ? AND ord.status IN ('pending', 'processing', 'shipped')
+            ), 0) + COALESCE((
+                SELECT SUM(ord2.quantity)
+                FROM orders ord2
+                WHERE ord2.product_id = ? 
+                  AND ord2.status IN ('pending', 'processing', 'shipped')
+                  AND NOT EXISTS (SELECT 1 FROM order_items oi2 WHERE oi2.order_id = ord2.order_id)
+            ), 0) + COALESCE((
+                SELECT SUM(vl.cases_loaded)
+                FROM vehicle_loads vl
+                WHERE vl.product_id = ? AND vl.is_active = 1 AND vl.order_id IS NULL
+            ), 0)
+        )
+    ");
+    $inTransitStmt->execute([$pid, $pid, $pid]);
+    $pRow['cases_in_transit'] = (int)$inTransitStmt->fetchColumn();
+
     header('Content-Type: application/json');
     echo json_encode([
         'success' => true,
         'product' => $pRow,
-        'damaged_items' => $damagedList
+        'damaged_items' => $damagedList,
+        'vehicles' => $vehicles
     ]);
     exit;
 }
 
+// --- RECORD DAMAGED ITEM FROM MODAL (DEDUCTS STOCK) ---
+if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['record_damaged_item'])) {
+    $isAjax = (!empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest') || isset($_POST['ajax']);
+    $vId = (int)($_POST['vehicle_id'] ?? 0);
+    $pId = (int)($_POST['product_id'] ?? 0);
+    $cases = (int)($_POST['damaged_cases'] ?? 0);
+    $notes = trim($_POST['notes'] ?? '');
+    $reportedBy = 'Admin (' . htmlspecialchars($_SESSION['admin_name'] ?? 'Admin') . ')';
+
+    if ($vId > 0 && $pId > 0 && $cases > 0) {
+        $res = recordVehicleDamagedItem($pdo, $vId, $pId, $cases, null, $notes, $reportedBy, true);
+        if ($isAjax) {
+            header('Content-Type: application/json');
+            echo json_encode($res);
+            exit;
+        }
+        if (!empty($res['success'])) {
+            $_SESSION['success_message'] = "Recorded {$cases} damaged cases and deducted from stock.";
+        } else {
+            $_SESSION['error_message'] = $res['error'] ?? "Failed to record damaged item.";
+        }
+    } else {
+        if ($isAjax) {
+            header('Content-Type: application/json');
+            echo json_encode(['success' => false, 'error' => 'Please select a vehicle and enter valid damaged cases (> 0).']);
+            exit;
+        }
+        $_SESSION['error_message'] = "Please select a vehicle and enter valid damaged cases (> 0).";
+    }
+    header("Location: index.php");
+    exit;
+}
+
 // --- RESOLVE / REMOVE DAMAGED ITEMS ---
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['resolve_damaged_item'])) {
+if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['resolve_damaged_item'])) {
     $isAjax = (!empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest') || isset($_POST['ajax']);
     $damageId = (int)($_POST['damaged_id'] ?? 0);
     $action = trim($_POST['resolution_action'] ?? 'resolved'); // 'corrected', 'transferred', 'resolved'
@@ -94,7 +155,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['resolve_damaged_item'
 }
 
 // --- QUICK UPDATE PRODUCT FROM MODAL ---
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_product_modal'])) {
+if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['update_product_modal'])) {
     $isAjax = (!empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest') || isset($_POST['ajax']);
     $pid = (int)($_POST['product_id'] ?? 0);
     $product_name = trim($_POST['product_name'] ?? '');
@@ -227,8 +288,8 @@ foreach ($products as $p) {
     // Cases damaged
     $damaged = (int)($p['cases_damaged'] ?? 0);
 
-    // Available warehouse stock
-    $availableStock = $cStock;
+    // Available warehouse stock (reduced by cases currently in transit on delivery routes)
+    $availableStock = max(0, $cStock - $inTransit);
 
     // Calculate totals
     $total_available_stock += $availableStock;
@@ -283,7 +344,7 @@ if ($total_records > count($products) && empty($search)) {
         if ($overallData = $overallStmt->fetch(PDO::FETCH_ASSOC)) {
             $total_in_transit = (int)$overallData['total_in_transit'];
             $total_delivered = (int)$overallData['total_delivered'];
-            $total_available_stock = (int)$overallData['total_stock'];
+            $total_available_stock = max(0, (int)$overallData['total_stock'] - $total_in_transit);
             $total_damaged = (int)$overallData['total_damaged'];
         }
     } catch (Exception $e) {
@@ -557,8 +618,8 @@ if ($total_records > count($products) && empty($search)) {
                                         $delivered = (int)$product['cases_delivered'];
                                         $damagedCases = (int)($product['cases_damaged'] ?? 0);
 
-                                        // Available warehouse stock (in-transit is already deducted upon order creation)
-                                        $availableStock = $caseStock;
+                                        // Available warehouse stock (reduced by cases currently in transit on delivery routes)
+                                        $availableStock = max(0, $caseStock - $inTransit);
 
                                         $stockClass = 'badge-stock-healthy';
                                         $statusText = 'In Stock';
@@ -592,7 +653,12 @@ if ($total_records > count($products) && empty($search)) {
                                             <span style="font-size: 11px; color: #64748b;">/ case</span>
                                         </td>
                                         <td>
-                                            <span style="font-weight: 700; font-size: 15px; color: #0f172a;"><?= number_format($caseStock) ?></span> Cases
+                                            <span style="font-weight: 700; font-size: 15px; color: <?= ($availableStock > 0) ? '#0f172a' : '#dc2626' ?>;"><?= number_format($availableStock) ?></span> Cases
+                                            <?php if ($inTransit > 0): ?>
+                                                <div style="font-size: 11px; color: #d97706; margin-top: 3px; font-weight: 500;">
+                                                    <i class='bx bx-car'></i> <?= number_format($inTransit) ?> in transit
+                                                </div>
+                                            <?php endif; ?>
                                         </td>
                                         <td>
                                             <?php if ($damagedCases > 0): ?>
@@ -683,11 +749,50 @@ if ($total_records > count($products) && empty($search)) {
                     <div style="background: #fffbeb; border: 1px solid #fef3c7; border-radius: 10px; padding: 12px 16px; margin-bottom: 16px; display: flex; align-items: flex-start; gap: 10px;">
                         <i class='bx bx-info-circle' style="font-size: 20px; color: #d97706; margin-top: 1px;"></i>
                         <div style="font-size: 12px; color: #92400e; line-height: 1.5;">
-                            <strong>Damaged Stock Resolution Options:</strong>
-                            <br>&bull; <strong>Corrected:</strong> Mark as fixed directly on the delivery vehicle (removes from damaged list; does not add to warehouse stock).
-                            <br>&bull; <strong>Transferred:</strong> Returns cases back to warehouse inventory (restores stock count).
-                            <br>&bull; <strong>Remove:</strong> Resolves and writes off the damaged record.
+                            <strong>Damaged Stock Policy:</strong> Damaged items are automatically deducted from the warehouse Available Stock.
+                            <br>&bull; <strong>Corrected:</strong> Mistaken report or repaired packaging — restores cases back to available stock.
+                            <br>&bull; <strong>Transferred:</strong> Returned to central warehouse — restores cases back to warehouse inventory.
+                            <br>&bull; <strong>Remove:</strong> Discarded or written off as loss — removes record, stock remains deducted.
                         </div>
+                    </div>
+
+                    <!-- Action Bar to Report Damaged -->
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                        <div style="font-size: 13px; font-weight: 700; color: #1e293b;">
+                            Active Damaged Reports on Delivery Vehicles
+                        </div>
+                        <button type="button" onclick="toggleReportDamagedSection()" style="background: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;">
+                            <i class='bx bx-plus-circle'></i> <span id="btnReportToggleText">+ Report Damaged Cases</span>
+                        </button>
+                    </div>
+
+                    <!-- Collapsible Report Damaged Form -->
+                    <div id="reportDamagedFormBox" style="display: none; background: #fef2f2; border: 1px solid #fecaca; border-radius: 10px; padding: 14px; margin-bottom: 16px;">
+                        <form id="formRecordDamaged" onsubmit="submitRecordDamaged(event)">
+                            <input type="hidden" name="record_damaged_item" value="1">
+                            <input type="hidden" name="product_id" id="reportDamageModalProductId" value="">
+                            <div style="display: grid; grid-template-columns: 2fr 1fr 2fr auto; gap: 10px; align-items: flex-end;">
+                                <div>
+                                    <label style="display: block; font-size: 11px; font-weight: 700; color: #475569; margin-bottom: 4px;">Delivery Vehicle <span style="color:#ef4444;">*</span></label>
+                                    <select name="vehicle_id" id="reportDamageVehicleSelect" required class="form-input" style="width: 100%; padding: 7px 10px; border-radius: 6px; font-size: 12px; border: 1px solid #cbd5e1; background: #fff;">
+                                        <option value="">-- Select Delivery Vehicle --</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label style="display: block; font-size: 11px; font-weight: 700; color: #475569; margin-bottom: 4px;">Damaged Cases <span style="color:#ef4444;">*</span></label>
+                                    <input type="number" name="damaged_cases" id="reportDamageCasesInput" min="1" value="1" required class="form-input" style="width: 100%; padding: 7px 10px; border-radius: 6px; font-size: 12px; border: 1px solid #cbd5e1; background: #fff;">
+                                </div>
+                                <div>
+                                    <label style="display: block; font-size: 11px; font-weight: 700; color: #475569; margin-bottom: 4px;">Reason / Notes</label>
+                                    <input type="text" name="notes" id="reportDamageNotesInput" placeholder="e.g. Broken in transit" class="form-input" style="width: 100%; padding: 7px 10px; border-radius: 6px; font-size: 12px; border: 1px solid #cbd5e1; background: #fff;">
+                                </div>
+                                <div>
+                                    <button type="submit" id="btnSubmitDamagedModal" style="background: #dc2626; color: #fff; border: none; padding: 8px 14px; border-radius: 6px; font-size: 12px; font-weight: 700; cursor: pointer; white-space: nowrap; display: inline-flex; align-items: center; gap: 4px;">
+                                        <i class='bx bx-check'></i> Save &amp; Deduct Stock
+                                    </button>
+                                </div>
+                            </div>
+                        </form>
                     </div>
 
                     <div id="damagedItemsContainer">
@@ -810,13 +915,92 @@ if ($total_records > count($products) && empty($search)) {
         currentProductModalData = null;
     }
 
+    function toggleReportDamagedSection() {
+        const box = document.getElementById('reportDamagedFormBox');
+        const txt = document.getElementById('btnReportToggleText');
+        if (!box) return;
+        if (box.style.display === 'none' || !box.style.display) {
+            box.style.display = 'block';
+            if (txt) txt.textContent = 'Cancel';
+        } else {
+            box.style.display = 'none';
+            if (txt) txt.textContent = '+ Report Damaged Cases';
+        }
+    }
+
+    function submitRecordDamaged(e) {
+        e.preventDefault();
+        const form = document.getElementById('formRecordDamaged');
+        const btn = document.getElementById('btnSubmitDamagedModal');
+        if (!form) return;
+
+        btn.disabled = true;
+        btn.innerHTML = "<i class='bx bx-loader-alt bx-spin'></i> Deducting...";
+
+        const fd = new FormData(form);
+        fd.append('ajax', '1');
+
+        fetch('index.php', { method: 'POST', body: fd })
+            .then(r => r.json())
+            .then(res => {
+                btn.disabled = false;
+                btn.innerHTML = "<i class='bx bx-check'></i> Save &amp; Deduct Stock";
+                if (res.success) {
+                    window.location.reload();
+                } else {
+                    alert(res.error || 'Failed to record damaged item.');
+                }
+            })
+            .catch(err => {
+                btn.disabled = false;
+                btn.innerHTML = "<i class='bx bx-check'></i> Save &amp; Deduct Stock";
+                console.error(err);
+                alert('Server error while recording damaged item.');
+            });
+    }
+
     function renderProductModal(data, defaultTab) {
         const p = data.product;
         const damaged = data.damaged_items || [];
+        const vehicles = data.vehicles || [];
 
         const pName = p.product_name || p.name;
         document.getElementById('modalProductTitle').textContent = pName;
-        document.getElementById('modalProductSubtitle').textContent = 'SKU #' + p.product_id + ' | Available Stock: ' + (p.case_stock || p.stock || 0) + ' Cases';
+
+        // Update tab badge & subtitle
+        const totalDamagedCases = damaged.reduce((acc, row) => acc + parseInt(row.damaged_cases || 0), 0);
+        document.getElementById('modalDamagedCountBadge').textContent = totalDamagedCases + ' cs';
+
+        const inTransitCases = parseInt(p.cases_in_transit || 0);
+        const cStock = parseInt(p.case_stock || p.stock || 0);
+        const availStock = Math.max(0, cStock - inTransitCases);
+
+        let subtitle = 'SKU #' + p.product_id + ' | Available Stock: ' + availStock + ' Cases';
+        if (inTransitCases > 0) {
+            subtitle += ' (' + inTransitCases + ' cs in transit)';
+        }
+        if (totalDamagedCases > 0) {
+            subtitle += ' (' + totalDamagedCases + ' cs damaged deducted)';
+        }
+        document.getElementById('modalProductSubtitle').textContent = subtitle;
+
+        // Populate report damaged form
+        const reportPid = document.getElementById('reportDamageModalProductId');
+        if (reportPid) reportPid.value = p.product_id;
+        const vSelect = document.getElementById('reportDamageVehicleSelect');
+        if (vSelect) {
+            let vHtml = '<option value="">-- Select Delivery Vehicle --</option>';
+            vehicles.forEach(veh => {
+                const vNum = veh.vehicle_number || ('Vehicle #' + veh.id);
+                const vName = veh.name ? ` (${veh.name})` : '';
+                vHtml += `<option value="${veh.id}">${vNum}${vName}</option>`;
+            });
+            vSelect.innerHTML = vHtml;
+        }
+        const formBox = document.getElementById('reportDamagedFormBox');
+        if (formBox) formBox.style.display = 'none';
+        const txt = document.getElementById('btnReportToggleText');
+        if (txt) txt.textContent = '+ Report Damaged Cases';
 
         // Populate details form
         document.getElementById('editModalProductId').value = p.product_id;
@@ -827,10 +1011,6 @@ if ($total_records > count($products) && empty($search)) {
         document.getElementById('editModalNetUnit').value = p.net_content_unit || 'ML';
         document.getElementById('editModalStatus').value = p.status || 'active';
         document.getElementById('editModalDescription').value = p.description || '';
-
-        // Update tab badge
-        const totalDamagedCases = damaged.reduce((acc, row) => acc + parseInt(row.damaged_cases || 0), 0);
-        document.getElementById('modalDamagedCountBadge').textContent = totalDamagedCases + ' cs';
 
         // Render damaged items table
         const container = document.getElementById('damagedItemsContainer');
@@ -884,13 +1064,13 @@ if ($total_records > count($products) && empty($search)) {
                         </td>
                         <td style="text-align: right;">
                             <div style="display: inline-flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end;">
-                                <button type="button" class="btn-resolve btn-resolve-corrected" onclick="handleResolveDamaged(${item.id}, 'corrected', 0, '${item.damaged_cases}')" title="Mark item corrected on vehicle (no stock change)">
+                                <button type="button" class="btn-resolve btn-resolve-corrected" onclick="handleResolveDamaged(${item.id}, 'corrected', 1, '${item.damaged_cases}')" title="Mark item corrected (restores cases back to available stock)">
                                     <i class='bx bx-check-circle'></i> Corrected
                                 </button>
-                                <button type="button" class="btn-resolve btn-resolve-transfer" onclick="handleResolveDamaged(${item.id}, 'transferred', 1, '${item.damaged_cases}')" title="Transfer cases back to warehouse inventory">
+                                <button type="button" class="btn-resolve btn-resolve-transfer" onclick="handleResolveDamaged(${item.id}, 'transferred', 1, '${item.damaged_cases}')" title="Transfer cases back to warehouse inventory (restores stock)">
                                     <i class='bx bx-transfer'></i> Transferred
                                 </button>
-                                <button type="button" class="btn-resolve btn-resolve-remove" onclick="handleResolveDamaged(${item.id}, 'resolved', 0, '${item.damaged_cases}')" title="Remove and write-off damaged record">
+                                <button type="button" class="btn-resolve btn-resolve-remove" onclick="handleResolveDamaged(${item.id}, 'resolved', 0, '${item.damaged_cases}')" title="Remove and write-off damaged record (damaged stock remains deducted)">
                                     <i class='bx bx-trash'></i> Remove
                                 </button>
                             </div>
@@ -912,11 +1092,11 @@ if ($total_records > count($products) && empty($search)) {
     function handleResolveDamaged(damagedId, action, restoreStock, cases) {
         let confirmMsg = '';
         if (action === 'corrected') {
-            confirmMsg = `Mark ${cases} damaged cases as CORRECTED on vehicle? (Keeps stock in vehicle; resolved)`;
+            confirmMsg = `Mark ${cases} damaged cases as CORRECTED? This will restore ${cases} cases back to available product stock.`;
         } else if (action === 'transferred') {
-            confirmMsg = `Mark ${cases} damaged cases as TRANSFERRED and restore ${cases} cases back to warehouse stock?`;
+            confirmMsg = `Mark ${cases} damaged cases as TRANSFERRED? This will restore ${cases} cases back to warehouse stock.`;
         } else {
-            confirmMsg = `Are you sure you want to REMOVE / WRITE-OFF ${cases} damaged cases?`;
+            confirmMsg = `Are you sure you want to REMOVE / WRITE-OFF ${cases} damaged cases? (Record will be archived; stock remains deducted as loss)`;
         }
 
         if (!confirm(confirmMsg)) return;

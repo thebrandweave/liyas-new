@@ -159,7 +159,7 @@ $orderTotals = $ordersSummaryStmt ? ($ordersSummaryStmt->fetch(PDO::FETCH_ASSOC)
 $total_raw_stock = (int)$overall['total_stock'];
 $total_in_transit = (int)$orderTotals['active_in_transit'];
 $total_delivered = (int)$orderTotals['total_delivered'];
-$total_available_stock = $total_raw_stock;
+$total_available_stock = max(0, $total_raw_stock - $total_in_transit);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -863,8 +863,8 @@ $total_available_stock = $total_raw_stock;
                                 $inTransit = (int)$product['cases_in_transit'];
                                 $delivered = (int)$product['cases_delivered'];
 
-                                // Available warehouse stock (in-transit is already deducted upon order creation)
-                                $availableStock = $caseStock;
+                                // Available warehouse stock (reduced by cases currently in transit on delivery routes)
+                                $availableStock = max(0, $caseStock - $inTransit);
 
                                 $stockClass = 'badge-stock-healthy';
                                 $statusText = 'In Stock';

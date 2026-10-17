@@ -363,6 +363,7 @@ function ensureWarehouseSchema(PDO $pdo): bool {
                 'admin_tokens'             => 'id',
                 'codes'                    => 'id',
                 'history'                  => 'id',
+                'vehicle_damaged_items'    => 'id',
                 'system_settings'          => 'setting_key'
             ];
 
@@ -432,6 +433,7 @@ function ensureWarehouseSchema(PDO $pdo): bool {
                     `zone_id` INT NULL,
                     `product_id` INT NOT NULL,
                     `damaged_cases` INT NOT NULL DEFAULT 1,
+                    `stock_deducted` TINYINT(1) NOT NULL DEFAULT 0,
                     `status` ENUM('reported', 'corrected', 'transferred', 'resolved') NOT NULL DEFAULT 'reported',
                     `notes` VARCHAR(255) NULL,
                     `reported_by` VARCHAR(100) NULL,
@@ -447,6 +449,35 @@ function ensureWarehouseSchema(PDO $pdo): bool {
                     INDEX `idx_vdi_zone` (`zone_id`)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
             ");
+
+            $vdiCols = $pdo->query("SHOW COLUMNS FROM `vehicle_damaged_items`")->fetchAll(PDO::FETCH_COLUMN) ?: [];
+            if (!in_array('stock_deducted', $vdiCols)) {
+                try {
+                    $pdo->exec("ALTER TABLE `vehicle_damaged_items` ADD COLUMN `stock_deducted` TINYINT(1) NOT NULL DEFAULT 0 AFTER `damaged_cases`");
+                } catch (Exception $e) {}
+            }
+
+            // ============================================
+            // 14. SYNC EXISTING DAMAGED STOCK DEDUCTIONS
+            // Deduct cases for any reported damaged items that have not had their stock deducted yet
+            // ============================================
+            $undeducted = $pdo->query("
+                SELECT id, product_id, damaged_cases 
+                FROM vehicle_damaged_items 
+                WHERE status = 'reported' AND (stock_deducted = 0 OR stock_deducted IS NULL)
+            ")->fetchAll(PDO::FETCH_ASSOC);
+
+            if (!empty($undeducted)) {
+                foreach ($undeducted as $row) {
+                    $uId = (int)$row['id'];
+                    $uPid = (int)$row['product_id'];
+                    $uCases = (int)$row['damaged_cases'];
+                    if ($uPid > 0 && $uCases > 0) {
+                        adjustProductStock($pdo, $uPid, -$uCases, "Sync initial damaged stock deduction (Damaged record #{$uId})");
+                        $pdo->prepare("UPDATE vehicle_damaged_items SET stock_deducted = 1 WHERE id = ?")->execute([$uId]);
+                    }
+                }
+            }
         } catch (Exception $e) {
             error_log("Schema sync vehicle_damaged_items error: " . $e->getMessage());
         }

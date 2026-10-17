@@ -255,11 +255,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_product'])) {
                                             </td>
                                             <td style="padding: 10px; border: 1px solid #e2e8f0; text-align: right;">
                                                 <div style="display: inline-flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap;">
-                                                    <form method="POST" action="edit.php?id=<?= $product_id ?>" style="display: inline;" onsubmit="return confirm('Mark <?= (int)$di['damaged_cases'] ?> cases as CORRECTED on vehicle?');">
+                                                    <form method="POST" action="edit.php?id=<?= $product_id ?>" style="display: inline;" onsubmit="return confirm('Mark <?= (int)$di['damaged_cases'] ?> cases as CORRECTED? This will restore cases back to available stock.');">
                                                         <input type="hidden" name="resolve_damaged_item" value="1">
                                                         <input type="hidden" name="damaged_id" value="<?= (int)$di['id'] ?>">
                                                         <input type="hidden" name="resolution_action" value="corrected">
-                                                        <input type="hidden" name="restore_to_warehouse" value="0">
+                                                        <input type="hidden" name="restore_to_warehouse" value="1">
                                                         <button type="submit" style="padding: 5px 9px; font-size: 11px; font-weight: 700; background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; border-radius: 6px; cursor: pointer;">
                                                             <i class='bx bx-check-circle'></i> Corrected
                                                         </button>
@@ -273,7 +273,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_product'])) {
                                                             <i class='bx bx-transfer'></i> Transferred
                                                         </button>
                                                     </form>
-                                                    <form method="POST" action="edit.php?id=<?= $product_id ?>" style="display: inline;" onsubmit="return confirm('Remove / write-off this damaged record?');">
+                                                    <form method="POST" action="edit.php?id=<?= $product_id ?>" style="display: inline;" onsubmit="return confirm('Remove / write-off this damaged record? Damaged stock remains deducted as loss.');">
                                                         <input type="hidden" name="resolve_damaged_item" value="1">
                                                         <input type="hidden" name="damaged_id" value="<?= (int)$di['id'] ?>">
                                                         <input type="hidden" name="resolution_action" value="resolved">

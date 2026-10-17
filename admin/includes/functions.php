@@ -1647,12 +1647,12 @@ function recordVehicleDamagedItem(PDO $pdo, int $vehicleId, int $productId, int 
 	try {
 		$pdo->beginTransaction();
 
-		// 1. Insert into vehicle_damaged_items
+		// 1. Insert into vehicle_damaged_items (marked as stock_deducted = 1)
 		$ins = $pdo->prepare("
 			INSERT INTO vehicle_damaged_items (
-				vehicle_id, zone_id, product_id, damaged_cases, 
+				vehicle_id, zone_id, product_id, damaged_cases, stock_deducted,
 				status, notes, reported_by, created_at
-			) VALUES (?, ?, ?, ?, 'reported', ?, ?, NOW())
+			) VALUES (?, ?, ?, ?, 1, 'reported', ?, ?, NOW())
 		");
 		$ins->execute([
 			$vehicleId,
@@ -1692,19 +1692,23 @@ function recordVehicleDamagedItem(PDO $pdo, int $vehicleId, int $productId, int 
 			}
 		}
 
+		// 3. Deduct damaged cases from warehouse product available stock
+		adjustProductStock($pdo, $productId, -$cases, "Damaged stock reported on vehicle #{$vehicleId}");
+
 		$pdo->commit();
 
 		// Quick log
 		$vNum = $pdo->query("SELECT vehicle_number FROM vehicles WHERE id = {$vehicleId}")->fetchColumn() ?: ('Vehicle #' . $vehicleId);
 		$pName = $pdo->query("SELECT COALESCE(product_name, name) FROM products WHERE product_id = {$productId}")->fetchColumn() ?: ('Product #' . $productId);
 		if (function_exists('quickLog')) {
-			quickLog($pdo, 'report_damaged', 'vehicle', $vehicleId, "Reported {$cases} damaged cases of {$pName} on {$vNum}" . ($notes ? " (Note: {$notes})" : ""));
+			quickLog($pdo, 'report_damaged', 'vehicle', $vehicleId, "Reported {$cases} damaged cases of {$pName} on {$vNum} (deducted from product stock)" . ($notes ? " (Note: {$notes})" : ""));
 		}
 
 		return [
 			'success' => true,
 			'id' => $damageId,
-			'deducted_from_load' => $deductedCases
+			'deducted_from_load' => $deductedCases,
+			'deducted_from_stock' => $cases
 		];
 	} catch (Exception $e) {
 		if ($pdo->inTransaction()) {
@@ -1737,6 +1741,12 @@ function resolveDamagedItem(PDO $pdo, int $damagedId, string $action = 'transfer
 			return ['success' => false, 'error' => 'Damaged record not found.'];
 		}
 
+		$pid = (int)$rec['product_id'];
+		$cases = (int)$rec['damaged_cases'];
+		$wasDeducted = !empty($rec['stock_deducted']);
+		$shouldRestore = $restoreToWarehouse || in_array($action, ['transferred', 'corrected']);
+		$newStockDeducted = ($shouldRestore && $wasDeducted) ? 0 : ($wasDeducted ? 1 : 0);
+
 		$pdo->beginTransaction();
 
 		$upStmt = $pdo->prepare("
@@ -1745,6 +1755,7 @@ function resolveDamagedItem(PDO $pdo, int $damagedId, string $action = 'transfer
 				resolution_action = ?,
 				resolution_notes = ?,
 				resolved_by = ?,
+				stock_deducted = ?,
 				resolved_at = NOW()
 			WHERE id = ?
 		");
@@ -1753,23 +1764,22 @@ function resolveDamagedItem(PDO $pdo, int $damagedId, string $action = 'transfer
 			$action,
 			$notes ?: null,
 			$resolvedBy ?: 'Admin',
+			$newStockDeducted,
 			$damagedId
 		]);
 
-		// If admin opts to restore to warehouse stock
-		$pid = (int)$rec['product_id'];
-		$cases = (int)$rec['damaged_cases'];
-		if ($restoreToWarehouse && $pid > 0 && $cases > 0) {
-			adjustProductStock($pdo, $pid, +$cases, "Damaged stock restored to warehouse ({$action})");
+		// Restore stock if action is transferred or corrected, or explicitly requested
+		if ($shouldRestore && $pid > 0 && $cases > 0 && $wasDeducted) {
+			adjustProductStock($pdo, $pid, +$cases, "Damaged stock restored to inventory ({$action})");
 		}
 
 		$pdo->commit();
 
 		if (function_exists('quickLog')) {
-			quickLog($pdo, 'resolve_damaged', 'product', $pid, "Resolved {$cases} damaged cases as {$action} (Record #{$damagedId})" . ($restoreToWarehouse ? " & restored to warehouse stock" : ""));
+			quickLog($pdo, 'resolve_damaged', 'product', $pid, "Resolved {$cases} damaged cases as {$action} (Record #{$damagedId})" . ($shouldRestore ? " & restored to stock" : " (stock remains deducted)"));
 		}
 
-		return ['success' => true, 'cases' => $cases, 'action' => $action];
+		return ['success' => true, 'cases' => $cases, 'action' => $action, 'restored_stock' => $shouldRestore];
 	} catch (Exception $e) {
 		if ($pdo->inTransaction()) {
 			$pdo->rollBack();
