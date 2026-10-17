@@ -20,6 +20,10 @@ if ($id > 0) {
             if ($orderCount > 0) {
                 $_SESSION['error_message'] = "Cannot delete '{$zone['name']}' because it has {$orderCount} orders associated with it. You can set its status to Inactive instead.";
             } else {
+                // Safely unassign vehicles linked to this zone
+                $unassignVeh = $pdo->prepare("UPDATE vehicles SET zone_id = NULL, updated_at = NOW() WHERE zone_id = ?");
+                $unassignVeh->execute([$id]);
+
                 $del = $pdo->prepare("DELETE FROM zones WHERE id = ?");
                 $del->execute([$id]);
 

@@ -45,8 +45,26 @@ try {
         ");
     }
     $zones = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    // Fetch vehicles assigned to zones
+    $zoneVehiclesMap = [];
+    try {
+        $vStmt = $pdo->query("
+            SELECT id, vehicle_number, vehicle_name, driver_name, driver_phone, zone_id, status 
+            FROM vehicles 
+            WHERE zone_id IS NOT NULL 
+            ORDER BY vehicle_number ASC
+        ");
+        foreach ($vStmt->fetchAll(PDO::FETCH_ASSOC) as $vRow) {
+            $zId = (int)$vRow['zone_id'];
+            $zoneVehiclesMap[$zId][] = $vRow;
+        }
+    } catch (PDOException $e) {
+        $zoneVehiclesMap = [];
+    }
 } catch (PDOException $e) {
     $zones = [];
+    $zoneVehiclesMap = [];
     $error_message = "Error loading zones: " . $e->getMessage();
 }
 ?>
@@ -64,6 +82,45 @@ try {
         table th, thead th, th {
             color: #000000 !important;
             font-weight: 700 !important;
+        }
+        .vehicle-pill-badge {
+            background: #eff6ff;
+            color: #1e40af;
+            border: 1px solid #bfdbfe;
+            padding: 3px 8px;
+            border-radius: 6px;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            text-decoration: none;
+            font-size: 12px;
+            transition: all 0.15s ease;
+            width: fit-content;
+        }
+        .vehicle-pill-badge:hover {
+            background: #dbeafe;
+            border-color: #93c5fd;
+            transform: translateY(-1px);
+        }
+        .no-vehicle-pill {
+            background: #f8fafc;
+            color: #64748b;
+            border: 1px dashed #cbd5e1;
+            padding: 3px 8px;
+            border-radius: 6px;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            text-decoration: none;
+            font-size: 11px;
+            font-weight: 500;
+            transition: all 0.15s ease;
+            width: fit-content;
+        }
+        .no-vehicle-pill:hover {
+            background: #f1f5f9;
+            color: #2563eb;
+            border-color: #93c5fd;
         }
         .zone-path-badge {
             background: #eff6ff;
@@ -167,7 +224,7 @@ try {
                                 <tr>
                                     <th>Zone Name</th>
                                     <th>Portal Path</th>
-                             
+                                    <th>Assigned Vehicles</th>
                                     <th>Orders</th>
                                     <th>Status</th>
                                     <th>Actions</th>
@@ -200,7 +257,31 @@ try {
                                                 <i class='bx bx-external-link' style="font-size: 14px;"></i>
                                             </a>
                                         </td>
-                                   
+                                        <td>
+                                            <?php 
+                                            $zVehicles = $zoneVehiclesMap[(int)$zone['id']] ?? [];
+                                            if (!empty($zVehicles)): 
+                                            ?>
+                                                <div style="display: flex; flex-direction: column; gap: 4px;">
+                                                    <?php foreach ($zVehicles as $zv): ?>
+                                                        <a href="../vehicles/index.php?zone=<?= urlencode($zone['slug']) ?>&search=<?= urlencode($zv['vehicle_number']) ?>" 
+                                                           class="vehicle-pill-badge" 
+                                                           title="Plate: <?= htmlspecialchars($zv['vehicle_number']) ?><?= !empty($zv['vehicle_name']) ? ' &bull; ' . htmlspecialchars($zv['vehicle_name']) : '' ?><?= !empty($zv['driver_name']) ? ' &bull; Driver: ' . htmlspecialchars($zv['driver_name']) : '' ?><?= !empty($zv['driver_phone']) ? ' (' . htmlspecialchars($zv['driver_phone']) . ')' : '' ?>">
+                                                            <i class='bx bxs-truck' style="color: #2563eb;"></i>
+                                                            <span style="font-weight: 700; font-family: monospace; font-size: 12px;"><?= htmlspecialchars($zv['vehicle_number']) ?></span>
+                                                            <?php if (!empty($zv['vehicle_name'])): ?>
+                                                                <span style="color: #64748b; font-size: 11px;">(<?= htmlspecialchars($zv['vehicle_name']) ?>)</span>
+                                                            <?php endif; ?>
+                                                        </a>
+                                                    <?php endforeach; ?>
+                                                </div>
+                                            <?php else: ?>
+                                                <a href="edit.php?id=<?= $zone['id'] ?>" class="no-vehicle-pill" title="Assign vehicle to this zone">
+                                                    <i class='bx bx-plus'></i>
+                                                    <span>Assign Vehicle</span>
+                                                </a>
+                                            <?php endif; ?>
+                                        </td>
                                         <td>
                                             <div style="font-size: 13px;">
                                                 <strong><?= (int)$zone['total_orders'] ?></strong> total

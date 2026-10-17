@@ -743,10 +743,6 @@ $total_available_stock = max(0, $total_raw_stock - $total_in_transit);
                     <i class='bx bx-plus-circle'></i>
                     <span>+ Add Product</span>
                 </a>
-                <a href="<?= BASE_URL ?>/zone/orders/logout.php" class="btn-header btn-logout" title="Lock and logout">
-                    <i class='bx bx-lock-alt'></i>
-                    <span>Lock / Logout</span>
-                </a>
             </div>
         </div>
     </header>

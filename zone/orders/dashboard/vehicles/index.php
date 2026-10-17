@@ -299,6 +299,68 @@ $searchQuery  = trim($_GET['search'] ?? '');
 $zonesStmt = $pdo->query("SELECT id, name, slug FROM zones ORDER BY name ASC");
 $zonesList = $zonesStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
+// Resolve Back-to-Particular-Zone URL and Name
+$returnUrl = trim($_GET['return_url'] ?? '');
+$zoneBackUrl = '';
+$zoneBackName = '';
+
+if (!empty($returnUrl)) {
+    // Validate return_url to prevent external redirects
+    $isSafe = false;
+    if (strpos($returnUrl, 'http://') === 0 || strpos($returnUrl, 'https://') === 0) {
+        $pHost = parse_url($returnUrl, PHP_URL_HOST);
+        $bHost = parse_url(BASE_URL, PHP_URL_HOST);
+        if ($pHost === $bHost) {
+            $isSafe = true;
+        }
+    } elseif (strpos($returnUrl, '/') === 0) {
+        $isSafe = true;
+    }
+    if ($isSafe) {
+        $zoneBackUrl = $returnUrl;
+    }
+}
+
+if (empty($zoneBackUrl)) {
+    $targetZoneSlug = '';
+    if (!empty($filterZone) && $filterZone !== 'all') {
+        foreach ($zonesList as $z) {
+            if ($filterZone === (string)$z['id'] || strtolower($filterZone) === strtolower($z['slug'])) {
+                $targetZoneSlug = $z['slug'];
+                $zoneBackName = $z['name'];
+                break;
+            }
+        }
+    }
+    if (empty($targetZoneSlug) && !empty($_SESSION['delivery_zone_id'])) {
+        foreach ($zonesList as $z) {
+            if ((int)$_SESSION['delivery_zone_id'] === (int)$z['id']) {
+                $targetZoneSlug = $z['slug'];
+                $zoneBackName = $z['name'];
+                break;
+            }
+        }
+    }
+    if (empty($targetZoneSlug)) {
+        $targetZoneSlug = !empty($zonesList[0]['slug']) ? $zonesList[0]['slug'] : 'mangalore';
+        $zoneBackName = !empty($zonesList[0]['name']) ? $zonesList[0]['name'] : 'Mangalore';
+    }
+    $zoneBackUrl = BASE_URL . '/' . $targetZoneSlug;
+}
+
+if (empty($zoneBackName)) {
+    foreach ($zonesList as $z) {
+        if (strpos($zoneBackUrl, '/' . $z['slug']) !== false) {
+            $zoneBackName = $z['name'];
+            break;
+        }
+    }
+    if (empty($zoneBackName)) {
+        $zoneBackName = 'Zone';
+    }
+}
+$zoneBackName = ucfirst($zoneBackName);
+
 // 2. Fetch catalog products for Add Product modal with live product stock
 $catalogProducts = [];
 try {
@@ -694,11 +756,38 @@ if (!empty($searchQuery)) {
             font-weight: 500;
         }
 
-        .header-actions {
-            display: flex;
+        .btn-back-zone {
+            display: inline-flex;
             align-items: center;
-            gap: 8px;
-            flex-wrap: wrap;
+            gap: 7px;
+            padding: 8px 14px;
+            border-radius: 10px;
+            font-size: 13px;
+            font-weight: 700;
+            color: #1e40af;
+            background: #eff6ff;
+            border: 1.5px solid #bfdbfe;
+            text-decoration: none;
+            transition: all 0.2s ease;
+            box-shadow: 0 1px 2px rgba(37,99,235,0.06);
+            white-space: nowrap;
+        }
+
+        .btn-back-zone:hover {
+            background: #2563eb;
+            color: #ffffff;
+            border-color: #2563eb;
+            transform: translateX(-2px);
+            box-shadow: 0 4px 12px rgba(37,99,235,0.25);
+        }
+
+        .btn-back-zone i {
+            font-size: 18px;
+            transition: transform 0.2s ease;
+        }
+
+        .btn-back-zone:hover i {
+            transform: translateX(-3px);
         }
 
         .btn-header {
@@ -1390,20 +1479,20 @@ if (!empty($searchQuery)) {
     <!-- Sticky Header Navigation -->
     <header class="portal-header">
         <div class="header-inner">
-          
+            <div style="display: flex; align-items: center; gap: 14px; flex-wrap: wrap;">
+                <a href="<?= htmlspecialchars($zoneBackUrl) ?>" class="btn-back-zone" title="Back to <?= htmlspecialchars($zoneBackName) ?>">
+                    <i class='bx bx-arrow-back'></i>
+                    <span>Back to <?= htmlspecialchars($zoneBackName) ?></span>
+                </a>
                 <div class="brand-title">
-                    <h1>
-                        
-                        Vehicle Management
-                    </h1>
-                    <!-- <p>Live Available Vehicles &amp; Line-Sale Stock Management</p> -->
+                    <h1>Vehicle Management</h1>
                 </div>
-            </a>
+            </div>
 
             <div class="header-actions">
-                <a href="<?= BASE_URL ?>/zone/orders/dashboard/" class="btn-header" title="Go to Orders Dashboard">
-                    <i class='bx bx-shopping-bag' style="color: #2563eb;"></i>
-                    <span>Orders Hub</span>
+                <a href="<?= htmlspecialchars($zoneBackUrl) ?>" class="btn-header" style="background: #eff6ff; color: #1e40af; border-color: #bfdbfe; font-weight: 700;" title="Back to <?= htmlspecialchars($zoneBackName) ?>">
+                    <i class='bx bx-arrow-back' style="color: #2563eb;"></i>
+                    <span>Back to <?= htmlspecialchars($zoneBackName) ?></span>
                 </a>
                 <a href="<?= BASE_URL ?>/zone/orders/dashboard/products/" class="btn-header" title="Catalog & Inventory">
                     <i class='bx bx-cube' style="color: #059669;"></i>
@@ -1417,10 +1506,6 @@ if (!empty($searchQuery)) {
                     <i class='bx bxs-truck'></i>
                     <span>+ Add Vehicle</span>
                 </button>
-                <a href="<?= BASE_URL ?>/zone/orders/logout.php" class="btn-header" style="color: #dc2626;" title="Lock and logout">
-                    <i class='bx bx-lock-alt'></i>
-                    <span>Lock / Logout</span>
-                </a>
             </div>
         </div>
     </header>
@@ -1477,7 +1562,7 @@ if (!empty($searchQuery)) {
                 <span style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--text-muted); margin-right: 4px;">
                     <i class='bx bx-map-pin'></i> Zone:
                 </span>
-                <a href="index.php?zone=all<?= $searchQuery ? '&search=' . urlencode($searchQuery) : '' ?>" 
+                <a href="index.php?zone=all<?= $searchQuery ? '&search=' . urlencode($searchQuery) : '' ?><?= !empty($returnUrl) ? '&return_url=' . urlencode($returnUrl) : '' ?>" 
                    class="zone-tab-pill <?= ($filterZone === 'all') ? 'active' : '' ?>">
                     All Zones
                 </a>
@@ -1486,7 +1571,7 @@ if (!empty($searchQuery)) {
                         $zSlug = $z['slug'];
                         $isZActive = ($filterZone === (string)$z['id'] || $filterZone === $zSlug);
                     ?>
-                    <a href="index.php?zone=<?= urlencode($zSlug) ?><?= $searchQuery ? '&search=' . urlencode($searchQuery) : '' ?>" 
+                    <a href="index.php?zone=<?= urlencode($zSlug) ?><?= $searchQuery ? '&search=' . urlencode($searchQuery) : '' ?><?= !empty($returnUrl) ? '&return_url=' . urlencode($returnUrl) : '' ?>" 
                        class="zone-tab-pill <?= $isZActive ? 'active' : '' ?>">
                         <?= htmlspecialchars($z['name']) ?>
                     </a>
@@ -1495,6 +1580,9 @@ if (!empty($searchQuery)) {
 
             <form method="GET" action="index.php" class="search-box-wrap">
                 <input type="hidden" name="zone" value="<?= htmlspecialchars($filterZone) ?>">
+                <?php if (!empty($returnUrl)): ?>
+                    <input type="hidden" name="return_url" value="<?= htmlspecialchars($returnUrl) ?>">
+                <?php endif; ?>
                 <i class='bx bx-search'></i>
                 <input type="text" name="search" value="<?= htmlspecialchars($searchQuery) ?>" placeholder="Search plate / driver / vehicle...">
             </form>

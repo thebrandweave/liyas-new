@@ -541,18 +541,15 @@ if (empty($form_items)) {
                         </div>
 
                         <div class="grid-2">
-                            <div class="form-group">
+                            <!-- <div class="form-group">
                                 <label class="form-label" for="customer_name">Contact Person Name</label>
                                 <input type="text" name="customer_name" id="customer_name" class="form-control" placeholder="e.g. Rajesh Kumar" value="<?= htmlspecialchars($_POST['customer_name'] ?? '') ?>">
-                            </div>
+                            </div> -->
                             <div class="form-group">
                                 <label class="form-label" for="phone">Phone Number <span style="color: #ef4444;">*</span></label>
                                 <input type="tel" name="phone" id="phone" class="form-control" placeholder="e.g. 9876543210" required value="<?= htmlspecialchars($_POST['phone'] ?? '') ?>">
                             </div>
-                        </div>
-
-                        <div class="grid-2">
-                            <div class="form-group">
+                              <div class="form-group">
                                 <label class="form-label" for="zone_id">Delivery Zone <span style="color: #ef4444;">*</span></label>
                                 <select name="zone_id" id="zone_id" class="form-control" required>
                                     <option value="">-- Select Delivery Zone --</option>
@@ -562,12 +559,16 @@ if (empty($form_items)) {
                                         </option>
                                     <?php endforeach; ?>
                                 </select>
-                                <small style="color: #94a3b8; font-size: 12px;">Order alerts will be sent to this delivery zone immediately</small>
+                                <!-- <small style="color: #94a3b8; font-size: 12px;">Order alerts will be sent to this delivery zone immediately</small> -->
                             </div>
-                            <div class="form-group">
+                        </div>
+
+                        <div class="grid-2">
+                          
+                            <!-- <div class="form-group">
                                 <label class="form-label" for="address">Full Address</label>
                                 <textarea name="address" id="address" rows="2" class="form-control" placeholder="Street, Building, Landmark..."><?= htmlspecialchars($_POST['address'] ?? '') ?></textarea>
-                            </div>
+                            </div> -->
                         </div>
 
                         <!-- Multi-Product Repeater Section -->

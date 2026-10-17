@@ -19,6 +19,19 @@ if (!$zone) {
     exit;
 }
 
+// Handle unassigning vehicle from this zone
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['unassign_vehicle'])) {
+    $unassignVehId = (int)($_POST['unassign_vehicle_id'] ?? 0);
+    if ($unassignVehId > 0) {
+        $upd = $pdo->prepare("UPDATE vehicles SET zone_id = NULL, updated_at = NOW() WHERE id = ? AND zone_id = ?");
+        $upd->execute([$unassignVehId, $id]);
+        quickLog($pdo, 'update', 'vehicle', $unassignVehId, "Unassigned vehicle #{$unassignVehId} from zone {$zone['name']} (#{$id})");
+        $_SESSION['success_message'] = "Vehicle unassigned from zone successfully.";
+        header("Location: edit.php?id=" . $id);
+        exit;
+    }
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_zone'])) {
     $name = trim($_POST['name'] ?? '');
     $custom_slug = trim($_POST['slug'] ?? '');
@@ -48,6 +61,58 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_zone'])) {
 
                     quickLog($pdo, 'update', 'zone', $id, "Updated zone: {$name} (/{$slug})");
 
+                    // Assign / Fix vehicle to this zone
+                    $existing_veh_id = (int)($_POST['existing_vehicle_id'] ?? 0);
+                    $v_number = strtoupper(trim($_POST['vehicle_number'] ?? ''));
+                    $v_name   = trim($_POST['vehicle_name'] ?? '');
+                    $d_name   = trim($_POST['driver_name'] ?? '');
+                    $d_phone  = trim($_POST['driver_phone'] ?? '');
+
+                    if ($existing_veh_id > 0) {
+                        $updVeh = $pdo->prepare("
+                            UPDATE vehicles 
+                            SET zone_id = ?, 
+                                vehicle_name = COALESCE(NULLIF(?, ''), vehicle_name),
+                                driver_name = COALESCE(NULLIF(?, ''), driver_name),
+                                driver_phone = COALESCE(NULLIF(?, ''), driver_phone),
+                                updated_at = NOW() 
+                            WHERE id = ?
+                        ");
+                        $updVeh->execute([$id, $v_name, $d_name, $d_phone, $existing_veh_id]);
+                        quickLog($pdo, 'update', 'vehicle', $existing_veh_id, "Fixed vehicle #{$existing_veh_id} to zone {$name} (#{$id})");
+                    } elseif (!empty($v_number)) {
+                        $chkStmt = $pdo->prepare("SELECT id FROM vehicles WHERE vehicle_number = ? LIMIT 1");
+                        $chkStmt->execute([$v_number]);
+                        $matchedVehId = (int)$chkStmt->fetchColumn();
+
+                        if ($matchedVehId > 0) {
+                            $updVeh = $pdo->prepare("
+                                UPDATE vehicles 
+                                SET zone_id = ?, 
+                                    vehicle_name = COALESCE(NULLIF(?, ''), vehicle_name),
+                                    driver_name = COALESCE(NULLIF(?, ''), driver_name),
+                                    driver_phone = COALESCE(NULLIF(?, ''), driver_phone),
+                                    updated_at = NOW() 
+                                WHERE id = ?
+                            ");
+                            $updVeh->execute([$id, $v_name, $d_name, $d_phone, $matchedVehId]);
+                            quickLog($pdo, 'update', 'vehicle', $matchedVehId, "Fixed vehicle {$v_number} to zone {$name} (#{$id})");
+                        } else {
+                            $vehRes = addVehicleRecord($pdo, [
+                                'vehicle_number' => $v_number,
+                                'vehicle_name'   => $v_name,
+                                'driver_name'    => $d_name,
+                                'driver_phone'   => $d_phone,
+                                'zone_id'        => $id,
+                                'capacity_cases' => 100,
+                                'status'         => 'active'
+                            ]);
+                            if ($vehRes['success']) {
+                                quickLog($pdo, 'create', 'vehicle', $vehRes['vehicle_id'], "Registered vehicle {$v_number} fixed to zone {$name} (#{$id})");
+                            }
+                        }
+                    }
+
                     header("Location: index.php?updated=1");
                     exit;
                 } catch (PDOException $e) {
@@ -56,6 +121,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_zone'])) {
             }
         }
     }
+}
+
+// Fetch vehicles currently assigned to this zone
+$assignedVehicles = [];
+$otherVehicles = [];
+try {
+    $assignedStmt = $pdo->prepare("
+        SELECT * FROM vehicles 
+        WHERE zone_id = ? 
+        ORDER BY vehicle_number ASC
+    ");
+    $assignedStmt->execute([$id]);
+    $assignedVehicles = $assignedStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+    // Fetch other vehicles available for assignment
+    $otherStmt = $pdo->prepare("
+        SELECT v.id, v.vehicle_number, v.vehicle_name, v.driver_name, v.driver_phone, v.zone_id, z.name as zone_name
+        FROM vehicles v
+        LEFT JOIN zones z ON v.zone_id = z.id
+        WHERE v.status != 'inactive' AND (v.zone_id != ? OR v.zone_id IS NULL)
+        ORDER BY v.vehicle_number ASC
+    ");
+    $otherStmt->execute([$id]);
+    $otherVehicles = $otherStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+} catch (PDOException $e) {
+    $assignedVehicles = [];
+    $otherVehicles = [];
 }
 ?>
 <!DOCTYPE html>
@@ -137,6 +229,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_zone'])) {
             </div>
             
             <div class="content-area">
+                <?php if (!empty($_SESSION['success_message'])): ?>
+                    <div class="alert alert-success" style="padding: 12px 16px; background: #d1fae5; color: #065f46; border-radius: 8px; margin-bottom: 1.5rem; max-width: 650px;">
+                        <?= htmlspecialchars($_SESSION['success_message']) ?>
+                    </div>
+                    <?php unset($_SESSION['success_message']); ?>
+                <?php endif; ?>
+
                 <?php if (!empty($error)): ?>
                     <div class="alert alert-error" style="padding: 12px 16px; background: #fee2e2; color: #991b1b; border-radius: 8px; margin-bottom: 1.5rem; max-width: 650px;">
                         <?= htmlspecialchars($error) ?>
@@ -164,11 +263,110 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_zone'])) {
                             </div>
                         </div>
 
-                        <div class="form-group">
-                            <label class="form-label" for="access_code">Authorization Access Code</label>
-                            <input type="text" name="access_code" id="access_code" class="form-control" placeholder="e.g. ZONE2026" value="<?= htmlspecialchars($_POST['access_code'] ?? ($zone['access_code'] ?: 'ZONE2026')) ?>">
-                            <small style="color: #94a3b8; font-size: 12px;">Delivery drivers and staff can enter this code at <code>/zone/orders</code> to access orders for this zone.</small>
+                        <!-- ASSIGNED VEHICLES SECTION -->
+                        <div class="vehicle-assign-section" style="background: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 10px; padding: 18px; margin-top: 1.5rem; margin-bottom: 1.5rem;">
+                            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+                                <div style="display: flex; align-items: center; gap: 8px;">
+                                    <span style="width: 32px; height: 32px; border-radius: 8px; background: #eff6ff; color: #2563eb; display: inline-flex; align-items: center; justify-content: center; font-size: 18px;">
+                                        <i class='bx bxs-truck'></i>
+                                    </span>
+                                    <div>
+                                        <strong style="color: #0f172a; font-size: 14px;">Assigned Delivery Vehicles</strong>
+                                        <div style="font-size: 12px; color: #64748b;">Vehicles fixed to this delivery zone</div>
+                                    </div>
+                                </div>
+                                <span style="font-size: 12px; font-weight: 700; color: #2563eb; background: #dbeafe; padding: 2px 8px; border-radius: 6px;">
+                                    <?= count($assignedVehicles) ?> <?= count($assignedVehicles) === 1 ? 'Vehicle' : 'Vehicles' ?>
+                                </span>
+                            </div>
+
+                            <!-- List of currently assigned vehicles -->
+                            <?php if (!empty($assignedVehicles)): ?>
+                                <div style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px;">
+                                    <?php foreach ($assignedVehicles as $av): ?>
+                                        <div style="display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px;">
+                                            <div style="display: flex; align-items: center; gap: 10px;">
+                                                <i class='bx bxs-truck' style="color: #2563eb; font-size: 20px;"></i>
+                                                <div>
+                                                    <span style="font-weight: 700; font-family: monospace; font-size: 13px; color: #0f172a;">
+                                                        <?= htmlspecialchars($av['vehicle_number']) ?>
+                                                    </span>
+                                                    <?php if (!empty($av['vehicle_name'])): ?>
+                                                        <span style="font-size: 12px; color: #475569; margin-left: 4px;">&bull; <?= htmlspecialchars($av['vehicle_name']) ?></span>
+                                                    <?php endif; ?>
+                                                    <?php if (!empty($av['driver_name'])): ?>
+                                                        <div style="font-size: 11px; color: #64748b;">
+                                                            Driver: <?= htmlspecialchars($av['driver_name']) ?> <?= !empty($av['driver_phone']) ? ' (' . htmlspecialchars($av['driver_phone']) . ')' : '' ?>
+                                                        </div>
+                                                    <?php endif; ?>
+                                                </div>
+                                            </div>
+
+                                            <button type="submit" name="unassign_vehicle" value="1" 
+                                                    onclick="return confirmUnassign(<?= (int)$av['id'] ?>, '<?= htmlspecialchars(addslashes($av['vehicle_number'])) ?>')" 
+                                                    style="background: #fee2e2; color: #dc2626; border: 1px solid #fecaca; border-radius: 6px; padding: 4px 10px; font-size: 12px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;">
+                                                <i class='bx bx-unlink'></i> Unassign
+                                            </button>
+                                        </div>
+                                    <?php endforeach; ?>
+                                </div>
+                            <?php else: ?>
+                                <div style="background: #ffffff; border: 1px dashed #cbd5e1; border-radius: 8px; padding: 12px; text-align: center; color: #64748b; font-size: 13px; margin-bottom: 16px;">
+                                    No vehicle currently assigned to this zone. Assign or enter one below.
+                                </div>
+                            <?php endif; ?>
+
+                            <!-- Section to add or assign another vehicle -->
+                            <div style="border-top: 1px dashed #cbd5e1; padding-top: 12px;">
+                                <strong style="font-size: 13px; color: #1e293b; display: block; margin-bottom: 8px;">+ Assign / Fix Another Vehicle</strong>
+
+                                <div class="form-group" style="margin-bottom: 1rem;">
+                                    <label class="form-label" for="existing_vehicle_select">Select From Fleet Vehicles</label>
+                                    <select name="existing_vehicle_id" id="existing_vehicle_select" class="form-control" onchange="handleExistingVehicleSelect(this)">
+                                        <option value="">-- Or enter a new vehicle below --</option>
+                                        <?php foreach ($otherVehicles as $ov): 
+                                            $zInfo = !empty($ov['zone_name']) ? (' (Currently: ' . htmlspecialchars($ov['zone_name']) . ')') : ' (Unassigned)';
+                                        ?>
+                                            <option value="<?= $ov['id'] ?>" 
+                                                data-plate="<?= htmlspecialchars($ov['vehicle_number']) ?>"
+                                                data-name="<?= htmlspecialchars($ov['vehicle_name'] ?? '') ?>"
+                                                data-driver="<?= htmlspecialchars($ov['driver_name'] ?? '') ?>"
+                                                data-phone="<?= htmlspecialchars($ov['driver_phone'] ?? '') ?>">
+                                                <?= htmlspecialchars($ov['vehicle_number']) ?> <?= !empty($ov['vehicle_name']) ? ' &bull; ' . htmlspecialchars($ov['vehicle_name']) : '' ?><?= $zInfo ?>
+                                            </option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </div>
+
+                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                                    <div class="form-group" style="margin-bottom: 0.75rem;">
+                                        <label class="form-label" for="vehicle_number">Vehicle Plate Number</label>
+                                        <input type="text" name="vehicle_number" id="vehicle_number" class="form-control" placeholder="e.g. KA20MP5673" style="text-transform: uppercase; font-weight: 600; letter-spacing: 0.5px;">
+                                        <small style="color: #94a3b8; font-size: 11px;">Plate number will be fixed to this zone</small>
+                                    </div>
+
+                                    <div class="form-group" style="margin-bottom: 0.75rem;">
+                                        <label class="form-label" for="vehicle_name">Vehicle Name / Model</label>
+                                        <input type="text" name="vehicle_name" id="vehicle_name" class="form-control" placeholder="e.g. Ashok Leyland, Tata Ace">
+                                    </div>
+                                </div>
+
+                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 4px;">
+                                    <div class="form-group" style="margin-bottom: 0;">
+                                        <label class="form-label" for="driver_name">Driver Name</label>
+                                        <input type="text" name="driver_name" id="driver_name" class="form-control" placeholder="e.g. Abbas">
+                                    </div>
+
+                                    <div class="form-group" style="margin-bottom: 0;">
+                                        <label class="form-label" for="driver_phone">Driver Phone</label>
+                                        <input type="tel" name="driver_phone" id="driver_phone" class="form-control" placeholder="e.g. 9876543210">
+                                    </div>
+                                </div>
+                            </div>
                         </div>
+
+                        <!-- Hidden input for unassign action -->
+                        <input type="hidden" name="unassign_vehicle_id" id="unassign_vehicle_id" value="0">
 
                         <div class="form-group">
                             <label class="form-label" for="status">Status</label>
@@ -201,6 +399,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_zone'])) {
             const slugVal = this.value.trim() || '...';
             previewUrl.innerHTML = `<strong>${baseUrl}/${slugVal}</strong>`;
         });
+
+        function confirmUnassign(vehId, plate) {
+            if (confirm('Are you sure you want to unassign vehicle ' + plate + ' from this zone?')) {
+                document.getElementById('unassign_vehicle_id').value = vehId;
+                return true;
+            }
+            return false;
+        }
+
+        function handleExistingVehicleSelect(selectEl) {
+            const opt = selectEl.options[selectEl.selectedIndex];
+            if (opt && opt.value) {
+                document.getElementById('vehicle_number').value = opt.getAttribute('data-plate') || '';
+                document.getElementById('vehicle_name').value = opt.getAttribute('data-name') || '';
+                document.getElementById('driver_name').value = opt.getAttribute('data-driver') || '';
+                document.getElementById('driver_phone').value = opt.getAttribute('data-phone') || '';
+            }
+        }
     </script>
 </body>
 </html>

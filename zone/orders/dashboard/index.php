@@ -1390,10 +1390,6 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
                     <i class='bx bx-cube'></i>
                     <span>Products</span>
                 </a>
-                <a href="<?= BASE_URL ?>/zone/orders/logout.php" class="btn-header btn-logout" title="Lock and logout">
-                    <i class='bx bx-lock-alt lock'></i>
-                    <span>Lock / Logout</span>
-                </a>
             </div>
         </div>
     </header>

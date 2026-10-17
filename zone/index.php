@@ -678,6 +678,51 @@ if (!function_exists('buildWhatsAppLink')) {
             transform: translateY(-1px);
         }
 
+        .btn-header-vehicles {
+            background: #eff6ff;
+            color: #1d4ed8;
+            border: 1px solid #bfdbfe;
+            box-shadow: 0 1px 2px rgba(37,99,235,0.08);
+            font-weight: 700;
+        }
+
+        .btn-header-vehicles:hover, .btn-header-vehicles:active {
+            background: #2563eb;
+            color: #ffffff;
+            border-color: #2563eb;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 10px rgba(37,99,235,0.25);
+        }
+
+        .btn-manage-vehicles {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            font-weight: 700;
+            color: #1d4ed8;
+            background: #eff6ff;
+            border: 1px solid #bfdbfe;
+            padding: 6px 12px;
+            border-radius: 8px;
+            text-decoration: none;
+            transition: all 0.2s ease;
+            box-shadow: 0 1px 2px rgba(37,99,235,0.06);
+            white-space: nowrap;
+        }
+
+        .btn-manage-vehicles:hover {
+            background: #2563eb;
+            color: #ffffff;
+            border-color: #2563eb;
+            transform: translateY(-1px);
+            box-shadow: 0 3px 8px rgba(37,99,235,0.22);
+        }
+
+        .btn-manage-vehicles i {
+            font-size: 15px;
+        }
+
         .btn-admin-back {
             background: #f1f5f9;
             color: var(--text-sub);
@@ -2410,7 +2455,11 @@ if (!function_exists('buildWhatsAppLink')) {
             </a>
 
             <div class="header-actions">
-               
+                <!-- Vehicle Management Link -->
+                <a href="<?= BASE_URL ?>/zone/orders/dashboard/vehicles/?zone=<?= urlencode($zone_slug) ?>&return_url=<?= urlencode(zone_filter_url($zone_slug)) ?>" class="btn-header-action btn-header-vehicles" title="Vehicle Stock & Fleet Management">
+                    <i class='bx bxs-truck' style="font-size: 16px;"></i>
+                    <span>Vehicles</span>
+                </a>
 
                 <span class="zone-badge">
                     <span class="pulse-dot"></span>
@@ -2422,8 +2471,6 @@ if (!function_exists('buildWhatsAppLink')) {
                     <i class='bx bx-plus-circle' style="font-size: 16px;"></i>
                     <span style=" @media(min-width: 480px){display: inline;}">Add Order</span>
                 </a>
-
-          
             </div>
         </div>
     </header>
@@ -2554,6 +2601,10 @@ if (!function_exists('buildWhatsAppLink')) {
                                 <span class="pulse-dot"></span>
                                 <span><?= count($zoneVehicles) ?> <?= count($zoneVehicles) === 1 ? 'Vehicle Active' : 'Vehicles Active' ?></span>
                             </span>
+                            <a href="<?= BASE_URL ?>/zone/orders/dashboard/vehicles/?zone=<?= urlencode($zone_slug) ?>&return_url=<?= urlencode(zone_filter_url($zone_slug)) ?>" class="btn-manage-vehicles" title="Open Vehicle Management & Stock">
+                                <i class='bx bxs-truck'></i>
+                                <span>Manage Vehicles</span>
+                            </a>
                         </div>
                     </div>
 
@@ -2673,6 +2724,22 @@ if (!function_exists('buildWhatsAppLink')) {
                         </div>
                         <?php endforeach; ?>
                     </div>
+                </div>
+            <?php else: ?>
+                <div class="vehicle-load-card" style="padding: 18px 20px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; background: #ffffff; border: 1.5px dashed #cbd5e1; border-radius: var(--radius-lg);">
+                    <div style="display: flex; align-items: center; gap: 12px;">
+                        <span class="vehicle-truck-icon-box" style="background: #f1f5f9; color: #64748b; box-shadow: none;">
+                            <i class='bx bxs-truck'></i>
+                        </span>
+                        <div>
+                            <div style="font-size: 14px; font-weight: 700; color: #1e293b;">No vehicles assigned to <?= htmlspecialchars($zone_name) ?></div>
+                            <div style="font-size: 12px; color: #64748b;">Manage vehicles and line stock allocations for this zone.</div>
+                        </div>
+                    </div>
+                    <a href="<?= BASE_URL ?>/zone/orders/dashboard/vehicles/?zone=<?= urlencode($zone_slug) ?>&return_url=<?= urlencode(zone_filter_url($zone_slug)) ?>" class="btn-manage-vehicles" style="background: #2563eb; color: #fff; border-color: #2563eb;">
+                        <i class='bx bxs-truck'></i>
+                        <span>Vehicles Dashboard</span>
+                    </a>
                 </div>
             <?php endif; ?>
         </div>
