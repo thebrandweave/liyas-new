@@ -43,7 +43,7 @@ if (isset($_GET['action']) && $_GET['action'] === 'get_live_stock') {
 $zones_stmt = $pdo->query("SELECT id, name, slug FROM zones WHERE status = 'active' ORDER BY name ASC");
 $zones = $zones_stmt->fetchAll(PDO::FETCH_ASSOC);
 
-// Load all active fleet vehicles with linked zones
+// Load all active Vehicless with linked zones
 $vehicles_stmt = $pdo->query("
     SELECT v.id, v.vehicle_number, v.vehicle_name, v.zone_id, z.name as zone_name, z.slug as zone_slug
     FROM vehicles v
@@ -354,7 +354,7 @@ if (empty($form_items)) {
         }
         .form-control {
             width: 100%;
-            padding: 0.65rem 0.85rem;
+            padding: 0.65rem 0.15rem;
             border: 1px solid #d1d5db;
             border-radius: 8px;
             font-size: 14px;
@@ -586,9 +586,7 @@ if (empty($form_items)) {
                             <div class="form-group">
                                 <label class="form-label" for="vehicle_id" style="display: flex; justify-content: space-between; align-items: center;">
                                     <span><i class='bx bxs-truck' style="color: #2563eb;"></i> Assigned Delivery Vehicle</span>
-                                    <span id="vehicle-autolink-tag" style="display: none; font-size: 11px; font-weight: 600; color: #059669; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 7px; border-radius: 10px;">
-                                        ⚡ Auto-linked
-                                    </span>
+                                 
                                 </label>
                                 <select name="vehicle_id" id="vehicle_id" class="form-control">
                                     <option value="" data-zone-id="">-- Auto / None --</option>
@@ -614,10 +612,10 @@ if (empty($form_items)) {
                                 <label class="form-label" for="phone">Phone Number <span style="color: #ef4444;">*</span></label>
                                 <input type="tel" name="phone" id="phone" class="form-control" placeholder="e.g. 9876543210" required value="<?= htmlspecialchars($_POST['phone'] ?? '') ?>">
                             </div>
-                            <div class="form-group">
+                            <!-- <div class="form-group">
                                 <label class="form-label" for="address">Full Address <span style="color: #94a3b8; font-weight: 400; font-size: 12px;">(Optional)</span></label>
                                 <input type="text" name="address" id="address" class="form-control" placeholder="Street, Building, Landmark..." value="<?= htmlspecialchars($_POST['address'] ?? '') ?>">
-                            </div>
+                            </div> -->
                         </div>
 
                         <!-- Multi-Product Repeater Section -->
@@ -626,15 +624,7 @@ if (empty($form_items)) {
                                 <i class='bx bx-shopping-bag' style="color: #059669; font-size: 20px;"></i>
                                 Order Products &amp; Quantities <span style="font-size: 13px; font-weight: 500; color: #64748b; margin-left: 6px;">(Optional)</span>
                             </div>
-                            <div style="display: flex; align-items: center; gap: 8px;">
-                           
-                                <button type="button" onclick="refreshLiveStocks(true)" class="btn-refresh-stock" style="background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 6px; padding: 4px 10px; font-size: 12px; color: #334155; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; font-weight: 500;" title="Refresh available stock from Warehouse Inventory">
-                                    <i class='bx bx-refresh' id="refreshStockIcon"></i> Refresh Stock
-                                </button>
-                                <a href="../products/index.php" target="_blank" style="font-size: 12px; color: #2563eb; text-decoration: none; font-weight: 500; display: inline-flex; align-items: center; gap: 3px;" title="View Website Product Inventory">
-                                    <i class='bx bx-link-external'></i> View Inventory
-                                </a>
-                            </div>
+                          
                         </div>
 
                         <div class="items-table-card">
@@ -643,10 +633,10 @@ if (empty($form_items)) {
                                     <thead>
                                         <tr>
                                             <th style="min-width: 280px;">Product Item (Optional)</th>
-                                            <th style="min-width: 150px;">Available Stock (Warehouse)</th>
+                                            <th style="min-width: 150px;">Available Stock</th>
                                             <th style="min-width: 130px; text-align: right;">Rate / Case (₹)</th>
                                             <th style="min-width: 120px; text-align: center;">Qty (Cases)</th>
-                                            <th style="min-width: 130px; text-align: right;">Line Total (₹)</th>
+                                            <th style="min-width: 130px; text-align: right;">Total (₹)</th>
                                             <th style="width: 50px; text-align: center;"></th>
                                         </tr>
                                     </thead>
@@ -705,10 +695,10 @@ if (empty($form_items)) {
                                                     <?php endif; ?>
                                                 </td>
                                                 <td style="text-align: right;">
-                                                    <input type="number" step="0.01" min="0" name="items[<?= $idx ?>][rate]" class="form-control item-rate-input" oninput="handleRateOrQtyChange(this)" style="width: 115px; text-align: right; font-weight: 600;" placeholder="0.00" value="<?= ($fRate !== '') ? number_format((float)$fRate, 2, '.', '') : '' ?>">
+                                                    <input type="text" step="0.01" min="0" name="items[<?= $idx ?>][rate]" class="form-control item-rate-input" oninput="handleRateOrQtyChange(this)" style="width: 115px; text-align: right; font-weight: 600;" placeholder="0.00" value="<?= ($fRate !== '') ? number_format((float)$fRate, 2, '.', '') : '' ?>">
                                                 </td>
                                                 <td style="text-align: center;">
-                                                    <input type="number" min="1" name="items[<?= $idx ?>][quantity]" class="form-control item-qty-input" oninput="handleRateOrQtyChange(this)" value="<?= htmlspecialchars($fItem['quantity'] ?? '1') ?>" style="width: 90px; text-align: center; margin: 0 auto; font-weight: 600;">
+                                                    <input type="text" min="1" name="items[<?= $idx ?>][quantity]" class="form-control item-qty-input" oninput="handleRateOrQtyChange(this)" value="<?= htmlspecialchars($fItem['quantity'] ?? '1') ?>" style="width: 90px; text-align: center; margin: 0 auto; font-weight: 600;">
                                                 </td>
                                                 <td style="text-align: right;">
                                                     <span class="linetotal-display" style="font-weight: 700; color: #0f172a; font-size: 15px;">₹0.00</span>
@@ -736,7 +726,7 @@ if (empty($form_items)) {
                         <div class="grid-2">
                             <div class="form-group">
                                 <label class="form-label" for="discount">Special Discount (₹)</label>
-                                <input type="number" step="0.01" min="0" name="discount" id="discount" class="form-control" placeholder="0.00" oninput="recalculateAll()" value="<?= htmlspecialchars($_POST['discount'] ?? '0.00') ?>">
+                                <input type="text" step="0.01" min="0" name="discount" id="discount" class="form-control" placeholder="0.00" oninput="recalculateAll()" value="<?= htmlspecialchars($_POST['discount'] ?? '0.00') ?>">
                                 <small style="color: #64748b; font-size: 12px;">Applies a flat deduction on the total order amount.</small>
                             </div>
 
@@ -891,7 +881,7 @@ if (empty($form_items)) {
             recalculateAll();
         }
 
-        // Calculate single row line total and check stock availability warning
+        // Calculate single row Total and check stock availability warning
         function updateRowLineTotal(row) {
             if (!row) return { valid: false, qty: 0, rate: 0, lineTotal: 0 };
             const select = row.querySelector('.item-product-select');
@@ -972,10 +962,10 @@ if (empty($form_items)) {
                     <span class="badge-stock stock-display">-- Select Product --</span>
                 </td>
                 <td style="text-align: right;">
-                    <input type="number" step="0.01" min="0" name="items[${nextRowIndex}][rate]" class="form-control item-rate-input" oninput="handleRateOrQtyChange(this)" style="width: 115px; text-align: right; font-weight: 600;" placeholder="0.00">
+                    <input type="text" step="0.01" min="0" name="items[${nextRowIndex}][rate]" class="form-control item-rate-input" oninput="handleRateOrQtyChange(this)" style="width: 115px; text-align: right; font-weight: 600;" placeholder="0.00">
                 </td>
                 <td style="text-align: center;">
-                    <input type="number" min="1" name="items[${nextRowIndex}][quantity]" class="form-control item-qty-input" oninput="handleRateOrQtyChange(this)" value="1" style="width: 90px; text-align: center; margin: 0 auto; font-weight: 600;">
+                    <input type="text" min="1" name="items[${nextRowIndex}][quantity]" class="form-control item-qty-input" oninput="handleRateOrQtyChange(this)" value="1" style="width: 90px; text-align: center; margin: 0 auto; font-weight: 600;">
                 </td>
                 <td style="text-align: right;">
                     <span class="linetotal-display" style="font-weight: 700; color: #0f172a; font-size: 15px;">₹0.00</span>
@@ -1142,7 +1132,7 @@ if (empty($form_items)) {
             } else {
                 if (autoLinkTag) autoLinkTag.style.display = 'none';
                 if (hint) {
-                    hint.textContent = "No fixed vehicle for this zone. You may assign any fleet vehicle or leave unassigned.";
+                    hint.textContent = "No fixed vehicle for this zone. You may assign any Vehicles or leave unassigned.";
                     hint.style.color = '#64748b';
                 }
             }

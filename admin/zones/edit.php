@@ -180,7 +180,7 @@ try {
         }
         .form-control {
             width: 100%;
-            padding: 0.65rem 0.85rem;
+            padding: 0.65rem 0.15rem;
             border: 1px solid #d1d5db;
             border-radius: 8px;
             font-size: 14px;
@@ -244,18 +244,16 @@ try {
 
                 <div class="form-card">
                     <h2 style="font-size: 20px; font-weight: 600; margin-bottom: 0.5rem; color: #111827;">Edit Delivery Zone</h2>
-                    <p style="font-size: 13px; color: #6b7280; margin-bottom: 1.75rem;">
-                        Update the zone details and delivery portal path.
-                    </p>
+                  
 
                     <form action="edit.php?id=<?= $id ?>" method="POST" id="zoneForm">
                         <div class="form-group">
-                            <label class="form-label" for="name">Zone Name <span style="color: #ef4444;">*</span></label>
+                            <label class="form-label" for="name">Route Name <span style="color: #ef4444;">*</span></label>
                             <input type="text" name="name" id="name" class="form-control" required value="<?= htmlspecialchars($_POST['name'] ?? $zone['name']) ?>">
                         </div>
 
                         <div class="form-group">
-                            <label class="form-label" for="slug">Portal Route Slug</label>
+                            <label class="form-label" for="slug">Vehicle Name</label>
                             <input type="text" name="slug" id="slug" class="form-control" value="<?= htmlspecialchars($_POST['slug'] ?? $zone['slug']) ?>">
                             <div class="route-preview">
                                 <i class='bx bx-link'></i>
@@ -267,17 +265,12 @@ try {
                         <div class="vehicle-assign-section" style="background: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 10px; padding: 18px; margin-top: 1.5rem; margin-bottom: 1.5rem;">
                             <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
                                 <div style="display: flex; align-items: center; gap: 8px;">
-                                    <span style="width: 32px; height: 32px; border-radius: 8px; background: #eff6ff; color: #2563eb; display: inline-flex; align-items: center; justify-content: center; font-size: 18px;">
-                                        <i class='bx bxs-truck'></i>
-                                    </span>
+                                 
                                     <div>
-                                        <strong style="color: #0f172a; font-size: 14px;">Assigned Delivery Vehicles</strong>
-                                        <div style="font-size: 12px; color: #64748b;">Vehicles fixed to this delivery zone</div>
+                                     
                                     </div>
                                 </div>
-                                <span style="font-size: 12px; font-weight: 700; color: #2563eb; background: #dbeafe; padding: 2px 8px; border-radius: 6px;">
-                                    <?= count($assignedVehicles) ?> <?= count($assignedVehicles) === 1 ? 'Vehicle' : 'Vehicles' ?>
-                                </span>
+                            
                             </div>
 
                             <!-- List of currently assigned vehicles -->
@@ -318,10 +311,10 @@ try {
 
                             <!-- Section to add or assign another vehicle -->
                             <div style="border-top: 1px dashed #cbd5e1; padding-top: 12px;">
-                                <strong style="font-size: 13px; color: #1e293b; display: block; margin-bottom: 8px;">+ Assign / Fix Another Vehicle</strong>
+                        
 
                                 <div class="form-group" style="margin-bottom: 1rem;">
-                                    <label class="form-label" for="existing_vehicle_select">Select From Fleet Vehicles</label>
+                                    <label class="form-label" for="existing_vehicle_select">Select From Vehicless</label>
                                     <select name="existing_vehicle_id" id="existing_vehicle_select" class="form-control" onchange="handleExistingVehicleSelect(this)">
                                         <option value="">-- Or enter a new vehicle below --</option>
                                         <?php foreach ($otherVehicles as $ov): 

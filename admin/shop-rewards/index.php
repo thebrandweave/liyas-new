@@ -638,11 +638,9 @@ $totalShopsCount = count($allShops);
                     <div class="v-page-title-box">
                         <h1>
                             <i class='bx bxs-gift' style="color: #2563eb; font-size: 26px;"></i>
-                            Shop Reward Status & Loyalty Tracker
+                            Shop and Reward Status
                         </h1>
-                        <p>
-                            Shops unlock the promotional reward upon completing <strong><?= $rewardThreshold ?> delivered orders</strong>. Track every shop's progress and reward claims.
-                        </p>
+                       
                     </div>
                     <div class="v-header-btns">
                         <a href="index.php" class="btn-v-secondary" title="Reload Rewards Data">
@@ -661,7 +659,7 @@ $totalShopsCount = count($allShops);
                             <div class="rew-stat-num">
                                 <?= ($filterDate !== 'all') ? "{$totalPeriodActiveShops} <span style='font-size:14px; font-weight:600; color:#64748b;'>/ {$totalShopsCount}</span>" : $totalShopsCount ?>
                             </div>
-                            <div class="rew-stat-label"><?= ($filterDate !== 'all') ? "Active Shops in Period" : "Total Outlets & Shops" ?></div>
+                            <div class="rew-stat-label"><?= ($filterDate !== 'all') ? "Active Shops in Period" : "Total Shops" ?></div>
                         </div>
                     </div>
 
@@ -699,7 +697,7 @@ $totalShopsCount = count($allShops);
                         </div>
                         <div>
                             <div class="rew-stat-num"><?= $eligibleCount ?></div>
-                            <div class="rew-stat-label">🎉 Eligible for Reward</div>
+                            <div class="rew-stat-label"> Eligible for Reward</div>
                         </div>
                     </div>
 
@@ -709,7 +707,7 @@ $totalShopsCount = count($allShops);
                         </div>
                         <div>
                             <div class="rew-stat-num"><?= $claimedCount ?></div>
-                            <div class="rew-stat-label">✅ Rewards Claimed</div>
+                            <div class="rew-stat-label"> Rewards Claimed</div>
                         </div>
                     </div>
                 </div>
@@ -728,13 +726,13 @@ $totalShopsCount = count($allShops);
                                 </a>
                             <?php endif; ?>
                             <a href="<?= buildRewardsUrl(['tab' => 'eligible']) ?>" class="tab-pill tab-eligible <?= ($tabFilter === 'eligible') ? 'active' : '' ?>">
-                                🎉 Eligible (<?= $eligibleCount ?>)
+                                Eligible (<?= $eligibleCount ?>)
                             </a>
                             <a href="<?= buildRewardsUrl(['tab' => 'in_progress']) ?>" class="tab-pill <?= ($tabFilter === 'in_progress') ? 'active' : '' ?>">
-                                ⏳ In Progress (<?= $inProgressCount ?>)
+                                 In Progress (<?= $inProgressCount ?>)
                             </a>
                             <a href="<?= buildRewardsUrl(['tab' => 'claimed']) ?>" class="tab-pill tab-claimed <?= ($tabFilter === 'claimed') ? 'active' : '' ?>">
-                                ✅ Claimed (<?= $claimedCount ?>)
+                                 Claimed (<?= $claimedCount ?>)
                             </a>
                         </div>
 

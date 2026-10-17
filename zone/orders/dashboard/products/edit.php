@@ -411,7 +411,7 @@ $casePrice = (float)($product['case_price'] ?: $product['price']);
                 <div class="grid-2">
                     <div class="form-group">
                         <label class="form-label" for="net_content">Net Content (Numeric Value)</label>
-                        <input type="number" step="any" min="0" name="net_content" id="net_content" class="form-control" value="<?= htmlspecialchars($_POST['net_content'] ?? ($product['net_content'] ?? '')) ?>">
+                        <input type="text" step="any" min="0" name="net_content" id="net_content" class="form-control" value="<?= htmlspecialchars($_POST['net_content'] ?? ($product['net_content'] ?? '')) ?>">
                     </div>
                     <div class="form-group">
                         <label class="form-label" for="net_content_unit">Net Content Unit</label>
@@ -426,12 +426,12 @@ $casePrice = (float)($product['case_price'] ?: $product['price']);
                 <div class="grid-2">
                     <div class="form-group">
                         <label class="form-label" for="case_stock">Case Stock (Available Cases) <span style="color: #dc2626;">*</span></label>
-                        <input type="number" min="0" name="case_stock" id="case_stock" class="form-control" required value="<?= htmlspecialchars($_POST['case_stock'] ?? $caseStock) ?>">
+                        <input type="text" min="0" name="case_stock" id="case_stock" class="form-control" required value="<?= htmlspecialchars($_POST['case_stock'] ?? $caseStock) ?>">
                         <div class="form-helper">Cases currently stored in warehouse</div>
                     </div>
                     <div class="form-group">
                         <label class="form-label" for="case_price">Case Price (₹) <span style="color: #dc2626;">*</span></label>
-                        <input type="number" step="0.01" min="0" name="case_price" id="case_price" class="form-control" required value="<?= htmlspecialchars($_POST['case_price'] ?? $casePrice) ?>">
+                        <input type="text" step="0.01" min="0" name="case_price" id="case_price" class="form-control" required value="<?= htmlspecialchars($_POST['case_price'] ?? $casePrice) ?>">
                         <div class="form-helper">Default selling price per case</div>
                     </div>
                 </div>

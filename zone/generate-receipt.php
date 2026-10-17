@@ -1207,10 +1207,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['items']) && is_array(
                         </div>
 
                         <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; background: #f8fafc; padding: 8px 12px; border-radius: 8px;">
-                            <span style="font-size: 13px; font-weight: 600; color: #475569;">Delivered Cases:</span>
+                            <span style="font-size: 11px; font-weight: 600; color: #475569;">Delivered Cases:</span>
                             <div class="stepper-box">
                                 <button type="button" class="btn-stepper" onclick="stepItemQty(this, -1)" aria-label="Decrease">&minus;</button>
-                                <input type="number" min="0" <?= $isExtra ? 'max="' . $maxCases . '"' : '' ?> name="items[<?= $idx ?>][quantity]" value="<?= $qty ?>" class="form-control stepper-input item-qty-input" required oninput="checkMaxCases(this); recalculate()">
+                                <input type="text" min="0" <?= $isExtra ? 'max="' . $maxCases . '"' : '' ?> name="items[<?= $idx ?>][quantity]" value="<?= $qty ?>" class="form-control stepper-input item-qty-input" required oninput="checkMaxCases(this); recalculate()">
                                 <button type="button" class="btn-stepper" onclick="stepItemQty(this, 1)" aria-label="Increase">&plus;</button>
                             </div>
                         </div>
@@ -1351,7 +1351,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['items']) && is_array(
                                     <label class="form-label" style="font-size: 12px; margin-bottom: 4px;">Amount of Earlier Due to Clear (₹):</label>
                                     <div style="display: flex; gap: 8px; align-items: center;">
                                         <input
-    type="number"
+    type="text"
     step="0.01"
     min="0"
     max="<?= (float)($priorDues['total_due'] ?? 0) ?>"
@@ -1394,13 +1394,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['items']) && is_array(
                 <!-- 1-Tap Fast Settlement Shortcuts -->
                 <div class="fast-pay-buttons">
                     <button type="button" class="btn-fast-pay btn-fast-cash" id="btnFastCash">
-                        💵 100% Full Cash
+                        💵 Cash
                     </button>
                     <button type="button" class="btn-fast-pay btn-fast-credit" id="btnFastCredit">
-                        💳 100% Credit
+                        💳 Credit
                     </button>
                     <button type="button" class="btn-fast-pay btn-fast-due" id="btnFastDue">
-                        ⏳ Unpaid (Due)
+                        ⏳ Unpaid
                     </button>
                 </div>
 
@@ -1412,7 +1412,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['items']) && is_array(
                     </label>
                     <div class="amount-input-box visible" id="boxCash">
                         <label class="form-label" style="font-size: 12px; margin-top: 8px;">Cash Amount (₹):</label>
-                        <input type="number" step="0.01" min="0" name="cash_amount" id="cash_amount" class="form-control" placeholder="Enter cash collected" value="<?= htmlspecialchars($_POST['cash_amount'] ?? '') ?>">
+                        <input type="text" step="0.01" min="0" name="cash_amount" id="cash_amount" class="form-control" placeholder="Enter cash collected" value="<?= htmlspecialchars($_POST['cash_amount'] ?? '') ?>">
                     </div>
                 </div>
 
@@ -1424,15 +1424,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['items']) && is_array(
                     </label>
                     <div class="amount-input-box" id="boxCredit">
                         <label class="form-label" style="font-size: 12px; margin-top: 8px;">Credited Amount (₹):</label>
-                        <input type="number" step="0.01" min="0" name="credited_amount" id="credited_amount" class="form-control" placeholder="Enter credit amount" value="<?= htmlspecialchars($_POST['credited_amount'] ?? '') ?>">
+                        <input type="text" step="0.01" min="0" name="credited_amount" id="credited_amount" class="form-control" placeholder="Enter credit amount" value="<?= htmlspecialchars($_POST['credited_amount'] ?? '') ?>">
                     </div>
                 </div>
 
-                <!-- Delivery Remarks / Notes -->
-                <div class="form-group" style="margin-top: 10px; margin-bottom: 14px;">
-                    <label class="form-label" for="receipt_notes" style="font-size: 12px;">Delivery Remarks / Notes (Optional)</label>
-                    <input type="text" name="receipt_notes" id="receipt_notes" class="form-control" placeholder="e.g. Paid partial due, remainder next week" value="<?= htmlspecialchars($_POST['receipt_notes'] ?? '') ?>">
-                </div>
+              
 
                 <!-- Live Calculation Panel -->
                 <div class="calc-panel">
@@ -1599,7 +1595,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['items']) && is_array(
                         ${contentHtml}
                         <div style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #475569; margin-top: 4px;">
                             <span>Rate: ₹</span>
-                            <input type="number" step="0.01" min="0" name="items[${idx}][rate]" value="${price.toFixed(2)}" class="form-control item-rate" style="width: 85px; height: 28px; padding: 2px 6px; font-size: 12px; font-weight: 700; border: 1.5px solid #cbd5e1; border-radius: 6px; background: #ffffff;" oninput="recalculate()" title="Edit rate if needed">
+                            <input type="text" step="0.01" min="0" name="items[${idx}][rate]" value="${price.toFixed(2)}" class="form-control item-rate" style="width: 85px; height: 28px; padding: 2px 6px; font-size: 12px; font-weight: 700; border: 1.5px solid #cbd5e1; border-radius: 6px; background: #ffffff;" oninput="recalculate()" title="Edit rate if needed">
                             <span> / case</span>
                         </div>
                         <div class="item-calc-text" style="font-size: 12px; color: #64748b; font-weight: 600; margin-top: 3px;">
@@ -1618,7 +1614,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['items']) && is_array(
                     <span style="font-size: 13px; font-weight: 600; color: #475569;">Delivered Cases:</span>
                     <div class="stepper-box">
                         <button type="button" class="btn-stepper" onclick="stepItemQty(this, -1)" aria-label="Decrease">&minus;</button>
-                        <input type="number" min="0" name="items[${idx}][quantity]" value="1" class="form-control stepper-input item-qty-input" required oninput="recalculate()">
+                        <input type="text" min="0" name="items[${idx}][quantity]" value="1" class="form-control stepper-input item-qty-input" required oninput="recalculate()">
                         <button type="button" class="btn-stepper" onclick="stepItemQty(this, 1)" aria-label="Increase">&plus;</button>
                     </div>
                 </div>
@@ -1683,7 +1679,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['items']) && is_array(
                         </div>
                         <div style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #475569; margin-top: 4px;">
                             <span>Rate: ₹</span>
-                            <input type="number" step="0.01" min="0" name="items[${idx}][rate]" value="${price.toFixed(2)}" class="form-control item-rate" style="width: 85px; height: 28px; padding: 2px 6px; font-size: 12px; font-weight: 700; border: 1.5px solid #cbd5e1; border-radius: 6px; background: #ffffff;" oninput="recalculate()" title="Edit rate if needed">
+                            <input type="text" step="0.01" min="0" name="items[${idx}][rate]" value="${price.toFixed(2)}" class="form-control item-rate" style="width: 85px; height: 28px; padding: 2px 6px; font-size: 12px; font-weight: 700; border: 1.5px solid #cbd5e1; border-radius: 6px; background: #ffffff;" oninput="recalculate()" title="Edit rate if needed">
                             <span>/ case</span>
                         </div>
                         <div class="item-calc-text" style="font-size: 12px; color: #64748b; font-weight: 600; margin-top: 3px;">
@@ -1702,7 +1698,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['items']) && is_array(
                     <span style="font-size: 13px; font-weight: 600; color: #475569;">Delivered Cases:</span>
                     <div class="stepper-box">
                         <button type="button" class="btn-stepper" onclick="stepItemQty(this, -1)" aria-label="Decrease">&minus;</button>
-                        <input type="number" min="0" max="${maxCases}" name="items[${idx}][quantity]" value="1" class="form-control stepper-input item-qty-input" required oninput="checkMaxCases(this); recalculate()">
+                        <input type="text" min="0" max="${maxCases}" name="items[${idx}][quantity]" value="1" class="form-control stepper-input item-qty-input" required oninput="checkMaxCases(this); recalculate()">
                         <button type="button" class="btn-stepper" onclick="stepItemQty(this, 1)" aria-label="Increase">&plus;</button>
                     </div>
                 </div>

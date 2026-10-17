@@ -376,7 +376,7 @@ if (strlen($cleanPhone) === 10) {
             background: #0f172a;
             color: #f8fafc;
             border: 2px solid #334155;
-            padding: 12px 20px;
+            padding: 4px 10px;
             border-radius: 10px;
             font-family: monospace, sans-serif;
             font-size: 24px;
@@ -904,7 +904,7 @@ if (strlen($cleanPhone) === 10) {
                     <div class="v-breadcrumb-nav">
                         <a href="../dashboard.php">Dashboard</a>
                         <i class='bx bx-chevron-right'></i>
-                        <a href="index.php">Fleet Vehicles</a>
+                        <a href="index.php">Vehicless</a>
                         <i class='bx bx-chevron-right'></i>
                         <span><?= htmlspecialchars($vehicle['vehicle_number']) ?></span>
                     </div>
@@ -917,14 +917,9 @@ if (strlen($cleanPhone) === 10) {
                 </div>
                 <div class="v-header-btns">
                     <a href="index.php" class="btn-v-secondary" title="Return to fleet overview">
-                        <i class='bx bx-left-arrow-alt'></i> Back to Fleet Hub
+                        <i class='bx bx-left-arrow-alt'></i> Back
                     </a>
-                    <button type="button" class="btn-v-primary" onclick="openLoadCasesModal()" title="Load cases onto this vehicle">
-                        <i class='bx bx-package'></i> Load Cases
-                    </button>
-                    <button type="button" class="btn-v-secondary" onclick="openEditVehicleModal()" title="Edit vehicle registration & driver">
-                        <i class='bx bx-edit'></i> Edit Vehicle
-                    </button>
+                 
                 </div>
             </div>
 
@@ -942,9 +937,9 @@ if (strlen($cleanPhone) === 10) {
                             $st = strtolower($vehicle['status'] ?? 'active');
                             $statusClass = $st === 'loading' ? 'v-pill-loading' : ($st === 'dispatched' ? 'v-pill-dispatched' : ($st === 'inactive' ? 'v-pill-inactive' : 'v-pill-active'));
                         ?>
-                        <span class="v-status-pill <?= $statusClass ?>">
+                        <!-- <span class="v-status-pill <?= $statusClass ?>">
                             <?= ucfirst($st) ?>
-                        </span>
+                        </span> -->
                     </div>
                     <div class="v-hero-meta">
                         <div class="v-hero-meta-item">
@@ -970,21 +965,13 @@ if (strlen($cleanPhone) === 10) {
                         <?php endif; ?>
                         <div class="v-hero-meta-item">
                             <i class='bx bx-map-pin' style="color: #ea580c; font-size: 16px;"></i>
-                            <span>Base Zone: <strong><?= htmlspecialchars($vehicle['home_zone_name'] ?: 'All Central') ?></strong></span>
+                            <span>Zone: <strong><?= htmlspecialchars($vehicle['home_zone_name'] ?: 'All Central') ?></strong></span>
                         </div>
-                        <div class="v-hero-meta-item">
-                            <i class='bx bx-box' style="color: #64748b; font-size: 16px;"></i>
-                            <span>Capacity: <strong><?= $capacity ?> cases</strong></span>
-                        </div>
+                       
                     </div>
                 </div>
                 <div style="display: flex; flex-direction: column; gap: 8px; align-items: flex-end;">
-                    <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #64748b; letter-spacing: 0.04em;">
-                        Trip Yard Load
-                    </div>
-                    <div style="font-size: 18px; font-weight: 800; color: #0f172a;">
-                        <?= $activeLoadedCases ?> <span style="font-size: 13px; font-weight: 600; color: #64748b;">/ <?= $capacity ?> cs</span>
-                    </div>
+                   
                     <?php if ($activeLoadedCases > 0): ?>
                         <form method="POST" onsubmit="return confirm('Clear active yard trip load for this vehicle? Lifetime deliveries and past receipts are preserved.');" style="margin: 0;">
                             <input type="hidden" name="action" value="reset_load">
@@ -1016,7 +1003,7 @@ if (strlen($cleanPhone) === 10) {
                         <i class='bx bx-money v-kpi-icon'></i>
                     </div>
                     <div class="v-kpi-val"><?= $summary['formatted_cash'] ?></div>
-                    <div class="v-kpi-sub">Direct Cash Received</div>
+                    <div class="v-kpi-sub">Cash Received</div>
                 </div>
 
                 <!-- 3. Credited Amount -->
@@ -1026,7 +1013,7 @@ if (strlen($cleanPhone) === 10) {
                         <i class='bx bx-credit-card v-kpi-icon'></i>
                     </div>
                     <div class="v-kpi-val"><?= $summary['formatted_credit'] ?></div>
-                    <div class="v-kpi-sub">Ledger / Store Credit</div>
+                    <div class="v-kpi-sub">Credited</div>
                 </div>
 
                 <!-- 4. Outstanding Due -->
@@ -1036,7 +1023,7 @@ if (strlen($cleanPhone) === 10) {
                         <i class='bx bx-error-circle v-kpi-icon'></i>
                     </div>
                     <div class="v-kpi-val"><?= $summary['formatted_due'] ?></div>
-                    <div class="v-kpi-sub">Pending Payment Collection</div>
+                    <div class="v-kpi-sub">Pending Payment </div>
                 </div>
 
                 <!-- 5. Total Order Value -->
@@ -1046,7 +1033,7 @@ if (strlen($cleanPhone) === 10) {
                         <i class='bx bx-receipt v-kpi-icon'></i>
                     </div>
                     <div class="v-kpi-val"><?= $summary['formatted_sales'] ?></div>
-                    <div class="v-kpi-sub">Gross Billed Revenue</div>
+                    <div class="v-kpi-sub">Total</div>
                 </div>
             </div>
 
@@ -1402,7 +1389,7 @@ if (strlen($cleanPhone) === 10) {
 
                 <div class="v-form-group">
                     <label>Number of Cases to Load: <span style="color: #dc2626;">*</span></label>
-                    <input type="number" id="loadCasesInput" name="cases" min="1" max="1000" placeholder="e.g. 50" required>
+                    <input type="text" id="loadCasesInput" name="cases" min="1" max="1000" placeholder="e.g. 50" required>
                 </div>
 
                 <div class="v-form-group">
@@ -1466,7 +1453,7 @@ if (strlen($cleanPhone) === 10) {
 
                 <div class="v-form-group">
                     <label>Capacity (in Cases):</label>
-                    <input type="number" name="capacity_cases" value="<?= (int)($vehicle['capacity_cases'] ?? 100) ?>" min="1" max="5000">
+                    <input type="text" name="capacity_cases" value="<?= (int)($vehicle['capacity_cases'] ?? 100) ?>" min="1" max="5000">
                 </div>
 
                 <div class="v-modal-actions">

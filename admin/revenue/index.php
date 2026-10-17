@@ -2345,7 +2345,7 @@ $cleanBaseUrl = rtrim(BASE_URL, '/');
                         Clearance Amount (₹) <span style="color: #ef4444;">*</span>
                     </label>
                     <div style="display: flex; gap: 8px;">
-                        <input type="number" step="0.01" min="0.01" name="clear_amount" id="revModalClearAmount" required style="flex: 1; padding: 8px 12px; border: 1.5px solid #d1d5db; border-radius: 8px; font-size: 14px; font-weight: 700; color: #0f172a;">
+                        <input type="text" step="0.01" min="0.01" name="clear_amount" id="revModalClearAmount" required style="flex: 1; padding: 8px 12px; border: 1.5px solid #d1d5db; border-radius: 8px; font-size: 14px; font-weight: 700; color: #0f172a;">
                         <button type="button" onclick="setRevModalFullDue()" style="padding: 6px 12px; font-size: 12px; font-weight: 700; background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; border-radius: 8px; cursor: pointer; white-space: nowrap;">
                             Full Due
                         </button>

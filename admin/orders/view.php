@@ -415,11 +415,11 @@ $paymentHistory = getOrderPaymentHistory($pdo, $order_id);
 
                             <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
                                 <thead>
-                                    <tr style="border-bottom: 2px solid #e2e8f0; text-align: left; color: #64748b;">
-                                        <th style="padding: 8px 4px;">Product</th>
+                                    <tr style="border-bottom: 2px solid #e2e8f0; text-align: center; color: #64748b;">
+                                        <th style="padding: 8px 4px; text-align: center;">Product</th>
                                         <th style="padding: 8px 4px; text-align: center;">Qty (Cases)</th>
-                                        <th style="padding: 8px 4px; text-align: right;">Case Price</th>
-                                        <th style="padding: 8px 4px; text-align: right;">Total</th>
+                                        <th style="padding: 8px 4px; text-align: center;">Case Price</th>
+                                        <th style="padding: 8px 4px; text-align: center;">Total</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -430,21 +430,19 @@ $paymentHistory = getOrderPaymentHistory($pdo, $order_id);
                                         $iLineTotal = (float)$item['line_total'];
                                     ?>
                                     <tr style="border-bottom: 1px solid #f1f5f9;">
-                                        <td style="padding: 12px 4px;">
+                                        <td style="padding: 12px 4px; text-align: center;">
                                             <strong style="color: #1e293b;"><?= $iName ?></strong>
                                             <?php if (!empty($item['net_content'])): ?>
-                                                <div style="font-size: 12px; color: #64748b;">
-                                                    Net: <?= (float)$item['net_content'] ?> <?= htmlspecialchars($item['net_content_unit'] ?? '') ?>
-                                                </div>
+                                              
                                             <?php endif; ?>
                                         </td>
                                         <td style="padding: 12px 4px; text-align: center; font-weight: 600;">
                                             <?= $iQty ?>
                                         </td>
-                                        <td style="padding: 12px 4px; text-align: right;">
+                                        <td style="padding: 12px 4px; text-align: center;">
                                             <?= formatCurrency($iPrice) ?>
                                         </td>
-                                        <td style="padding: 12px 4px; text-align: right; font-weight: 600;">
+                                        <td style="padding: 12px 4px; text-align: center; font-weight: 600;">
                                             <?= formatCurrency($iLineTotal) ?>
                                         </td>
                                     </tr>
@@ -479,10 +477,7 @@ $paymentHistory = getOrderPaymentHistory($pdo, $order_id);
                                 <span class="info-label">Shop / Customer:</span>
                                 <span class="info-val"><?= htmlspecialchars($order['shop_name'] ?: 'N/A') ?></span>
                             </div>
-                            <div class="info-row">
-                                <span class="info-label">Contact Person:</span>
-                                <span class="info-val"><?= htmlspecialchars($order['customer_name'] ?: 'N/A') ?></span>
-                            </div>
+                          
                             <div class="info-row">
                                 <span class="info-label">Phone Number:</span>
                                 <span class="info-val">
@@ -495,10 +490,7 @@ $paymentHistory = getOrderPaymentHistory($pdo, $order_id);
                                 <span class="info-label">Location / Area:</span>
                                 <span class="info-val"><?= htmlspecialchars($order['location'] ?: 'N/A') ?></span>
                             </div>
-                            <div class="info-row">
-                                <span class="info-label">Delivery Address:</span>
-                                <span class="info-val"><?= nl2br(htmlspecialchars($order['address'] ?: 'N/A')) ?></span>
-                            </div>
+                          
                         </div>
 
                         <!-- Payment & Due Clearance Audit Ledger Card -->
@@ -642,21 +634,6 @@ $paymentHistory = getOrderPaymentHistory($pdo, $order_id);
                                 <span>Order Workflow</span>
                             </div>
 
-                            <form action="view.php?id=<?= $order_id ?>" method="POST" style="margin-bottom: 1.5rem;">
-                                <div style="margin-bottom: 0.75rem;">
-                                    <label style="display: block; font-size: 12px; color: #64748b; font-weight: 500; margin-bottom: 4px;">Update Status:</label>
-                                    <select name="status" class="form-control" style="width: 100%;">
-                                        <option value="pending" <?= ($order['status'] === 'pending') ? 'selected' : '' ?>>Pending</option>
-                                        <option value="processing" <?= ($order['status'] === 'processing') ? 'selected' : '' ?>>Processing</option>
-                                        <option value="shipped" <?= ($order['status'] === 'shipped') ? 'selected' : '' ?>>Shipped</option>
-                                        <option value="delivered" <?= ($order['status'] === 'delivered') ? 'selected' : '' ?>>Delivered</option>
-                                        <option value="cancelled" <?= ($order['status'] === 'cancelled') ? 'selected' : '' ?>>Cancelled</option>
-                                    </select>
-                                </div>
-                                <button type="submit" name="update_status" class="btn-primary" style="width: 100%; padding: 0.5rem; background: #2563eb; color: #fff; border: none; border-radius: 6px; font-weight: 600; cursor: pointer;">
-                                    Update Status
-                                </button>
-                            </form>
 
                             <div class="info-row">
                                 <span class="info-label">Order Number:</span>
@@ -764,7 +741,7 @@ $paymentHistory = getOrderPaymentHistory($pdo, $order_id);
                                                     Amount to Clear (₹) <span style="color: #ef4444;">*</span>
                                                 </label>
                                                 <div style="display: flex; gap: 6px;">
-                                                    <input type="number" step="0.01" min="0.01" max="<?= (float)$order['receipt_due'] ?>" name="clear_amount" id="clear_amount" value="<?= number_format((float)$order['receipt_due'], 2, '.', '') ?>" required style="flex: 1; padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; font-weight: 700; color: #0f172a; box-sizing: border-box;">
+                                                    <input type="text" step="0.01" min="0.01" max="<?= (float)$order['receipt_due'] ?>" name="clear_amount" id="clear_amount" value="<?= number_format((float)$order['receipt_due'], 2, '.', '') ?>" required style="flex: 1; padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; font-weight: 700; color: #0f172a; box-sizing: border-box;">
                                                     <button type="button" onclick="document.getElementById('clear_amount').value='<?= number_format((float)$order['receipt_due'], 2, '.', '') ?>'" style="padding: 4px 8px; font-size: 11px; font-weight: 600; background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; border-radius: 6px; cursor: pointer; white-space: nowrap;">
                                                         Full Due
                                                     </button>

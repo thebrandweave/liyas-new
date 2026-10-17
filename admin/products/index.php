@@ -776,14 +776,14 @@ if ($total_records > count($products) && empty($search)) {
                                                 </button>
                                                 <div class="action-dropdown">
                                                     <button type="button" onclick="closeAllActionMenus(); openProductEditModal(<?= (int)$product['product_id'] ?>, 'details');">
-                                                        <i class='bx bx-edit' style="color: #0284c7;"></i> Quick Edit
+                                                        <i class='bx bx-edit' style="color: #0284c7;"></i> Edit
                                                     </button>
                                                     <button type="button" onclick="closeAllActionMenus(); openProductEditModal(<?= (int)$product['product_id'] ?>, 'damaged');">
                                                         <i class='bx bx-error-circle' style="color: #ea580c;"></i> Damaged Stock
                                                     </button>
-                                                    <a href="edit.php?id=<?= (int)$product['product_id'] ?>">
+                                                    <!-- <a href="edit.php?id=<?= (int)$product['product_id'] ?>">
                                                         <i class='bx bx-link-external' style="color: #64748b;"></i> Full Edit Page
-                                                    </a>
+                                                    </a> -->
                                                     <a href="index.php?delete=<?= (int)$product['product_id'] ?>" 
                                                        class="delete-action" 
                                                        onclick="return confirm('Are you sure you want to delete <?= htmlspecialchars(addslashes($displayName), ENT_QUOTES, 'UTF-8') ?>?');">
@@ -837,15 +837,7 @@ if ($total_records > count($products) && empty($search)) {
             <div class="modal-body-custom">
                 <!-- TAB 1: DAMAGED ITEMS -->
                 <div id="tabContentDamaged">
-                    <div style="background: #fffbeb; border: 1px solid #fef3c7; border-radius: 10px; padding: 12px 16px; margin-bottom: 16px; display: flex; align-items: flex-start; gap: 10px;">
-                        <i class='bx bx-info-circle' style="font-size: 20px; color: #d97706; margin-top: 1px;"></i>
-                        <div style="font-size: 12px; color: #92400e; line-height: 1.5;">
-                            <strong>Damaged Stock Policy:</strong> Damaged items are automatically deducted from the warehouse Available Stock.
-                            <br>&bull; <strong>Corrected:</strong> Mistaken report or repaired packaging — restores cases back to available stock.
-                            <br>&bull; <strong>Transferred:</strong> Returned to central warehouse — restores cases back to warehouse inventory.
-                            <br>&bull; <strong>Remove:</strong> Discarded or written off as loss — removes record, stock remains deducted.
-                        </div>
-                    </div>
+                  
 
                     <!-- Action Bar to Report Damaged -->
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
@@ -871,7 +863,7 @@ if ($total_records > count($products) && empty($search)) {
                                 </div>
                                 <div>
                                     <label style="display: block; font-size: 11px; font-weight: 700; color: #475569; margin-bottom: 4px;">Damaged Cases <span style="color:#ef4444;">*</span></label>
-                                    <input type="number" name="damaged_cases" id="reportDamageCasesInput" min="1" value="1" required class="form-input" style="width: 100%; padding: 7px 10px; border-radius: 6px; font-size: 12px; border: 1px solid #cbd5e1; background: #fff;">
+                                    <input type="text" name="damaged_cases" id="reportDamageCasesInput" min="1" value="1" required class="form-input" style="width: 100%; padding: 7px 10px; border-radius: 6px; font-size: 12px; border: 1px solid #cbd5e1; background: #fff;">
                                 </div>
                                 <div>
                                     <label style="display: block; font-size: 11px; font-weight: 700; color: #475569; margin-bottom: 4px;">Reason / Notes</label>
@@ -904,18 +896,18 @@ if ($total_records > count($products) && empty($search)) {
                             </div>
                             <div>
                                 <label style="display: block; font-size: 13px; font-weight: 700; color: #334155; margin-bottom: 5px;">Case Price (₹) <span style="color:#ef4444;">*</span></label>
-                                <input type="number" step="0.01" name="case_price" id="editModalCasePrice" required class="form-input" style="width: 100%; padding: 9px 12px; border: 1.5px solid #cbd5e1; border-radius: 8px;">
+                                <input type="text" step="0.01" name="case_price" id="editModalCasePrice" required class="form-input" style="width: 100%; padding: 9px 12px; border: 1.5px solid #cbd5e1; border-radius: 8px;">
                             </div>
                         </div>
 
                         <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; margin-bottom: 14px;">
                             <div>
                                 <label style="display: block; font-size: 13px; font-weight: 700; color: #334155; margin-bottom: 5px;">Warehouse Case Stock <span style="color:#ef4444;">*</span></label>
-                                <input type="number" name="case_stock" id="editModalCaseStock" min="0" required class="form-input" style="width: 100%; padding: 9px 12px; border: 1.5px solid #cbd5e1; border-radius: 8px;">
+                                <input type="text" name="case_stock" id="editModalCaseStock" min="0" required class="form-input" style="width: 100%; padding: 9px 12px; border: 1.5px solid #cbd5e1; border-radius: 8px;">
                             </div>
                             <div>
                                 <label style="display: block; font-size: 13px; font-weight: 700; color: #334155; margin-bottom: 5px;">Net Content</label>
-                                <input type="number" step="any" name="net_content" id="editModalNetContent" placeholder="e.g. 500" class="form-input" style="width: 100%; padding: 9px 12px; border: 1.5px solid #cbd5e1; border-radius: 8px;">
+                                <input type="text" step="any" name="net_content" id="editModalNetContent" placeholder="e.g. 500" class="form-input" style="width: 100%; padding: 9px 12px; border: 1.5px solid #cbd5e1; border-radius: 8px;">
                             </div>
                             <div>
                                 <label style="display: block; font-size: 13px; font-weight: 700; color: #334155; margin-bottom: 5px;">Unit</label>
@@ -935,7 +927,7 @@ if ($total_records > count($products) && empty($search)) {
                                 </select>
                             </div>
                             <div>
-                                <label style="display: block; font-size: 13px; font-weight: 700; color: #334155; margin-bottom: 5px;">Description</label>
+                                <label style="display: block; font-size: 13px; font-weight: 700; color: #334155; margin-bottom: 5px;">Description(Not required)</label>
                                 <input type="text" name="description" id="editModalDescription" placeholder="Short description..." class="form-input" style="width: 100%; padding: 9px 12px; border: 1.5px solid #cbd5e1; border-radius: 8px;">
                             </div>
                         </div>

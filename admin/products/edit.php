@@ -140,7 +140,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_product'])) {
         }
         .form-control {
             width: 100%;
-            padding: 0.65rem 0.85rem;
+            padding: 0.65rem 0.15rem;
             border: 1px solid #d1d5db;
             border-radius: 8px;
             font-size: 14px;
@@ -307,7 +307,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_product'])) {
                         <div class="grid-2">
                             <div class="form-group">
                                 <label class="form-label" for="net_content">Net Content (Numeric Value)</label>
-                                <input type="number" step="any" min="0" name="net_content" id="net_content" class="form-control" placeholder="e.g. 250, 500, 1, 2" value="<?= htmlspecialchars($_POST['net_content'] ?? ($product['net_content'] ? (float)$product['net_content'] : '')) ?>">
+                                <input type="text" step="any" min="0" name="net_content" id="net_content" class="form-control" placeholder="e.g. 250, 500, 1, 2" value="<?= htmlspecialchars($_POST['net_content'] ?? ($product['net_content'] ? (float)$product['net_content'] : '')) ?>">
                             </div>
                             <div class="form-group">
                                 <label class="form-label" for="net_content_unit">Net Content Unit</label>

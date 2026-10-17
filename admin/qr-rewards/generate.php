@@ -201,7 +201,7 @@ function generateUniqueRewardCode($pdo, $prefix, $length) {
 								<div class="form-group">
 									<label for="count">Number of Codes to Generate <span style="color: var(--red);">*</span></label>
 									<input 
-										type="number" 
+										type="text" 
 										name="count" 
 										id="count" 
 										class="form-input"

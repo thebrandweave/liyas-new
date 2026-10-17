@@ -325,10 +325,8 @@ try {
                 <!-- Welcome & Report Banner -->
                 <div style="background: #fff; border: 1px solid var(--border-light); border-radius: 12px; padding: 1.25rem 1.5rem; margin-bottom: 1.5rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
                     <div>
-                        <h1 style="font-size: 20px; font-weight: 700; color: #1e293b; margin: 0;">Liyas International Warehouse Overview</h1>
-                        <p style="font-size: 13px; color: #64748b; margin: 2px 0 0 0;">
-                            Multi-Zone Order, Delivery & Financial Summary &bull; <strong><?= $period_label ?></strong>
-                        </p>
+                        <h1 style="font-size: 20px; font-weight: 700; color: #1e293b; margin: 0;">Liyas International  Overview</h1>
+                      
                     </div>
     
                 </div>

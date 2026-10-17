@@ -46,7 +46,7 @@ $phone   = getSystemSetting($pdo, 'company_phone', '+91 63663 78967');
 $website = getSystemSetting($pdo, 'company_website', 'liyasinternational.com');
 
 $billNumber = $data['bill_number'];
-$receiptDate = date('d F Y', strtotime($data['receipt_created_at'] ?: 'now'));
+$receiptDate = date('d-m-Y', strtotime($data['receipt_created_at'] ?: 'now'));
 $receiptTime = date('h:i A', strtotime($data['receipt_created_at'] ?: 'now'));
 
 $shopName    = htmlspecialchars($data['shop_name'] ?: ($data['customer_name'] ?: 'Valued Customer'));
@@ -335,7 +335,7 @@ if (file_exists($logoPath)) {
         }
 
         .company-logo-img {
-            height: 52px;
+            height: 39px;
             width: auto;
             border-radius: 6px;
             object-fit: contain;
@@ -718,14 +718,14 @@ if (file_exists($logoPath)) {
             </a>
 
   <div class="action-buttons-group">
-            <button onclick="shareViaWhatsApp()" id="btnWaShare" class="btn-ctrl btn-whatsapp-share" title="Send Receipt via WhatsApp directly with auto PDF download and clipboard image">
+            <!-- <button onclick="shareViaWhatsApp()" id="btnWaShare" class="btn-ctrl btn-whatsapp-share" title="Send Receipt via WhatsApp directly with auto PDF download and clipboard image">
                 <i class='bx bxl-whatsapp' style="font-size: 15px;"></i>
                 <span>Send to WhatsApp</span>
-            </button>
+            </button> -->
 
             <button onclick="downloadReceiptPdf()" id="btnDownloadPdf" class="btn-ctrl btn-pdf-download" title="Download official PDF receipt file">
                 <i class='bx bxs-file-pdf' style="font-size: 18px; color: #dc2626;"></i>
-                <span>Download PDF</span>
+                <span>Print Receipt</span>
             </button>
 
           
@@ -747,7 +747,7 @@ if (file_exists($logoPath)) {
                         Receipt Generated &bull; Bill #<?= htmlspecialchars($billNumber) ?>
                     </div>
                     <div style="font-size: 12px; color: #047857; margin-top: 1px;">
-                        Delivered to <strong><?= $shopName ?></strong>. Tap <strong>"Send via WhatsApp (PDF)"</strong> to share with customer.
+                        Delivered to <strong><?= $shopName ?></strong>.
                     </div>
                 </div>
             </div>

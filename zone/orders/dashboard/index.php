@@ -2038,7 +2038,7 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
                             </div>
                             <div style="display: flex; align-items: center; gap: 6px;">
                                 <label style="font-size: 11px; color: #64748b; font-weight: 600;">Discount (₹):</label>
-                                <input type="number" id="reorderDiscount" name="discount" value="0" min="0" step="any" oninput="calculateReorderTotals()" style="width: 75px; padding: 4px 6px; font-size: 12px; font-weight: 600; border: 1px solid #cbd5e1; border-radius: 6px; text-align: right;">
+                                <input type="text" id="reorderDiscount" name="discount" value="0" min="0" step="any" oninput="calculateReorderTotals()" style="width: 75px; padding: 4px 6px; font-size: 12px; font-weight: 600; border: 1px solid #cbd5e1; border-radius: 6px; text-align: right;">
                             </div>
                             <div>
                                 <span style="font-size: 11px; color: #64748b; font-weight: 600;">Net Total: </span>
@@ -3269,10 +3269,10 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
                         </select>
                     </td>
                     <td style="padding: 6px 8px;">
-                        <input type="number" step="any" min="0" class="reorder-rate-input" value="${rate !== '' ? rate : ''}" placeholder="Rate" oninput="calculateReorderTotals()" style="width: 100%; padding: 6px 8px; font-size: 13px; font-weight: 600; border: 1px solid #cbd5e1; border-radius: 6px;">
+                        <input type="text" step="any" min="0" class="reorder-rate-input" value="${rate !== '' ? rate : ''}" placeholder="Rate" oninput="calculateReorderTotals()" style="width: 100%; padding: 6px 8px; font-size: 13px; font-weight: 600; border: 1px solid #cbd5e1; border-radius: 6px;">
                     </td>
                     <td style="padding: 6px 8px;">
-                        <input type="number" min="1" class="reorder-qty-input" value="${qty || 1}" oninput="calculateReorderTotals()" style="width: 100%; padding: 6px 8px; font-size: 13px; font-weight: 700; border: 1px solid #cbd5e1; border-radius: 6px;">
+                        <input type="text" min="1" class="reorder-qty-input" value="${qty || 1}" oninput="calculateReorderTotals()" style="width: 100%; padding: 6px 8px; font-size: 13px; font-weight: 700; border: 1px solid #cbd5e1; border-radius: 6px;">
                     </td>
                     <td style="padding: 6px 8px; text-align: center;">
                         <label style="display: inline-flex; align-items: center; gap: 4px; font-size: 11px; cursor: pointer;">

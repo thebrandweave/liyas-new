@@ -335,7 +335,7 @@ $prodName = htmlspecialchars($order['product_name'] ?: ($order['fallback_name'] 
                     <label class="form-label" for="discount">Discount Amount (₹)</label>
                     <div class="input-group">
                         <span class="input-currency-prefix">₹</span>
-                        <input type="number" step="0.01" min="0" max="<?= $baseAmount ?>" name="discount" id="discount" class="form-control" value="<?= htmlspecialchars($_POST['discount'] ?? $order['discount']) ?>" autofocus required>
+                        <input type="text" step="0.01" min="0" max="<?= $baseAmount ?>" name="discount" id="discount" class="form-control" value="<?= htmlspecialchars($_POST['discount'] ?? $order['discount']) ?>" autofocus required>
                     </div>
 
                     <!-- Preset buttons for rapid field use -->

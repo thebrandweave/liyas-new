@@ -1235,7 +1235,7 @@ if (!empty($searchQuery)) {
         }
 
         .load-total-sub {
-            font-size: 14px;
+            font-size: 11px;
             font-weight: 700;
             /* text-transform: uppercase; */
             color: #3b82f6;
@@ -1543,12 +1543,116 @@ if (!empty($searchQuery)) {
             to { opacity: 1; }
         }
 
+        /* Header actions and compact fleet-stats hamburger menu */
+        .header-inner { position: relative; }
+        .header-actions {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .stats-menu-wrap { position: relative; }
+        .stats-menu-toggle {
+            min-width: 42px;
+            min-height: 40px;
+            justify-content: center;
+            padding: 8px 11px;
+            font-size: 20px;
+        }
+        .stats-dropdown {
+            display: none;
+            position: absolute;
+            top: calc(100% + 10px);
+            right: 0;
+            width: min(360px, calc(100vw - 24px));
+            padding: 12px;
+            background: #fff;
+            border: 1px solid var(--border-color);
+            border-radius: 14px;
+            box-shadow: 0 18px 45px rgba(15, 23, 42, .18);
+            z-index: 300;
+        }
+        .stats-dropdown.open { display: block; }
+        .stats-dropdown-title {
+            font-size: 12px;
+            font-weight: 800;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: .04em;
+            padding: 2px 4px 10px;
+        }
+        .stats-dropdown .metrics-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 8px;
+            margin: 0;
+        }
+        .stats-dropdown .metric-card { padding: 12px 14px; border-radius: 10px; }
+        .stats-dropdown .metric-top { margin-bottom: 5px; }
+        .stats-dropdown .metric-icon-box { width: 30px; height: 30px; font-size: 17px; }
+        .stats-dropdown .metric-value { font-size: 24px; }
+        .stats-dropdown .metric-desc { font-size: 11px; }
+
+        /* Responsive layout safeguards */
+        img, video, iframe { max-width: 100%; }
+        input, select, textarea, button { max-width: 100%; }
+        .portal-container { min-width: 0; }
+        .fleet-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr)); }
+        .vehicle-card { min-width: 0; }
+        .veh-card-footer, .driver-box { flex-wrap: wrap; }
+        .veh-products-section { min-width: 0; }
+        .veh-prod-row { min-width: 0; }
+        .modal-backdrop { overflow-y: auto; }
+        .modal-dialog { max-height: calc(100dvh - 32px); overflow-y: auto; }
+        .modal-dialog.modal-dialog-lg { width: 100%; }
+        .grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
         @media (max-width: 768px) {
-            .fleet-grid { grid-template-columns: 1fr; }
-            .header-inner { flex-direction: column; align-items: stretch; }
-            .header-actions { justify-content: flex-start; }
-            .toolbar-card { flex-direction: column; align-items: stretch; }
-            .search-box-wrap input { width: 100%; }
+            body { padding-bottom: 24px; }
+            .header-inner { flex-direction: row; align-items: center; flex-wrap: wrap; padding: 10px 12px; gap: 10px; }
+            .header-inner > div:first-child { flex: 1 1 auto; min-width: 0; gap: 8px !important; }
+            .brand-title h1 { font-size: 15px; }
+            .brand-title p { display: none; }
+            .brand-logo { width: 34px; height: 34px; }
+            .btn-back-zone { padding: 7px 9px; font-size: 12px; }
+            .header-actions { flex: 1 0 100%; justify-content: space-between; gap: 6px; }
+            .header-actions > a, .header-actions > button { flex: 1 1 auto; justify-content: center; padding: 8px 9px; font-size: 12px; }
+            .stats-menu-wrap { flex: 0 0 auto; }
+            .stats-menu-toggle { flex: 0 0 42px !important; }
+            .stats-dropdown { right: 0; }
+            .portal-container { padding: 12px; }
+            .metrics-grid { grid-template-columns: 1fr; }
+            .fleet-grid { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+            .vehicle-card { padding: 14px; }
+            .veh-top-header { flex-wrap: wrap; }
+            .plate-badge { font-size: 12px; }
+            .driver-box { align-items: flex-start; gap: 8px; }
+            .driver-info { min-width: 0; flex-wrap: wrap; }
+            .driver-actions { flex-wrap: wrap; }
+            .load-summary-bar { gap: 10px; padding: 10px; }
+            .veh-prod-row { padding: 8px; gap: 6px; }
+            .prod-name-text { white-space: normal; overflow-wrap: anywhere; }
+            .veh-card-footer { align-items: stretch; }
+            .veh-card-footer > * { flex: 1 1 auto; justify-content: center; }
+            .toolbar-card { flex-direction: column; align-items: stretch; padding: 12px; }
+            .zone-tabs-list { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; }
+            .zone-tab-pill { flex: 0 0 auto; }
+            .search-box-wrap, .search-box-wrap input { width: 100%; }
+            .search-box-wrap input:focus { width: 100%; }
+            .modal-backdrop { padding: 8px; align-items: flex-start; }
+            .modal-dialog, .modal-dialog.modal-dialog-lg { width: 100%; max-width: 100%; padding: 16px; margin: 8px 0; max-height: calc(100dvh - 32px); }
+            .grid-2 { grid-template-columns: minmax(0, 1fr); }
+            #aopItemsTableBody, #aopItemsTableBody tr, #aopItemsTableBody td { max-width: 100%; }
+        }
+        @media (max-width: 420px) {
+            .brand-title h1 { font-size: 14px; }
+            .btn-back-zone span { display: none; }
+            .header-actions > a span, .header-actions > button span { font-size: 11px; }
+            .header-actions > a, .header-actions > button { gap: 4px; padding: 8px 6px; }
+            .metric-label { font-size: 11px; }
+            .veh-card-footer { flex-direction: column; }
+            .modal-btns-row { flex-direction: column; }
         }
     </style>
 </head>
@@ -1560,7 +1664,7 @@ if (!empty($searchQuery)) {
             <div style="display: flex; align-items: center; gap: 14px; flex-wrap: wrap;">
                 <a href="<?= htmlspecialchars($zoneBackUrl) ?>" class="btn-back-zone" title="Back to <?= htmlspecialchars($zoneBackName) ?>">
                     <i class='bx bx-arrow-back'></i>
-                    <span>Back to <?= htmlspecialchars($zoneBackName) ?></span>
+                    <span>Back</span>
                 </a>
                 <div class="brand-title">
                     <h1>Vehicle Management</h1>
@@ -1568,47 +1672,31 @@ if (!empty($searchQuery)) {
             </div>
 
             <div class="header-actions">
-                <a href="<?= htmlspecialchars($zoneBackUrl) ?>" class="btn-header" style="background: #eff6ff; color: #1e40af; border-color: #bfdbfe; font-weight: 700;" title="Back to <?= htmlspecialchars($zoneBackName) ?>">
-                    <i class='bx bx-arrow-back' style="color: #2563eb;"></i>
-                    <span>Back to <?= htmlspecialchars($zoneBackName) ?></span>
-                </a>
+               
                 <a href="<?= BASE_URL ?>/zone/orders/dashboard/products/" class="btn-header" title="Catalog & Inventory">
                     <i class='bx bx-cube' style="color: #059669;"></i>
                     <span>Products</span>
                 </a>
                 <button type="button" class="btn-header btn-header-success" onclick="openLoadProductModal()" title="Load products onto a vehicle">
                     <i class='bx bx-plus-circle'></i>
-                    <span>+ Load Product</span>
+                    <span> Load Product</span>
                 </button>
                 <button type="button" class="btn-header btn-header-primary" onclick="openAddVehicleModal()" title="Register a new delivery vehicle">
                     <i class='bx bxs-truck'></i>
-                    <span>+ Add Vehicle</span>
+                    <span> Add Vehicle</span>
                 </button>
-            </div>
-        </div>
-    </header>
-
-    <main class="portal-container">
-        <!-- Flash Messages -->
-        <?php if (!empty($success_msg)): ?>
-            <div class="alert alert-success">
-                <i class='bx bx-check-circle' style="font-size: 20px;"></i>
-                <span><?= htmlspecialchars($success_msg) ?></span>
-            </div>
-        <?php endif; ?>
-
-        <?php if (!empty($error_msg)): ?>
-            <div class="alert alert-error">
-                <i class='bx bx-error-circle' style="font-size: 20px;"></i>
-                <span><?= htmlspecialchars($error_msg) ?></span>
-            </div>
-        <?php endif; ?>
-
-        <!-- 1. Key Metrics Summary Cards -->
-        <section class="metrics-grid">
+                <div class="stats-menu-wrap">
+                <button type="button" class="btn-header stats-menu-toggle" id="statsMenuToggle"
+                        aria-label="Open fleet statistics" aria-expanded="false" aria-controls="statsDropdown"
+                        title="Fleet statistics">
+                    <i class='bx bx-menu'></i>
+                </button>
+                <div class="stats-dropdown" id="statsDropdown" role="region" aria-label="Fleet statistics">
+                    <div class="stats-dropdown-title"><i class='bx bx-bar-chart-alt-2'></i> Fleet Overview</div>
+                    <section class="metrics-grid">
             <div class="metric-card m-blue">
                 <div class="metric-top">
-                    <span class="metric-label">Total Fleet Vehicles</span>
+                    <span class="metric-label">Total Vehicles</span>
                     <div class="metric-icon-box"><i class='bx bxs-truck'></i></div>
                 </div>
                 <div class="metric-value"><?= (int)$totalFleetVehicles ?></div>
@@ -1632,39 +1720,30 @@ if (!empty($searchQuery)) {
                 <div class="metric-value"><?= number_format($totalFleetCasesLoaded) ?> <span style="font-size: 16px;">cs</span></div>
                 <div class="metric-desc">Current on-road linesale load</div>
             </div>
-        </section>
-
-        <!-- 2. Zone Filter & Search Toolbar -->
-        <div class="toolbar-card">
-            <div class="zone-tabs-list">
-                <span style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--text-muted); margin-right: 4px;">
-                    <i class='bx bx-map-pin'></i> Zone:
-                </span>
-                <a href="index.php?zone=all<?= $searchQuery ? '&search=' . urlencode($searchQuery) : '' ?><?= !empty($returnUrl) ? '&return_url=' . urlencode($returnUrl) : '' ?>" 
-                   class="zone-tab-pill <?= ($filterZone === 'all') ? 'active' : '' ?>">
-                    All Zones
-                </a>
-                <?php foreach ($zonesList as $z): ?>
-                    <?php 
-                        $zSlug = $z['slug'];
-                        $isZActive = ($filterZone === (string)$z['id'] || $filterZone === $zSlug);
-                    ?>
-                    <a href="index.php?zone=<?= urlencode($zSlug) ?><?= $searchQuery ? '&search=' . urlencode($searchQuery) : '' ?><?= !empty($returnUrl) ? '&return_url=' . urlencode($returnUrl) : '' ?>" 
-                       class="zone-tab-pill <?= $isZActive ? 'active' : '' ?>">
-                        <?= htmlspecialchars($z['name']) ?>
-                    </a>
-                <?php endforeach; ?>
+                            </section>
+                </div>
+                </div>
             </div>
-
-            <form method="GET" action="index.php" class="search-box-wrap">
-                <input type="hidden" name="zone" value="<?= htmlspecialchars($filterZone) ?>">
-                <?php if (!empty($returnUrl)): ?>
-                    <input type="hidden" name="return_url" value="<?= htmlspecialchars($returnUrl) ?>">
-                <?php endif; ?>
-                <i class='bx bx-search'></i>
-                <input type="text" name="search" value="<?= htmlspecialchars($searchQuery) ?>" placeholder="Search plate / driver / vehicle...">
-            </form>
         </div>
+    </header>
+
+    <main class="portal-container">
+        <!-- Flash Messages -->
+        <?php if (!empty($success_msg)): ?>
+            <div class="alert alert-success">
+                <i class='bx bx-check-circle' style="font-size: 20px;"></i>
+                <span><?= htmlspecialchars($success_msg) ?></span>
+            </div>
+        <?php endif; ?>
+
+        <?php if (!empty($error_msg)): ?>
+            <div class="alert alert-error">
+                <i class='bx bx-error-circle' style="font-size: 20px;"></i>
+                <span><?= htmlspecialchars($error_msg) ?></span>
+            </div>
+        <?php endif; ?>
+
+     
 
         <!-- 3. Vehicles Grid & Vehicle Products Management -->
         <?php if (empty($vehicles)): ?>
@@ -1727,11 +1806,9 @@ if (!empty($searchQuery)) {
                                 </div>
                                 <div style="display: flex; align-items: center; gap: 8px;">
                                     <div class="veh-home-zone-chip">
-                                        <i class='bx bx-map-pin' style="color: #ef4444;"></i> Base Zone: <strong><?= $homeZone ?></strong>
+                                        <i class='bx bx-map-pin' style="color: #ef4444;"></i> Zone: <strong><?= $homeZone ?></strong>
                                     </div>
-                                    <button type="button" class="btn-del-icon" onclick="confirmDeleteVehicle(<?= $vId ?>, '<?= htmlspecialchars(addslashes($vNum)) ?>', <?= $totalCases ?>, <?= count($v['assigned_orders'] ?? []) ?>)" title="Delete vehicle <?= $vNum ?>" style="background: none; border: 1px solid #fee2e2; color: #ef4444; border-radius: 8px; width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.15s ease;" onmouseover="this.style.background='#fef2f2'" onmouseout="this.style.background='none'">
-                                        <i class='bx bx-trash' style="font-size: 15px;"></i>
-                                    </button>
+                                   
                                 </div>
                             </div>
 
@@ -1752,11 +1829,7 @@ if (!empty($searchQuery)) {
                                         <a href="tel:<?= $driverPhone ?>" class="btn-driver-call" title="Call Driver">
                                             <i class='bx bx-phone'></i> Call
                                         </a>
-                                        <?php if (!empty($waLink)): ?>
-                                            <a href="<?= $waLink ?>" target="_blank" class="btn-driver-wa" title="WhatsApp Driver">
-                                                <i class='bx bxl-whatsapp'></i>
-                                            </a>
-                                        <?php endif; ?>
+                                    
                                     <?php else: ?>
                                         <span style="font-size: 11px; color: var(--text-muted); font-style: italic;">No Phone</span>
                                     <?php endif; ?>
@@ -1786,9 +1859,7 @@ if (!empty($searchQuery)) {
                                     </div>
                                 </div>
                                 <div style="display: flex; gap: 6px; flex-wrap: wrap;justify-content: flex-end;">
-                                    <button type="button" class="btn-load-prod-plus" style="background: #059669;" onclick="openAssignOrderModal(<?= $vId ?>, '<?= htmlspecialchars(addslashes($vNum)) ?>')" title="Assign client order to this vehicle">
-                                        <i class='bx bx-plus-circle'></i> Assign Order
-                                    </button>
+                                    
                                     <button type="button" class="btn-load-prod-plus" onclick="openLoadProductModal(<?= $vId ?>, '<?= htmlspecialchars(addslashes($vNum)) ?>')" title="Add line-sale product to this vehicle">
                                         <i class='bx bx-plus'></i> Load Product
                                     </button>
@@ -1860,7 +1931,7 @@ if (!empty($searchQuery)) {
                         <i class='bx bx-plus-circle' style="color: #059669;"></i>
                         <span id="loadProductModalTitle">Load Products onto Vehicle</span>
                     </h3>
-                    <div style="font-size: 12px; color: #64748b; margin-top: 2px;">Load buffer or linesale inventory onto the delivery vehicle</div>
+                    <div style="font-size: 12px; color: #64748b; margin-top: 2px;"></div>
                 </div>
                 <button type="button" class="modal-close" onclick="closeLoadProductModal()">&times;</button>
             </div>
@@ -1869,7 +1940,7 @@ if (!empty($searchQuery)) {
 
                 <!-- Vehicle Selector -->
                 <div class="form-group">
-                    <label class="form-label">Target Delivery Vehicle *</label>
+                    
                     <select name="vehicle_id" id="modalLoadVehicleSelect" class="form-control" required onchange="updateVehicleCapacityHint()">
                         <option value="">-- Select Delivery Vehicle --</option>
                         <?php foreach ($allFleetVehicles as $v): ?>
@@ -1882,26 +1953,10 @@ if (!empty($searchQuery)) {
                             </option>
                         <?php endforeach; ?>
                     </select>
-                    <div id="vehCapacityInfo" style="display: none; margin-top: 6px; font-size: 11px; color: #475569; padding: 6px 10px; background: #f1f5f9; border-radius: 6px; border: 1px solid #e2e8f0;">
-                    </div>
+              
                 </div>
 
-                <div class="grid-2">
-                    <div class="form-group">
-                        <label class="form-label">Assigned Zone (Optional)</label>
-                        <select name="zone_id" id="modalLoadZoneSelect" class="form-control">
-                            <option value="">-- Central / All Zones --</option>
-                            <?php foreach ($zonesList as $z): ?>
-                                <option value="<?= (int)$z['id'] ?>"><?= htmlspecialchars($z['name']) ?></option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
-
-                    <div class="form-group">
-                        <label class="form-label">Loading Notes / Batch Details (Optional)</label>
-                        <input type="text" name="notes" class="form-control" placeholder="e.g. Route 1 buffer / Linesale storage">
-                    </div>
-                </div>
+               
 
                 <!-- Multi-Product Table -->
                 <div style="margin-top: 8px; margin-bottom: 14px;">
@@ -2000,7 +2055,7 @@ if (!empty($searchQuery)) {
                 <div class="grid-2">
                     <div class="form-group">
                         <label class="form-label">Number of Cases *</label>
-                        <input type="number" name="cases" id="editLoadCasesInput" class="form-control" min="1" required>
+                        <input type="text" name="cases" id="editLoadCasesInput" class="form-control" min="1" required>
                     </div>
 
                     <div class="form-group">
@@ -2249,7 +2304,7 @@ if (!empty($searchQuery)) {
         <div class="modal-dialog">
             <div class="modal-header">
                 <h3 class="modal-title" style="color: #dc2626;">
-                    <i class='bx bx-trash'></i> Delete Fleet Vehicle
+                    <i class='bx bx-trash'></i> Delete Vehicle
                 </h3>
                 <button type="button" class="modal-close" onclick="closeDeleteVehicleModal()">&times;</button>
             </div>
@@ -2258,16 +2313,13 @@ if (!empty($searchQuery)) {
                 <input type="hidden" name="vehicle_id" id="deleteVehId" value="">
 
                 <p style="font-size: 14px; margin-bottom: 12px; color: var(--text-main);">
-                    Are you sure you want to permanently delete vehicle <strong id="deleteVehNumText"></strong> from the fleet?
+                    Are you sure you want to permanently delete vehicle <strong id="deleteVehNumText"></strong> ?
                 </p>
 
                 <div id="deleteVehWarningWrap" style="display: none; background: #fff1f2; border: 1px solid #fecdd3; border-radius: 8px; padding: 10px 12px; font-size: 12px; color: #9f1239; margin-bottom: 14px;">
                     <i class='bx bx-error-circle'></i> <span id="deleteVehWarningText"></span>
                 </div>
 
-                <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 20px;">
-                    This vehicle will be removed from fleet records. Any buffer loads will be deleted and assigned orders will be safely unassigned.
-                </p>
 
                 <div class="modal-btns-row">
                     <button type="submit" class="btn-header" style="background: #dc2626; color: #fff; border-color: #dc2626;">
@@ -2335,7 +2387,7 @@ if (!empty($searchQuery)) {
                 </td>
                 <td style="padding: 6px 8px; vertical-align: middle;">
                     <div style="display: flex; gap: 4px; align-items: center;">
-                        <input type="number" name="items[${rowId}][cases]" class="form-control load-prod-cases" min="1" placeholder="Cases" value="${defaultCases}" required oninput="calculateLoadTotals()" style="width: 72px; padding: 5px 6px; font-size: 13px; font-weight: 700;">
+                        <input type="text" name="items[${rowId}][cases]" class="form-control load-prod-cases" min="1" placeholder="Cases" value="${defaultCases}" required oninput="calculateLoadTotals()" style="width: 72px; padding: 5px 6px; font-size: 13px; font-weight: 700;">
                         <button type="button" class="btn-fill-max" onclick="fillRowMaxStock(this)" title="Fill available warehouse stock" style="display: none; background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; border-radius: 4px; padding: 3px 5px; font-size: 10px; font-weight: 700; cursor: pointer; white-space: nowrap;">
                             Max
                         </button>
@@ -3301,8 +3353,8 @@ if (!empty($searchQuery)) {
                 <form id="formAddOrderProducts" onsubmit="event.preventDefault(); submitAddOrderProducts();">
                     <input type="hidden" id="aopOrderId" name="order_id" value="">
                     
-                    <div style="margin-bottom: 14px; max-height: 280px; overflow-y: auto;">
-                        <table style="width: 100%; border-collapse: collapse;">
+                    <div style="margin-bottom: 14px; max-height: 280px; overflow-y: auto; overflow-x: auto;">
+                        <table style="width: 100%; min-width: 600px; border-collapse: collapse;">
                             <thead>
                                 <tr style="border-bottom: 2px solid #e2e8f0; text-align: left; font-size: 11px; text-transform: uppercase; color: #64748b; font-weight: 700;">
                                     <th style="padding: 6px 8px;">Product</th>
@@ -3341,5 +3393,37 @@ if (!empty($searchQuery)) {
             </div>
         </div>
     </div>
+
+<script>
+(function () {
+    const toggle = document.getElementById('statsMenuToggle');
+    const dropdown = document.getElementById('statsDropdown');
+    if (!toggle || !dropdown) return;
+
+    function closeStatsMenu() {
+        dropdown.classList.remove('open');
+        toggle.setAttribute('aria-expanded', 'false');
+        toggle.setAttribute('aria-label', 'Open fleet statistics');
+        const icon = toggle.querySelector('i');
+        if (icon) icon.className = 'bx bx-menu';
+    }
+
+    toggle.addEventListener('click', function (event) {
+        event.stopPropagation();
+        const isOpen = dropdown.classList.toggle('open');
+        toggle.setAttribute('aria-expanded', String(isOpen));
+        toggle.setAttribute('aria-label', isOpen ? 'Close fleet statistics' : 'Open fleet statistics');
+        const icon = toggle.querySelector('i');
+        if (icon) icon.className = isOpen ? 'bx bx-x' : 'bx bx-menu';
+    });
+
+    dropdown.addEventListener('click', function (event) { event.stopPropagation(); });
+    document.addEventListener('click', closeStatsMenu);
+    document.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape') closeStatsMenu();
+    });
+})();
+</script>
+
 </body>
 </html>

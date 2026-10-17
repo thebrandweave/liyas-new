@@ -712,7 +712,7 @@ try {
             </div>
             <div class="add-v-field">
                 <label>Number of Cases to Load *</label>
-                <input type="number" name="cases" id="qlCasesInput" class="add-v-input" placeholder="e.g. 50" min="1" required autofocus>
+                <input type="text" name="cases" id="qlCasesInput" class="add-v-input" placeholder="e.g. 50" min="1" required autofocus>
             </div>
             <div class="add-v-field">
                 <label><i class='bx bx-store'></i> Shop Name (Fetched from Orders)</label>

@@ -1741,7 +1741,7 @@ if (!function_exists('buildWhatsAppLink')) {
             background: #ffffff;
             border: 1px solid #fca5a5;
             color: #dc2626;
-            font-size: 11px;
+            font-size: 12px;
             font-weight: 700;
             padding: 4px 9px;
             border-radius: 6px;
@@ -2461,10 +2461,7 @@ if (!function_exists('buildWhatsAppLink')) {
                     <span>Vehicles</span>
                 </a>
 
-                <span class="zone-badge">
-                    <span class="pulse-dot"></span>
-                    <span><?= htmlspecialchars($zone_name) ?></span>
-                </span>
+       
 
                 <!-- Quick New Delivery/Receipt -->
                 <a href="<?= zone_url($zone_slug, 'generate-receipt') ?>" class="btn-header-action btn-new-bill-header" title="Create Direct Bill / Spot Delivery">
@@ -2582,238 +2579,6 @@ if (!function_exists('buildWhatsAppLink')) {
             </section>
         <?php endif; ?>
 
-        <!-- CURRENT VEHICLE LOAD STATUS WIDGET -->
-        <div class="vehicle-load-panel" id="vehicleLoadPanel">
-            <?php if (!empty($zoneVehicles)): ?>
-                <div class="vehicle-load-card">
-                    <div class="vehicle-load-header">
-                        <div class="vehicle-load-title-group">
-                            <span class="vehicle-truck-icon-box">
-                                <i class='bx bxs-truck'></i>
-                            </span>
-                            <div>
-                                <div class="vehicle-load-title">Vehicle Stock &amp; Remaining Load</div>
-                             
-                            </div>
-                        </div>
-                        <div class="vehicle-load-badge-group">
-                            <span class="zone-badge" style="background:#ecfdf5; color:#047857; border-color:#a7f3d0;">
-                                <span class="pulse-dot"></span>
-                                <span><?= count($zoneVehicles) ?> <?= count($zoneVehicles) === 1 ? 'Vehicle Active' : 'Vehicles Active' ?></span>
-                            </span>
-                            <a href="<?= BASE_URL ?>/zone/orders/dashboard/vehicles/?zone=<?= urlencode($zone_slug) ?>&return_url=<?= urlencode(zone_filter_url($zone_slug)) ?>" class="btn-manage-vehicles" title="Open Vehicle Management & Stock">
-                                <i class='bx bxs-truck'></i>
-                                <span>Manage Vehicles</span>
-                            </a>
-                        </div>
-                    </div>
-
-                    <div class="vehicle-cards-grid">
-                        <?php foreach ($zoneVehicles as $zv): 
-                            $vId = (int)$zv['id'];
-                            $vData = $vehiclesLoadMap[$vId] ?? null;
-                            $totCases = $vData ? (int)$vData['total_cases'] : 0;
-                            $storageCases = $vData ? (int)$vData['storage_cases'] : 0;
-                            $orderCases = $vData ? (int)$vData['order_cases'] : 0;
-                            $loadedProds = $vData['loaded_products'] ?? [];
-                            $cap = (int)($zv['capacity_cases'] ?? 0);
-                            $pct = ($cap > 0) ? min(100, round(($totCases / $cap) * 100)) : null;
-                            $vDamaged = $zoneDamagedSummary[$vId] ?? null;
-                            $vDamagedCases = $vDamaged ? (int)$vDamaged['total_damaged_cases'] : 0;
-                            $vDamagedItems = $vDamaged['items'] ?? [];
-                        ?>
-                        <div class="vehicle-item-box">
-                            <div class="vehicle-item-top">
-                                <div class="vehicle-name-info">
-                                    <span class="veh-num-badge">
-                                        <i class='bx bxs-truck' style="color: #60a5fa;"></i> <?= htmlspecialchars($zv['vehicle_number']) ?>
-                                    </span>
-                                    <?php if (!empty($zv['vehicle_name'])): ?>
-                                        <span class="veh-name-text"><?= htmlspecialchars($zv['vehicle_name']) ?></span>
-                                    <?php endif; ?>
-                                    <?php if (!empty($zv['driver_name'])): ?>
-                                        <span class="veh-driver-tag" title="Assigned Driver">
-                                            <i class='bx bx-user'></i> <?= htmlspecialchars($zv['driver_name']) ?>
-                                            <?php if (!empty($zv['driver_phone'])): ?>
-                                                <a href="tel:<?= htmlspecialchars($zv['driver_phone']) ?>" style="color: #2563eb; text-decoration: none; margin-left: 2px;" title="Call Driver">
-                                                    <i class='bx bx-phone'></i>
-                                                </a>
-                                            <?php endif; ?>
-                                        </span>
-                                    <?php endif; ?>
-                                </div>
-
-                                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-                                    <?php if ($vDamagedCases > 0): ?>
-                                        <div class="vehicle-damaged-counter" title="Reported damaged items on this vehicle">
-                                            <i class='bx bx-error-circle'></i>
-                                            <span class="counter-num"><?= $vDamagedCases ?></span>
-                                            <span class="counter-unit">Damaged cs</span>
-                                        </div>
-                                    <?php endif; ?>
-
-                                    <div class="vehicle-load-counter <?= ($totCases <= 0) ? 'counter-empty' : '' ?>" title="Remaining load cases in this vehicle">
-                                        <span class="counter-num"><?= $totCases ?></span>
-                                        <span class="counter-unit">Cases Left</span>
-                                    </div>
-
-                                    <?php
-                                    $loadedSummary = [];
-                                    if (!empty($loadedProds)) {
-                                        foreach ($loadedProds as $lp) {
-                                            if (!empty($lp['product_id'])) {
-                                                $loadedSummary[] = [
-                                                    'id'    => (int)$lp['product_id'],
-                                                    'name'  => (string)$lp['product_name'],
-                                                    'cases' => (int)($lp['loaded_cases'] ?? 0)
-                                                ];
-                                            }
-                                        }
-                                    }
-                                    ?>
-                                    <button type="button" 
-                                            class="btn-add-damaged" 
-                                            data-vehicle-id="<?= $vId ?>" 
-                                            data-vehicle-number="<?= htmlspecialchars($zv['vehicle_number'], ENT_QUOTES, 'UTF-8') ?>" 
-                                            data-loaded-json="<?= htmlspecialchars(json_encode($loadedSummary, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP), ENT_QUOTES, 'UTF-8') ?>" 
-                                            onclick="openVehicleDamagedModalFromBtn(this)" 
-                                            title="Report damaged items on this vehicle">
-                                        <i class='bx bx-plus-circle'></i> Add Damaged
-                                    </button>
-                                </div>
-                            </div>
-
-                            <?php if ($pct !== null): ?>
-                                <div class="veh-progress-wrap" title="<?= $totCases ?> of <?= $cap ?> cases capacity (<?= $pct ?>%)">
-                                    <div class="veh-progress-bar" style="width: <?= $pct ?>%;"></div>
-                                </div>
-                            <?php endif; ?>
-
-                            <div class="veh-breakdown-row">
-                                <?php if (!empty($loadedProds)): ?>
-                                    <?php foreach ($loadedProds as $lp): 
-                                        if (empty($lp['loaded_cases'])) continue;
-                                    ?>
-                                        <span class="veh-prod-pill">
-                                            <strong><?= htmlspecialchars($lp['product_name']) ?></strong>: 
-                                            <span class="pill-qty"><?= (int)$lp['loaded_cases'] ?> cs</span>
-                                         
-                                        </span>
-                                    <?php endforeach; ?>
-                                <?php else: ?>
-                                    <span style="font-size: 12px; color: #94a3b8; font-style: italic;">
-                                        <i class='bx bx-info-circle'></i> Vehicle is currently empty (0 cases loaded)
-                                    </span>
-                                <?php endif; ?>
-                            </div>
-
-                            <?php if (!empty($vDamagedItems)): ?>
-                                <div class="veh-damaged-breakdown-row">
-                                    <span class="veh-damaged-label"><i class='bx bx-shield-x'></i> Damaged Items:</span>
-                                    <?php foreach ($vDamagedItems as $vdi): ?>
-                                        <span class="veh-damaged-pill" title="Reported: <?= date('d M Y, h:i A', strtotime($vdi['created_at'])) ?><?= !empty($vdi['notes']) ? ' &bull; Note: ' . htmlspecialchars($vdi['notes']) : '' ?>">
-                                            <strong><?= htmlspecialchars($vdi['product_name']) ?></strong>: 
-                                            <span class="pill-damaged-qty"><?= (int)$vdi['damaged_cases'] ?> cs</span>
-                                            <?php if (!empty($vdi['notes'])): ?>
-                                                <span class="pill-damaged-note">(<?= htmlspecialchars($vdi['notes']) ?>)</span>
-                                            <?php endif; ?>
-                                        </span>
-                                    <?php endforeach; ?>
-                                </div>
-                            <?php endif; ?>
-                        </div>
-                        <?php endforeach; ?>
-                    </div>
-                </div>
-            <?php else: ?>
-                <div class="vehicle-load-card" style="padding: 18px 20px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; background: #ffffff; border: 1.5px dashed #cbd5e1; border-radius: var(--radius-lg);">
-                    <div style="display: flex; align-items: center; gap: 12px;">
-                        <span class="vehicle-truck-icon-box" style="background: #f1f5f9; color: #64748b; box-shadow: none;">
-                            <i class='bx bxs-truck'></i>
-                        </span>
-                        <div>
-                            <div style="font-size: 14px; font-weight: 700; color: #1e293b;">No vehicles assigned to <?= htmlspecialchars($zone_name) ?></div>
-                            <div style="font-size: 12px; color: #64748b;">Manage vehicles and line stock allocations for this zone.</div>
-                        </div>
-                    </div>
-                    <a href="<?= BASE_URL ?>/zone/orders/dashboard/vehicles/?zone=<?= urlencode($zone_slug) ?>&return_url=<?= urlencode(zone_filter_url($zone_slug)) ?>" class="btn-manage-vehicles" style="background: #2563eb; color: #fff; border-color: #2563eb;">
-                        <i class='bx bxs-truck'></i>
-                        <span>Vehicles Dashboard</span>
-                    </a>
-                </div>
-            <?php endif; ?>
-        </div>
-
-        <!-- DATE FILTER & DAILY RESET TOOLBAR -->
-        <section class="date-filter-section" id="dateFilterSection">
-            <div class="date-filter-header">
-                <div class="date-filter-title-row">
-                    <div class="date-scope-indicator">
-                        <i class='bx bx-calendar-event'></i>
-                        <span>Deliveries: <strong><?= htmlspecialchars($dateLabel) ?></strong></span>
-                        <?php if ($date_preset === 'today'): ?>
-                            <span class="daily-reset-tag" title="Operational delivery counts reset daily"><i class='bx bx-refresh'></i> Daily Reset</span>
-                        <?php endif; ?>
-                    </div>
-                    <?php if ($date_preset !== 'today'): ?>
-                        <a href="<?= zone_filter_url($zone_slug, ['date_preset' => 'today', 'date_from' => null, 'date_to' => null]) ?>" class="btn-reset-today" title="Reset view back to Today">
-                            <i class='bx bx-redo'></i> Switch to Today (Daily)
-                        </a>
-                    <?php endif; ?>
-                </div>
-
-                <div class="date-preset-pills-row">
-                    <a href="<?= zone_filter_url($zone_slug, ['date_preset' => 'today', 'date_from' => null, 'date_to' => null]) ?>" class="date-preset-pill <?= ($date_preset === 'today') ? 'active' : '' ?>">
-                        <i class='bx bx-calendar-check'></i> Today
-                    </a>
-                    <a href="<?= zone_filter_url($zone_slug, ['date_preset' => 'yesterday', 'date_from' => null, 'date_to' => null]) ?>" class="date-preset-pill <?= ($date_preset === 'yesterday') ? 'active' : '' ?>">
-                        <i class='bx bx-history'></i> Yesterday
-                    </a>
-                    <a href="<?= zone_filter_url($zone_slug, ['date_preset' => 'month', 'date_from' => null, 'date_to' => null]) ?>" class="date-preset-pill <?= ($date_preset === 'month') ? 'active' : '' ?>">
-                        <i class='bx bx-calendar'></i> This Month
-                    </a>
-                    <a href="<?= zone_filter_url($zone_slug, ['date_preset' => 'all', 'date_from' => null, 'date_to' => null]) ?>" class="date-preset-pill <?= ($date_preset === 'all') ? 'active' : '' ?>">
-                        <i class='bx bx-layer'></i> All Time
-                    </a>
-                    <button type="button" class="date-preset-pill <?= ($date_preset === 'custom') ? 'active' : '' ?>" onclick="toggleCustomDatePicker()" id="customDateToggleBtn">
-                        <i class='bx bx-calendar-edit'></i> Custom Range <?= ($date_preset === 'custom') ? '▼' : '...' ?>
-                    </button>
-                </div>
-            </div>
-
-            <!-- Custom Date Picker Dropdown / Form -->
-            <div class="custom-date-picker-box" id="customDatePickerBox" style="<?= ($date_preset === 'custom') ? 'display: block;' : 'display: none;' ?>">
-                <form action="<?= zone_url($zone_slug) ?>" method="GET" class="custom-date-form">
-                    <input type="hidden" name="date_preset" value="custom">
-                    <?php if (!empty($filter) && $filter !== 'all'): ?>
-                        <input type="hidden" name="filter" value="<?= htmlspecialchars($filter) ?>">
-                    <?php endif; ?>
-                    <?php if (!empty($search)): ?>
-                        <input type="hidden" name="search" value="<?= htmlspecialchars($search) ?>">
-                    <?php endif; ?>
-
-                    <div class="custom-date-inputs">
-                        <div class="date-input-group">
-                            <label for="date_from"><i class='bx bx-calendar'></i> From:</label>
-                            <input type="date" id="date_from" name="date_from" value="<?= htmlspecialchars($date_from ?: date('Y-m-d')) ?>" class="date-field" required>
-                        </div>
-                        <div class="date-input-group">
-                            <label for="date_to"><i class='bx bx-calendar'></i> To:</label>
-                            <input type="date" id="date_to" name="date_to" value="<?= htmlspecialchars($date_to ?: date('Y-m-d')) ?>" class="date-field" required>
-                        </div>
-                        <div class="custom-date-actions">
-                            <button type="submit" class="btn-apply-date">
-                                <i class='bx bx-filter-alt'></i> Apply Date
-                            </button>
-                            <button type="button" onclick="toggleCustomDatePicker()" class="btn-cancel-date">
-                                Cancel
-                            </button>
-                        </div>
-                    </div>
-                </form>
-            </div>
-        </section>
-
         <!-- KEY METRICS OVERVIEW (Clickable Quick Filters) -->
         <!-- METRICS WRAPPER WITH HAMBURGER TOGGLE FOR MOBILE -->
         <div class="metrics-dropdown-wrapper">
@@ -2914,6 +2679,229 @@ if (!function_exists('buildWhatsAppLink')) {
                 </a>
             </section>
         </div>
+
+        <!-- CURRENT VEHICLE LOAD STATUS WIDGET -->
+        <div class="vehicle-load-panel" id="vehicleLoadPanel">
+            <?php if (!empty($zoneVehicles)): ?>
+                <div class="vehicle-load-card">
+                    <div class="vehicle-load-header">
+                        <div class="vehicle-load-title-group">
+                            <span class="vehicle-truck-icon-box">
+                                <i class='bx bxs-truck'></i>
+                            </span>
+                            <div>
+                                <div class="vehicle-load-title">Vehicle Stock &amp; Remaining Load</div>
+                             
+                            </div>
+                        </div>
+                        <div class="vehicle-load-badge-group">
+                                    <span class="zone-badge">
+                    <span class="pulse-dot"></span>
+                    <span><?= htmlspecialchars($zone_name) ?></span>
+                </span>
+                           
+                        </div>
+                    </div>
+
+                    <div class="vehicle-cards-grid">
+                        <?php foreach ($zoneVehicles as $zv): 
+                            $vId = (int)$zv['id'];
+                            $vData = $vehiclesLoadMap[$vId] ?? null;
+                            $totCases = $vData ? (int)$vData['total_cases'] : 0;
+                            $storageCases = $vData ? (int)$vData['storage_cases'] : 0;
+                            $orderCases = $vData ? (int)$vData['order_cases'] : 0;
+                            $loadedProds = $vData['loaded_products'] ?? [];
+                            $cap = (int)($zv['capacity_cases'] ?? 0);
+                            $pct = ($cap > 0) ? min(100, round(($totCases / $cap) * 100)) : null;
+                            $vDamaged = $zoneDamagedSummary[$vId] ?? null;
+                            $vDamagedCases = $vDamaged ? (int)$vDamaged['total_damaged_cases'] : 0;
+                            $vDamagedItems = $vDamaged['items'] ?? [];
+                        ?>
+                        <div class="vehicle-item-box">
+                            <div class="vehicle-item-top">
+                                <div class="vehicle-name-info">
+                                    <span class="veh-num-badge">
+                                        <i class='bx bxs-truck' style="color: #60a5fa;"></i> <?= htmlspecialchars($zv['vehicle_number']) ?>
+                                    </span>
+                                    <?php if (!empty($zv['vehicle_name'])): ?>
+                                        <span class="veh-name-text"><?= htmlspecialchars($zv['vehicle_name']) ?></span>
+                                    <?php endif; ?>
+                                    <?php if (!empty($zv['driver_name'])): ?>
+                                        <span class="veh-driver-tag" title="Assigned Driver">
+                                            <i class='bx bx-user'></i> <?= htmlspecialchars($zv['driver_name']) ?>
+                                            <?php if (!empty($zv['driver_phone'])): ?>
+                                                <a href="tel:<?= htmlspecialchars($zv['driver_phone']) ?>" style="color: #2563eb; text-decoration: none; margin-left: 2px;" title="Call Driver">
+                                                    <i class='bx bx-phone'></i>
+                                                </a>
+                                            <?php endif; ?>
+                                        </span>
+                                    <?php endif; ?>
+                                </div>
+
+                                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                                    <?php if ($vDamagedCases > 0): ?>
+                                        <div class="vehicle-damaged-counter" title="Reported damaged items on this vehicle">
+                                            <i class='bx bx-error-circle'></i>
+                                            <span class="counter-num"><?= $vDamagedCases ?></span>
+                                            <span class="counter-unit">Damaged cs</span>
+                                        </div>
+                                    <?php endif; ?>
+
+                                    <div class="vehicle-load-counter <?= ($totCases <= 0) ? 'counter-empty' : '' ?>" title="Remaining load cases in this vehicle">
+                                        <span class="counter-num"><?= $totCases ?></span>
+                                        <span class="counter-unit">Cases Left</span>
+                                    </div>
+
+                                    <?php
+                                    $loadedSummary = [];
+                                    if (!empty($loadedProds)) {
+                                        foreach ($loadedProds as $lp) {
+                                            if (!empty($lp['product_id'])) {
+                                                $loadedSummary[] = [
+                                                    'id'    => (int)$lp['product_id'],
+                                                    'name'  => (string)$lp['product_name'],
+                                                    'cases' => (int)($lp['loaded_cases'] ?? 0)
+                                                ];
+                                            }
+                                        }
+                                    }
+                                    ?>
+                                    <button type="button" 
+                                            class="btn-add-damaged" 
+                                            data-vehicle-id="<?= $vId ?>" 
+                                            data-vehicle-number="<?= htmlspecialchars($zv['vehicle_number'], ENT_QUOTES, 'UTF-8') ?>" 
+                                            data-loaded-json="<?= htmlspecialchars(json_encode($loadedSummary, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP), ENT_QUOTES, 'UTF-8') ?>" 
+                                            onclick="openVehicleDamagedModalFromBtn(this)" 
+                                            title="Report damaged items on this vehicle">
+                                        <i class='bx bx-plus-circle'></i> Add Damaged
+                                    </button>
+                                </div>
+                            </div>
+
+                        
+
+                            <div class="veh-breakdown-row">
+                                <?php if (!empty($loadedProds)): ?>
+                                    <?php foreach ($loadedProds as $lp): 
+                                        if (empty($lp['loaded_cases'])) continue;
+                                    ?>
+                                        <span class="veh-prod-pill">
+                                            <strong><?= htmlspecialchars($lp['product_name']) ?></strong>: 
+                                            <span class="pill-qty"><?= (int)$lp['loaded_cases'] ?> cs</span>
+                                         
+                                        </span>
+                                    <?php endforeach; ?>
+                                <?php else: ?>
+                                    <span style="font-size: 12px; color: #94a3b8; font-style: italic;">
+                                        <i class='bx bx-info-circle'></i> Vehicle is currently empty (0 cases loaded)
+                                    </span>
+                                <?php endif; ?>
+                            </div>
+
+                            <?php if (!empty($vDamagedItems)): ?>
+                                <div class="veh-damaged-breakdown-row">
+                                    <span class="veh-damaged-label"><i class='bx bx-shield-x'></i> Damaged Items:</span>
+                                    <?php foreach ($vDamagedItems as $vdi): ?>
+                                        <span class="veh-damaged-pill" title="Reported: <?= date('d M Y, h:i A', strtotime($vdi['created_at'])) ?><?= !empty($vdi['notes']) ? ' &bull; Note: ' . htmlspecialchars($vdi['notes']) : '' ?>">
+                                            <strong><?= htmlspecialchars($vdi['product_name']) ?></strong>: 
+                                            <span class="pill-damaged-qty"><?= (int)$vdi['damaged_cases'] ?> cs</span>
+                                            <?php if (!empty($vdi['notes'])): ?>
+                                                <span class="pill-damaged-note">(<?= htmlspecialchars($vdi['notes']) ?>)</span>
+                                            <?php endif; ?>
+                                        </span>
+                                    <?php endforeach; ?>
+                                </div>
+                            <?php endif; ?>
+                        </div>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+            <?php else: ?>
+                <div class="vehicle-load-card" style="padding: 18px 20px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; background: #ffffff; border: 1.5px dashed #cbd5e1; border-radius: var(--radius-lg);">
+                    <div style="display: flex; align-items: center; gap: 12px;">
+                        <span class="vehicle-truck-icon-box" style="background: #f1f5f9; color: #64748b; box-shadow: none;">
+                            <i class='bx bxs-truck'></i>
+                        </span>
+                        <div>
+                            <div style="font-size: 14px; font-weight: 700; color: #1e293b;">No vehicles assigned to <?= htmlspecialchars($zone_name) ?></div>
+                            <div style="font-size: 12px; color: #64748b;">Manage vehicles and line stock allocations for this zone.</div>
+                        </div>
+                    </div>
+                    <a href="<?= BASE_URL ?>/zone/orders/dashboard/vehicles/?zone=<?= urlencode($zone_slug) ?>&return_url=<?= urlencode(zone_filter_url($zone_slug)) ?>" class="btn-manage-vehicles" style="background: #2563eb; color: #fff; border-color: #2563eb;">
+                        <i class='bx bxs-truck'></i>
+                        <span>Vehicles Dashboard</span>
+                    </a>
+                </div>
+            <?php endif; ?>
+        </div>
+
+        <!-- DATE FILTER & DAILY RESET TOOLBAR -->
+        <section class="date-filter-section" id="dateFilterSection">
+            <div class="date-filter-header">
+                <div class="date-filter-title-row">
+                    <div class="date-scope-indicator">
+                        <i class='bx bx-calendar-event'></i>
+                        <span>Deliveries: <strong><?= htmlspecialchars($dateLabel) ?></strong></span>
+                        <?php if ($date_preset === 'today'): ?>
+                            <span class="daily-reset-tag" title="Operational delivery counts reset daily"><i class='bx bx-refresh'></i> Daily Reset</span>
+                        <?php endif; ?>
+                    </div>
+                    <?php if ($date_preset !== 'today'): ?>
+                        <a href="<?= zone_filter_url($zone_slug, ['date_preset' => 'today', 'date_from' => null, 'date_to' => null]) ?>" class="btn-reset-today" title="Reset view back to Today">
+                            <i class='bx bx-redo'></i> Switch to Today (Daily)
+                        </a>
+                    <?php endif; ?>
+                </div>
+
+                <div class="date-preset-pills-row">
+                    <a href="<?= zone_filter_url($zone_slug, ['date_preset' => 'today', 'date_from' => null, 'date_to' => null]) ?>" class="date-preset-pill <?= ($date_preset === 'today') ? 'active' : '' ?>">
+                        <i class='bx bx-calendar-check'></i> Today
+                    </a>
+                    <a href="<?= zone_filter_url($zone_slug, ['date_preset' => 'yesterday', 'date_from' => null, 'date_to' => null]) ?>" class="date-preset-pill <?= ($date_preset === 'yesterday') ? 'active' : '' ?>">
+                        <i class='bx bx-history'></i> Yesterday
+                    </a>
+                
+                   
+                    <button type="button" class="date-preset-pill <?= ($date_preset === 'custom') ? 'active' : '' ?>" onclick="toggleCustomDatePicker()" id="customDateToggleBtn">
+                        <i class='bx bx-calendar-edit'></i> Custom Range <?= ($date_preset === 'custom') ? '▼' : '...' ?>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Custom Date Picker Dropdown / Form -->
+            <div class="custom-date-picker-box" id="customDatePickerBox" style="<?= ($date_preset === 'custom') ? 'display: block;' : 'display: none;' ?>">
+                <form action="<?= zone_url($zone_slug) ?>" method="GET" class="custom-date-form">
+                    <input type="hidden" name="date_preset" value="custom">
+                    <?php if (!empty($filter) && $filter !== 'all'): ?>
+                        <input type="hidden" name="filter" value="<?= htmlspecialchars($filter) ?>">
+                    <?php endif; ?>
+                    <?php if (!empty($search)): ?>
+                        <input type="hidden" name="search" value="<?= htmlspecialchars($search) ?>">
+                    <?php endif; ?>
+
+                    <div class="custom-date-inputs">
+                        <div class="date-input-group">
+                            <label for="date_from"><i class='bx bx-calendar'></i> From:</label>
+                            <input type="date" id="date_from" name="date_from" value="<?= htmlspecialchars($date_from ?: date('Y-m-d')) ?>" class="date-field" required>
+                        </div>
+                        <div class="date-input-group">
+                            <label for="date_to"><i class='bx bx-calendar'></i> To:</label>
+                            <input type="date" id="date_to" name="date_to" value="<?= htmlspecialchars($date_to ?: date('Y-m-d')) ?>" class="date-field" required>
+                        </div>
+                        <div class="custom-date-actions">
+                            <button type="submit" class="btn-apply-date">
+                                <i class='bx bx-filter-alt'></i> Apply Date
+                            </button>
+                            <button type="button" onclick="toggleCustomDatePicker()" class="btn-cancel-date">
+                                Cancel
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </section>
+
+        
 
         <!-- CONTROLS: FILTER CHIPS & LIVE SEARCH -->
         <section class="controls-panel">
@@ -3724,7 +3712,7 @@ if (!function_exists('buildWhatsAppLink')) {
                 // 1. Prioritize products currently loaded on this vehicle
                 if (Array.isArray(loadedProducts) && loadedProducts.length > 0) {
                     const loadedGroup = document.createElement('optgroup');
-                    loadedGroup.label = "Currently Loaded on This Vehicle";
+                    loadedGroup.label = "Currently Items";
                     loadedProducts.forEach(p => {
                         if (p && p.id) {
                             const opt = document.createElement('option');
@@ -3828,7 +3816,7 @@ if (!function_exists('buildWhatsAppLink')) {
             <div style="padding: 16px 20px; background: #fef2f2; border-bottom: 1px solid #fee2e2; display: flex; align-items: center; justify-content: space-between;">
                 <div style="font-weight: 800; font-size: 16px; color: #991b1b; display: flex; align-items: center; gap: 8px;">
                     <i class='bx bx-error-circle' style="color: #dc2626; font-size: 22px;"></i>
-                    <span>Record Damaged Stock on Vehicle</span>
+                    <span>Add Damaged Items</span>
                 </div>
                 <button type="button" onclick="closeVehicleDamagedModal()" style="background: none; border: none; font-size: 24px; color: #94a3b8; cursor: pointer; line-height: 1;">&times;</button>
             </div>
@@ -3836,13 +3824,13 @@ if (!function_exists('buildWhatsAppLink')) {
                 <input type="hidden" name="record_vehicle_damaged" value="1">
                 <input type="hidden" name="vehicle_id" id="modalDamagedVehId" value="">
 
-                <div style="margin-bottom: 14px; background: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 10px; padding: 10px 14px; display: flex; align-items: center; justify-content: space-between;">
+                <div style="margin-bottom: 14px; background: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 10px; padding: 10px 14px;  align-items: center; justify-content: space-between;">
                     <div>
-                        <div style="font-size: 11px; text-transform: uppercase; font-weight: 700; color: #64748b;">Selected Vehicle</div>
+                       
                         <div id="modalDamagedVehNum" style="font-weight: 800; color: #0f172a; font-size: 15px; margin-top: 2px;"></div>
                     </div>
-                    <span style="background: #eff6ff; color: #1d4ed8; font-size: 12px; font-weight: 700; padding: 3px 8px; border-radius: 6px;">
-                        <i class='bx bxs-truck'></i> <?= htmlspecialchars($zone_name) ?>
+                    <span style=" color: #1d4ed8; font-size: 12px; font-weight: 700;  ">
+                        <?= htmlspecialchars($zone_name) ?>
                     </span>
                 </div>
 
@@ -3860,7 +3848,7 @@ if (!function_exists('buildWhatsAppLink')) {
                         Number of Damaged Cases <span style="color: #ef4444;">*</span>
                     </label>
                     <div style="display: flex; align-items: center; gap: 8px;">
-                        <input type="number" name="damaged_cases" id="modalDamagedCases" min="1" max="9999" value="1" required style="width: 120px; padding: 10px 12px; border-radius: 8px; border: 1.5px solid #cbd5e1; font-size: 15px; font-weight: 700; color: #0f172a;">
+                        <input type="text" name="damaged_cases" id="modalDamagedCases" min="1" max="9999" value="1" required style="width: 120px; padding: 10px 12px; border-radius: 8px; border: 1.5px solid #cbd5e1; font-size: 15px; font-weight: 700; color: #0f172a;">
                         <span style="font-size: 13px; font-weight: 600; color: #64748b;">Cases (cartons/crates)</span>
                     </div>
                 </div>

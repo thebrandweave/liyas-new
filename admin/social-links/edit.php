@@ -154,7 +154,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 <div class="form-group">
 <label>Sort Order</label>
-<input type="number"
+<input type="text"
        name="sort_order"
        class="form-input"
        value="<?= $social['sort_order']==999?'':$social['sort_order'] ?>"

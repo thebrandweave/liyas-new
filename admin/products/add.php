@@ -77,7 +77,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_product'])) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Add Warehouse Product - Liyas Admin</title>
+    <title>Add Product - Liyas Admin</title>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&display=swap" rel="stylesheet">
     <link href='https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css' rel='stylesheet'>
     <link rel="stylesheet" href="../assets/css/prody-admin.css">
@@ -102,7 +102,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_product'])) {
         }
         .form-control {
             width: 100%;
-            padding: 0.65rem 0.85rem;
+            padding: 0.65rem 0.15rem;
             border: 1px solid #d1d5db;
             border-radius: 8px;
             font-size: 14px;
@@ -149,11 +149,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_product'])) {
                 <?php endif; ?>
 
                 <div class="form-card">
-                    <h2 style="font-size: 20px; font-weight: 600; margin-bottom: 0.5rem; color: #111827;">Add Warehouse Product</h2>
-                    <p style="font-size: 13px; color: #6b7280; margin-bottom: 1.75rem;">
-                        Specify product name, case stock, case pricing, and net content specifications.
-                    </p>
-
+                    <h2 style="font-size: 20px; font-weight: 600; margin-bottom: 0.5rem; color: #111827;">Add Product</h2>
+                  
                     <form action="add.php" method="POST" enctype="multipart/form-data">
                         <div class="form-group">
                             <label class="form-label" for="product_name">Product Name <span style="color: #ef4444;">*</span></label>
@@ -164,7 +161,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_product'])) {
                         <div class="grid-2">
                             <div class="form-group">
                                 <label class="form-label" for="net_content">Net Content (Numeric Value)</label>
-                                <input type="number" step="any" min="0" name="net_content" id="net_content" class="form-control" placeholder="e.g. 250, 500, 1, 2" value="<?= htmlspecialchars($_POST['net_content'] ?? '') ?>">
+                                <input type="text" step="any" min="0" name="net_content" id="net_content" class="form-control" placeholder="e.g. 250, 500, 1, 2" value="<?= htmlspecialchars($_POST['net_content'] ?? '') ?>">
                             </div>
                             <div class="form-group">
                                 <label class="form-label" for="net_content_unit">Net Content Unit</label>
@@ -179,7 +176,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_product'])) {
                             <div class="form-group">
                                 <label class="form-label" for="case_stock">Case Stocks (Available Cases) <span style="color: #ef4444;">*</span></label>
                                 <input type="text" min="0" name="case_stock" id="case_stock" class="form-control" placeholder="e.g. 50" required value="<?= htmlspecialchars($_POST['case_stock'] ?? '0') ?>">
-                                <small style="color: #94a3b8; font-size: 12px;">Total cases stored in Website</small>
+                                <small style="color: #94a3b8; font-size: 12px;">Total cases </small>
                             </div>
                             <div class="form-group">
                                 <label class="form-label" for="case_price">Case Price (₹) <span style="color: #ef4444;">*</span></label>
@@ -200,11 +197,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_product'])) {
                                 <label class="form-label" for="image">Product Image (Optional)</label>
                                 <input type="file" name="image" id="image" class="form-control" accept="image/*">
                             </div>
-                        </div>
-
-                        <div class="form-group">
-                            <label class="form-label" for="description">Description (Optional)</label>
-                            <textarea name="description" id="description" rows="3" class="form-control" placeholder="Optional details, package specs, etc."><?= htmlspecialchars($_POST['description'] ?? '') ?></textarea>
                         </div>
 
                         <div style="display: flex; gap: 12px; margin-top: 2rem;">

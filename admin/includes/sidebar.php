@@ -188,8 +188,8 @@ $more_badge_total = $ads_count + $reviews_pending_count + $social_count + $subs_
                 <i class='bx bxs-cart'></i>
                 <span>Orders</span>
                 <?php if ($pending_orders_count > 0): ?>
-                    <span class="badge-count" style="background:#ef4444; color:#fff; font-weight:600; border-radius:12px; padding:2px 8px; font-size:11px; display:inline-flex; align-items:center; gap:3px;">
-                        🔴 <?= $pending_orders_count ?>
+                    <span class="badge-count" style="background:#ef4444; color:#fff !important; font-weight:600; border-radius:12px; padding:2px 8px; font-size:11px; display:inline-flex; align-items:center; gap:3px;">
+                         <?= $pending_orders_count ?>
                     </span>
                 <?php endif; ?>
             </a>

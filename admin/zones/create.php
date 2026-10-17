@@ -242,9 +242,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_zone'])) {
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.1rem; border-bottom: 1px solid #f1f5f9; padding-bottom: 0.75rem;">
                         <div>
                             <h2 style="font-size: 18px; font-weight: 700; margin: 0 0 2px 0; color: #111827;">Create New Delivery Zone</h2>
-                            <p style="font-size: 12px; color: #6b7280; margin: 0;">
-                                Add a zone portal and assign a delivery vehicle
-                            </p>
+                      
                         </div>
                     </div>
 
@@ -252,34 +250,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_zone'])) {
                         <div class="form-grid-2">
                             <!-- Left Column: Zone & Route Details -->
                             <div style="background: #fbfcfe; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px 16px;">
-                                <div style="display: flex; align-items: center; gap: 7px; margin-bottom: 12px; border-bottom: 1px solid #f1f5f9; padding-bottom: 8px;">
-                                    <span style="width: 26px; height: 26px; border-radius: 6px; background: #eff6ff; color: #2563eb; display: inline-flex; align-items: center; justify-content: center; font-size: 15px;">
-                                        <i class='bx bx-map-pin'></i>
-                                    </span>
-                                    <strong style="color: #0f172a; font-size: 13px;">Zone &amp; Portal Information</strong>
+                              
+
+                                <div class="form-group">
+                                    <label class="form-label" for="name">Route Name <span style="color: #ef4444;">*</span></label>
+                                    <input type="text" name="name" id="name" class="form-control" placeholder="e.g. BCR->MANG->BUNDER" required value="<?= htmlspecialchars($_POST['name'] ?? '') ?>" autofocus>
                                 </div>
 
                                 <div class="form-group">
-                                    <label class="form-label" for="name">Zone Name <span style="color: #ef4444;">*</span></label>
-                                    <input type="text" name="name" id="name" class="form-control" placeholder="e.g. Mangalore, Vitla, Bantwal" required value="<?= htmlspecialchars($_POST['name'] ?? '') ?>" autofocus>
-                                </div>
-
-                                <div class="form-group">
-                                    <label class="form-label" for="slug">Portal Route Slug <span style="font-size: 11px; color: #64748b; font-weight: 400;"></span></label>
-                                    <input type="text" name="slug" id="slug" class="form-control" placeholder="e.g. mangalore, vitla, tata" value="<?= htmlspecialchars($_POST['slug'] ?? '') ?>">
+                                    <label class="form-label" for="slug">Vehicle Name <span style="color: #ef4444;">*</span><span style="font-size: 11px; color: #64748b; font-weight: 400;"></span></label>
+                                    <input type="text" name="slug" id="slug" class="form-control" placeholder="e.g. tata, ace, pickup" value="<?= htmlspecialchars($_POST['slug'] ?? '') ?>">
                                     <div class="route-preview">
                                         <i class='bx bx-link'></i>
                                         <span>Portal: <span id="previewUrl"><strong><?= BASE_URL ?>/<span>...</span></strong></span></span>
                                     </div>
                                 </div>
 
-                                <div class="form-group" style="margin-bottom: 0;">
+                                <!-- <div class="form-group" style="margin-bottom: 0;">
                                     <label class="form-label" for="status">Zone Status</label>
                                     <select name="status" id="status" class="form-control">
                                         <option value="active" <?= (($_POST['status'] ?? 'active') === 'active') ? 'selected' : '' ?>>Active (Enabled)</option>
                                         <option value="inactive" <?= (($_POST['status'] ?? '') === 'inactive') ? 'selected' : '' ?>>Inactive (Disabled)</option>
                                     </select>
-                                </div>
+                                </div> -->
                             </div>
 
                             <!-- Right Column: Vehicle Assignment -->
@@ -290,12 +283,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_zone'])) {
                                     </span>
                                     <div>
                                         <strong style="color: #0f172a; font-size: 13px;">Assign Delivery Vehicle</strong>
-                                        <div style="font-size: 11px; color: #64748b;">Fix a vehicle plate number to this delivery zone</div>
+                                       
                                     </div>
                                 </div>
 
                                 <div class="form-group" style="margin-bottom: 10px;">
-                                    <label class="form-label" for="existing_vehicle_select">Select Fleet Vehicle (Optional)</label>
+                                    <label class="form-label" for="existing_vehicle_select">Select Vehicle <span style="color: #ef4444;">*</span></label>
                                     <select name="existing_vehicle_id" id="existing_vehicle_select" class="form-control" onchange="handleExistingVehicleSelect(this)">
                                         <option value="">-- Or enter new vehicle below --</option>
                                         <?php foreach ($allVehicles as $av): 
@@ -327,12 +320,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_zone'])) {
 
                                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
                                     <div class="form-group" style="margin-bottom: 0;">
-                                        <label class="form-label" for="driver_name">Driver Name</label>
+                                        <label class="form-label" for="driver_name">Salespersons Name</label>
                                         <input type="text" name="driver_name" id="driver_name" class="form-control" placeholder="e.g. Abbas" value="<?= htmlspecialchars($_POST['driver_name'] ?? '') ?>">
                                     </div>
 
                                     <div class="form-group" style="margin-bottom: 0;">
-                                        <label class="form-label" for="driver_phone">Driver Phone</label>
+                                        <label class="form-label" for="driver_phone">Phone Number</label>
                                         <input type="tel" name="driver_phone" id="driver_phone" class="form-control" placeholder="e.g. 9876543210" value="<?= htmlspecialchars($_POST['driver_phone'] ?? '') ?>">
                                     </div>
                                 </div>

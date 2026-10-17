@@ -1,7 +1,7 @@
 <?php
 /**
  * admin/vehicles/index.php
- * Fleet Vehicles Management, Case Loading, and Zone Breakdown Hub.
+ * Vehicless Management, Case Loading, and Zone Breakdown Hub.
  */
 require_once dirname(__DIR__, 2) . '/config/config.php';
 require_once dirname(__DIR__) . '/includes/auth_check.php';
@@ -582,9 +582,9 @@ foreach ($fleetData['vehicles'] as $v) {
             letter-spacing: 0.04em;
         }
         .v-model-name {
-            font-size: 13px;
+            font-size: 16px;
             font-weight: 600;
-            color: #475569;
+            color: #0f1114;
             margin-top: 4px;
         }
         .v-home-zone {
@@ -1210,7 +1210,7 @@ foreach ($fleetData['vehicles'] as $v) {
                     <div class="v-page-title-box">
                         <h1>
                             <i class='bx bxs-truck' style="color: #2563eb; font-size: 26px;"></i>
-                            Vehicles & Case Loading Hub
+                            Vehicles & Cases Management 
                         </h1>
                     
                     </div>
@@ -1230,7 +1230,7 @@ foreach ($fleetData['vehicles'] as $v) {
                     <div class="v-stat-card">
                         <div>
                             <div class="v-stat-num"><?= (int)($summary['total_vehicles'] ?? count($vehicles)) ?></div>
-                            <div class="v-stat-label">Total Fleet Vehicles</div>
+                            <div class="v-stat-label">Total Vehicles</div>
                         </div>
                         <div class="v-stat-icon-wrap v-icon-blue">
                             <i class='bx bxs-truck'></i>
@@ -1277,7 +1277,7 @@ foreach ($fleetData['vehicles'] as $v) {
                             <div class="v-stat-num" style="color: #d97706;">
                                 <?= number_format($summary['grand_total_cases'] ?? 0) ?> cs
                             </div>
-                            <div class="v-stat-label">Current Active Load (In Yard)</div>
+                            <div class="v-stat-label">Current Active Load</div>
                         </div>
                         <div class="v-stat-icon-wrap v-icon-amber">
                             <i class='bx bx-package'></i>
@@ -1289,7 +1289,7 @@ foreach ($fleetData['vehicles'] as $v) {
                         <div>
                             <div class="v-stat-num" style="color: #047857; font-size: 22px;">₹<?= number_format($fleetTotalCash, 2) ?></div>
                             <div class="v-stat-label">
-                                Fleet Cash Collected
+                                 Cash Collected
                                 <?php if ($filterDate !== 'all'): ?>
                                     <span style="display: block; font-size: 10px; color: #059669; font-weight: 700;"><?= htmlspecialchars($currentDateLabel) ?></span>
                                 <?php endif; ?>
@@ -1305,7 +1305,7 @@ foreach ($fleetData['vehicles'] as $v) {
                         <div>
                             <div class="v-stat-num" style="color: #6d28d9; font-size: 22px;">₹<?= number_format($fleetTotalCredit, 2) ?></div>
                             <div class="v-stat-label">
-                                Fleet Credited Amount
+                                 Credited Amount
                                 <?php if ($filterDate !== 'all'): ?>
                                     <span style="display: block; font-size: 10px; color: #7c3aed; font-weight: 700;"><?= htmlspecialchars($currentDateLabel) ?></span>
                                 <?php endif; ?>
@@ -1321,7 +1321,7 @@ foreach ($fleetData['vehicles'] as $v) {
                         <div>
                             <div class="v-stat-num" style="color: #b91c1c; font-size: 22px;">₹<?= number_format($fleetTotalDue, 2) ?></div>
                             <div class="v-stat-label">
-                                Fleet Outstanding Due
+                                 Outstanding Due
                                 <?php if ($filterDate !== 'all'): ?>
                                     <span style="display: block; font-size: 10px; color: #dc2626; font-weight: 700;"><?= htmlspecialchars($currentDateLabel) ?></span>
                                 <?php endif; ?>
@@ -1554,12 +1554,16 @@ if ($percent > 85) {
                                             </div>
                                             <div class="v-model-name"><?= $vName ?></div>
                                             <div class="v-home-zone">
-                                                <i class='bx bx-map-pin'></i> Base Zone: <strong><?= $homeZone ?></strong>
+                                                <i class='bx bx-map-pin'></i>  Zone: <strong><?= $homeZone ?></strong>
                                             </div>
                                         </div>
-                                        <span class="v-status-pill <?= $statusClass ?>">
-                                            <?= $statusText ?>
+                                          <div class="v-card-cta" onclick="window.location.href='<?= $vViewUrl ?>'">
+                                        <span class="v-cta-text">
+                                            <i class='bx bx-right-arrow-alt'></i> 
+                                            Click to view 
                                         </span>
+                                        
+                                    </div>
                                     </div>
 
                                     <!-- Driver Information -->
@@ -1650,15 +1654,7 @@ if ($percent > 85) {
 
                                 <!-- Card Footer: Interactive CTA & Action Buttons -->
                                 <div>
-                                    <div class="v-card-cta" onclick="window.location.href='<?= $vViewUrl ?>'">
-                                        <span class="v-cta-text">
-                                            <i class='bx bx-detail'></i> 
-                                            Click to view <strong><?= $deliveriesDone ?></strong> delivered order<?= $deliveriesDone === 1 ? '' : 's' ?> & full details
-                                        </span>
-                                        <span class="v-cta-arrow">
-                                            Open Page <i class='bx bx-right-arrow-alt'></i>
-                                        </span>
-                                    </div>
+                                  
 
                                     <div class="v-card-footer" onclick="event.stopPropagation();">
                                         <button type="button" class="v-action-btn btn-act-load" onclick="event.stopPropagation(); openLoadCasesModal(<?= $vId ?>, '<?= addslashes($vNum) ?>')">
@@ -1764,7 +1760,7 @@ if ($percent > 85) {
 
                 <div class="form-group-v">
                     <label>Number of Cases to Load *</label>
-                    <input type="number" name="cases" id="loadCasesInput" class="form-input-v" placeholder="e.g. 50" min="1" required autofocus>
+                    <input type="text" name="cases" id="loadCasesInput" class="form-input-v" placeholder="e.g. 50" min="1" required autofocus>
                 </div>
 
                 <div class="form-group-v">

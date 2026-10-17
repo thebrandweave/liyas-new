@@ -53,7 +53,7 @@ if (!$order) {
 // Load active zones
 $zones = $pdo->query("SELECT id, name, slug FROM zones ORDER BY name ASC")->fetchAll(PDO::FETCH_ASSOC);
 
-// Load fleet vehicles
+// Load Vehicless
 $all_vehicles = $pdo->query("
     SELECT v.id, v.vehicle_number, v.vehicle_name, v.zone_id, z.name as zone_name
     FROM vehicles v 
@@ -362,7 +362,7 @@ $displayOrderNum = $order['order_number'] ?: ('#' . $order['order_id']);
         }
         .form-control {
             width: 100%;
-            padding: 0.65rem 0.85rem;
+            padding: 0.65rem 0.15rem;
             border: 1px solid #d1d5db;
             border-radius: 8px;
             font-size: 14px;
@@ -533,9 +533,7 @@ $displayOrderNum = $order['order_number'] ?: ('#' . $order['order_id']);
 
                 <div class="order-form-container">
                     <h2 style="font-size: 21px; font-weight: 700; margin-bottom: 0.4rem; color: #111827;">Edit Order <?= htmlspecialchars($displayOrderNum) ?></h2>
-                    <p style="font-size: 13px; color: #64748b; margin-bottom: 1.75rem;">
-                        Modify order details, add or remove products, and update order status. Stock balances synchronize automatically.
-                    </p>
+             
 
                     <form action="edit.php?id=<?= $order_id ?>" method="POST" id="editOrderForm">
                         <!-- Shop / Customer Information -->
@@ -556,17 +554,11 @@ $displayOrderNum = $order['order_number'] ?: ('#' . $order['order_id']);
                         </div>
 
                         <div class="grid-2">
-                            <div class="form-group">
-                                <label class="form-label" for="customer_name">Contact Person Name</label>
-                                <input type="text" name="customer_name" id="customer_name" class="form-control" value="<?= htmlspecialchars($_POST['customer_name'] ?? $order['customer_name']) ?>">
-                            </div>
+                         
                             <div class="form-group">
                                 <label class="form-label" for="phone">Phone Number <span style="color: #ef4444;">*</span></label>
                                 <input type="tel" name="phone" id="phone" class="form-control" required value="<?= htmlspecialchars($_POST['phone'] ?? $order['phone']) ?>">
                             </div>
-                        </div>
-
-                        <div class="grid-2">
                             <div class="form-group">
                                 <label class="form-label" for="zone_id">Delivery Zone <span style="color: #ef4444;">*</span></label>
                                 <select name="zone_id" id="zone_id" class="form-control" required onchange="handleZoneChange(this.value)">
@@ -577,12 +569,14 @@ $displayOrderNum = $order['order_number'] ?: ('#' . $order['order_id']);
                                     <?php endforeach; ?>
                                 </select>
                             </div>
+                        </div>
+
+                        <div class="grid-2">
+                            
                             <div class="form-group">
                                 <label class="form-label" for="vehicle_id" style="display: flex; justify-content: space-between; align-items: center;">
                                     <span><i class='bx bxs-truck' style="color: #2563eb;"></i> Assigned Delivery Vehicle</span>
-                                    <span id="vehicle-autolink-tag" style="display: none; font-size: 11px; font-weight: 600; color: #059669; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 7px; border-radius: 10px;">
-                                        ⚡ Auto-linked
-                                    </span>
+                                  
                                 </label>
                                 <select name="vehicle_id" id="vehicle_id" class="form-control">
                                     <option value="" data-zone-id="">-- None / Unassigned --</option>
@@ -603,9 +597,6 @@ $displayOrderNum = $order['order_number'] ?: ('#' . $order['order_id']);
                                     Orders will be placed directly in this vehicle's load list
                                 </small>
                             </div>
-                        </div>
-
-                        <div class="grid-2">
                             <div class="form-group">
                                 <label class="form-label" for="status">Order Status</label>
                                 <select name="status" id="status" class="form-control">
@@ -616,10 +607,11 @@ $displayOrderNum = $order['order_number'] ?: ('#' . $order['order_id']);
                                     <option value="cancelled" <?= ((($_POST['status'] ?? $order['status'])) === 'cancelled') ? 'selected' : '' ?>>Cancelled</option>
                                 </select>
                             </div>
-                            <div class="form-group">
-                                <label class="form-label" for="address">Full Address</label>
-                                <input type="text" name="address" id="address" class="form-control" value="<?= htmlspecialchars($_POST['address'] ?? $order['address']) ?>">
-                            </div>
+                        </div>
+
+                        <div class="grid-2">
+                            
+                       
                         </div>
 
                         <!-- Multi-Product Repeater Section -->
@@ -628,29 +620,19 @@ $displayOrderNum = $order['order_number'] ?: ('#' . $order['order_id']);
                                 <i class='bx bx-shopping-bag' style="color: #059669; font-size: 20px;"></i>
                                 Order Products &amp; Quantities
                             </div>
-                            <div style="display: flex; align-items: center; gap: 8px;">
-                                <span id="stockSyncIndicator" style="font-size: 12px; color: #059669; font-weight: 600; display: inline-flex; align-items: center; gap: 4px;">
-                                    <i class='bx bx-check-circle'></i> Stock Synced with Product Inventory
-                                </span>
-                                <button type="button" onclick="refreshLiveStocks(true)" class="btn-refresh-stock" style="background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 6px; padding: 4px 10px; font-size: 12px; color: #334155; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; font-weight: 500;" title="Refresh available stock from Warehouse Inventory">
-                                    <i class='bx bx-refresh' id="refreshStockIcon"></i> Refresh Stock
-                                </button>
-                                <a href="../products/index.php" target="_blank" style="font-size: 12px; color: #2563eb; text-decoration: none; font-weight: 500; display: inline-flex; align-items: center; gap: 3px;" title="View Website Product Inventory">
-                                    <i class='bx bx-link-external'></i> View Inventory
-                                </a>
-                            </div>
+                          
                         </div>
 
                         <div class="items-table-card">
-                            <div style="overflow-x: auto;">
+                            <div style="overflow-x: hidden;">
                                 <table class="items-table" id="itemsTable">
                                     <thead>
                                         <tr>
                                             <th style="min-width: 280px;">Product Item <span style="color: #ef4444;">*</span></th>
-                                            <th style="min-width: 150px;">Available Stock (Warehouse)</th>
+                                            <th style="min-width: 150px;">Available Stock</th>
                                             <th style="min-width: 130px; text-align: right;">Rate / Case (₹) <span style="color: #ef4444;">*</span></th>
                                             <th style="min-width: 120px; text-align: center;">Qty (Cases) <span style="color: #ef4444;">*</span></th>
-                                            <th style="min-width: 130px; text-align: right;">Line Total (₹)</th>
+                                            <th style="min-width: 130px; text-align: right;">Total (₹)</th>
                                             <th style="width: 50px; text-align: center;"></th>
                                         </tr>
                                     </thead>
@@ -694,10 +676,10 @@ $displayOrderNum = $order['order_number'] ?: ('#' . $order['order_id']);
                                                     <?php endif; ?>
                                                 </td>
                                                 <td style="text-align: right;">
-                                                    <input type="number" step="0.01" min="0" name="items[<?= $idx ?>][rate]" class="form-control item-rate-input" oninput="handleRateOrQtyChange(this)" style="width: 115px; text-align: right; font-weight: 600;" placeholder="0.00" value="<?= ($fRate !== '') ? number_format((float)$fRate, 2, '.', '') : '' ?>" required>
+                                                    <input type="text" step="0.01" min="0" name="items[<?= $idx ?>][rate]" class="form-control item-rate-input" oninput="handleRateOrQtyChange(this)" style="width: 115px; text-align: right; font-weight: 600;" placeholder="0.00" value="<?= ($fRate !== '') ? number_format((float)$fRate, 2, '.', '') : '' ?>" required>
                                                 </td>
                                                 <td style="text-align: center;">
-                                                    <input type="number" min="1" name="items[<?= $idx ?>][quantity]" class="form-control item-qty-input" oninput="handleRateOrQtyChange(this)" required value="<?= htmlspecialchars($fItem['quantity'] ?? '1') ?>" style="width: 90px; text-align: center; margin: 0 auto; font-weight: 600;">
+                                                    <input type="text" min="1" name="items[<?= $idx ?>][quantity]" class="form-control item-qty-input" oninput="handleRateOrQtyChange(this)" required value="<?= htmlspecialchars($fItem['quantity'] ?? '1') ?>" style="width: 90px; text-align: center; margin: 0 auto; font-weight: 600;">
                                                 </td>
                                                 <td style="text-align: right;">
                                                     <span class="linetotal-display" style="font-weight: 700; color: #0f172a; font-size: 15px;">₹0.00</span>
@@ -725,7 +707,7 @@ $displayOrderNum = $order['order_number'] ?: ('#' . $order['order_id']);
                         <div class="grid-2">
                             <div class="form-group">
                                 <label class="form-label" for="discount">Special Discount (₹)</label>
-                                <input type="number" step="0.01" min="0" name="discount" id="discount" class="form-control" oninput="recalculateAll()" value="<?= htmlspecialchars($_POST['discount'] ?? $order['discount']) ?>">
+                                <input type="text" step="0.01" min="0" name="discount" id="discount" class="form-control" oninput="recalculateAll()" value="<?= htmlspecialchars($_POST['discount'] ?? $order['discount']) ?>">
                                 <small style="color: #64748b; font-size: 12px;">Applies a flat deduction on the total order amount.</small>
                             </div>
 
@@ -880,7 +862,7 @@ $displayOrderNum = $order['order_number'] ?: ('#' . $order['order_id']);
             recalculateAll();
         }
 
-        // Calculate single row line total and check stock availability warning
+        // Calculate single row Total and check stock availability warning
         function updateRowLineTotal(row) {
             if (!row) return { valid: false, qty: 0, rate: 0, lineTotal: 0 };
             const select = row.querySelector('.item-product-select');
@@ -961,10 +943,10 @@ $displayOrderNum = $order['order_number'] ?: ('#' . $order['order_id']);
                     <span class="badge-stock stock-display">-- Select Product --</span>
                 </td>
                 <td style="text-align: right;">
-                    <input type="number" step="0.01" min="0" name="items[${nextRowIndex}][rate]" class="form-control item-rate-input" oninput="handleRateOrQtyChange(this)" style="width: 115px; text-align: right; font-weight: 600;" placeholder="0.00" required>
+                    <input type="text" step="0.01" min="0" name="items[${nextRowIndex}][rate]" class="form-control item-rate-input" oninput="handleRateOrQtyChange(this)" style="width: 115px; text-align: right; font-weight: 600;" placeholder="0.00" required>
                 </td>
                 <td style="text-align: center;">
-                    <input type="number" min="1" name="items[${nextRowIndex}][quantity]" class="form-control item-qty-input" oninput="handleRateOrQtyChange(this)" required value="1" style="width: 90px; text-align: center; margin: 0 auto; font-weight: 600;">
+                    <input type="text" min="1" name="items[${nextRowIndex}][quantity]" class="form-control item-qty-input" oninput="handleRateOrQtyChange(this)" required value="1" style="width: 90px; text-align: center; margin: 0 auto; font-weight: 600;">
                 </td>
                 <td style="text-align: right;">
                     <span class="linetotal-display" style="font-weight: 700; color: #0f172a; font-size: 15px;">₹0.00</span>
@@ -1131,7 +1113,7 @@ $displayOrderNum = $order['order_number'] ?: ('#' . $order['order_id']);
             } else {
                 if (autoLinkTag) autoLinkTag.style.display = 'none';
                 if (hint) {
-                    hint.textContent = "No fixed vehicle for this zone. You may assign any fleet vehicle or leave unassigned.";
+                    hint.textContent = "No fixed vehicle for this zone. You may assign any Vehicles or leave unassigned.";
                     hint.style.color = '#64748b';
                 }
             }

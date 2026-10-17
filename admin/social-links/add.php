@@ -109,7 +109,7 @@ if ($_SERVER['REQUEST_METHOD']==='POST') {
 
 <div class="form-group">
 <label>Sort Order</label>
-<input type="number" name="sort_order" class="form-input" placeholder="Auto">
+<input type="text" name="sort_order" class="form-input" placeholder="Auto">
 </div>
 </div>
 

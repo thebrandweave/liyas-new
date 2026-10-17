@@ -704,20 +704,7 @@ $stepLevel = $statusSteps[$currentStatus] ?? 1;
             </div>
 
             <!-- Vehicle Quick Assignment Form -->
-            <form action="<?= zone_url($zone_slug, 'order', ['id' => $order_id]) ?>" method="POST" style="margin-top: 14px; padding-top: 12px; border-top: 1px dashed #e2e8f0; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
-                <input type="hidden" name="assign_vehicle" value="1">
-                <select name="vehicle_id" id="vehSelectOrder" class="status-select-control" style="flex: 1; min-width: 180px; font-size: 13px; padding: 8px 12px;">
-                    <option value="">-- Assign Delivery Vehicle --</option>
-                    <?php foreach ($availVehicles as $av): ?>
-                        <option value="<?= $av['id'] ?>" <?= ((int)($order['resolved_vehicle_id'] ?? ($order['vehicle_id'] ?? 0)) === (int)$av['id']) ? 'selected' : '' ?>>
-                            <?= htmlspecialchars($av['vehicle_number']) ?><?= !empty($av['vehicle_name']) ? ' (' . htmlspecialchars($av['vehicle_name']) . ')' : '' ?>
-                        </option>
-                    <?php endforeach; ?>
-                </select>
-                <button type="submit" class="btn-update-status" style="padding: 8px 16px; font-size: 13px;">
-                    <?= !empty($order['assigned_vehicle_number']) ? 'Change Vehicle' : 'Assign Vehicle' ?>
-                </button>
-            </form>
+          
         </section>
 
         <!-- Prior Unpaid Dues Card -->
@@ -776,7 +763,7 @@ $stepLevel = $statusSteps[$currentStatus] ?? 1;
                         <input type="hidden" name="settle_prior_due" value="1">
                         <div style="margin-bottom: 10px;">
                             <label style="font-size: 12px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Amount to Clear (₹):</label>
-                            <input type="number" step="0.01" min="0.01" max="<?= $priorDues['total_due'] ?>" name="prior_clear_amount" value="<?= $priorDues['total_due'] ?>" required style="width: 100%; padding: 8px 12px; border: 1.5px solid #cbd5e1; border-radius: 8px; font-size: 14px; font-weight: 700; box-sizing: border-box;">
+                            <input type="text" step="0.01" min="0.01" max="<?= $priorDues['total_due'] ?>" name="prior_clear_amount" value="<?= $priorDues['total_due'] ?>" required style="width: 100%; padding: 8px 12px; border: 1.5px solid #cbd5e1; border-radius: 8px; font-size: 14px; font-weight: 700; box-sizing: border-box;">
                         </div>
                         <div style="margin-bottom: 10px;">
                             <label style="font-size: 12px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Payment Mode:</label>
@@ -809,27 +796,7 @@ $stepLevel = $statusSteps[$currentStatus] ?? 1;
             $rewardPercent = min(100, round(($completedOrders / $threshold) * 100));
             $isEligible = ($rewardInfo['reward_status'] === 'eligible' || $completedOrders >= $threshold);
         ?>
-            <section class="reward-card">
-                <div class="reward-icon-box">
-                    <i class='bx bx-gift'></i>
-                </div>
-                <div style="flex: 1;">
-                    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;">
-                        <span style="font-size: 14px; font-weight: 800; color: #166534;">Loyalty Rewards: <?= htmlspecialchars($shopName) ?></span>
-                        <span style="font-size: 12px; font-weight: 700; color: #15803d;"><?= $completedOrders ?> / <?= $threshold ?> Orders</span>
-                    </div>
-                    <div class="progress-bar-bg">
-                        <div class="progress-bar-fill" style="width: <?= $rewardPercent ?>%;"></div>
-                    </div>
-                    <div style="font-size: 12px; color: #166534; margin-top: 4px; font-weight: 600;">
-                        <?php if ($isEligible): ?>
-                            🎉 Shop is eligible for loyalty reward benefit!
-                        <?php else: ?>
-                            <?= (int)$rewardInfo['remaining_orders'] ?> more deliveries to unlock reward.
-                        <?php endif; ?>
-                    </div>
-                </div>
-            </section>
+       
         <?php endif; ?>
 
         <!-- Product & Price Breakdown -->

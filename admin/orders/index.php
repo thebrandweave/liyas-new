@@ -129,7 +129,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['assign_vehicle'])) {
 // Load zones for filter dropdown
 $zones_list = $pdo->query("SELECT id, name, slug FROM zones ORDER BY name ASC")->fetchAll(PDO::FETCH_ASSOC);
 
-// Load fleet vehicles for assignment
+// Load Vehicless for assignment
 $all_vehicles = $pdo->query("
     SELECT v.id, v.vehicle_number, v.vehicle_name, v.zone_id, z.name as zone_name
     FROM vehicles v 
@@ -309,7 +309,7 @@ function renderOrdersTbodyRows(array $orders, string $status_filter = 'all', str
                         <?php endif; ?>
                         <?php if (!empty($order['zone_name'])): ?>
                             <?php if ((int)$order['is_zone_read'] === 1): ?>
-                                <i class='bx bx-check-double' id="zone-check-icon-<?= (int)$order['order_id'] ?>" style="color: #059669; font-size: 16px;" title="<?= !empty($order['zone_read_at']) ? 'Checked by ' . $zoneDisplay . ' on ' . date('d M, h:i A', strtotime($order['zone_read_at'])) : 'Checked by ' . $zoneDisplay ?>"></i>
+                                <i class='bx bx-check-double' id="zone-check-icon-<?= (int)$order['order_id'] ?>" style="color: #059669; font-size: 25px;" title="<?= !empty($order['zone_read_at']) ? 'Checked by ' . $zoneDisplay . ' on ' . date('d M, h:i A', strtotime($order['zone_read_at'])) : 'Checked by ' . $zoneDisplay ?>"></i>
                             <?php else: ?>
                                 <span class="order-num-status-dot unread" id="zone-check-icon-<?= (int)$order['order_id'] ?>" title="Waiting for <?= $zoneDisplay ?> to check"></span>
                             <?php endif; ?>
@@ -344,9 +344,7 @@ function renderOrdersTbodyRows(array $orders, string $status_filter = 'all', str
                         </span>
                         <div style="margin-top: 4px;">
                             <?php if ((int)$order['is_zone_read'] === 1): ?>
-                                <span class="zone-seen-badge seen" id="zone-status-badge-<?= (int)$order['order_id'] ?>" title="<?= !empty($order['zone_read_at']) ? 'Checked by ' . $zoneDisplay . ' on ' . date('d M Y, h:i A', strtotime($order['zone_read_at'])) : 'Checked by ' . $zoneDisplay ?>">
-                                    <i class='bx bx-check-double'></i> Checked
-                                </span>
+                          
                             <?php else: ?>
                                 <span class="zone-seen-badge unread" id="zone-status-badge-<?= (int)$order['order_id'] ?>" title="Waiting for <?= $zoneDisplay ?> to open / check">
                                     <i class='bx bx-bell'></i> Unchecked
@@ -385,9 +383,9 @@ function renderOrdersTbodyRows(array $orders, string $status_filter = 'all', str
                             <?= htmlspecialchars($order['items_summary']) ?>
                         </div>
                     <?php elseif (!empty($order['net_content'])): ?>
-                        <div style="font-size: 11px; color: #64748b;">
+                        <!-- <div style="font-size: 11px; color: #64748b;">
                             <?= (float)$order['net_content'] ?> <?= htmlspecialchars($order['net_content_unit'] ?? '') ?>
-                        </div>
+                        </div> -->
                     <?php endif; ?>
                 </td>
                 <td>
@@ -436,7 +434,7 @@ function renderOrdersTbodyRows(array $orders, string $status_filter = 'all', str
                         <?= date('d M Y', strtotime($order['created_at'])) ?>
                     </div>
                     <div style="font-size: 11px; color: #94a3b8;">
-                        <?= date('H:i A', strtotime($order['created_at'])) ?>
+                        <?= date('h:i A', strtotime($order['created_at'])) ?>
                     </div>
                 </td>
                <td style="position: relative;">
@@ -862,7 +860,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
         
         <div class="main-content">
             <div class="header">
-                <div class="breadcrumb"><i class='bx bx-cart'></i> <span>Warehouse Orders</span></div>
+                <div class="breadcrumb"><i class='bx bx-cart'></i> <span>Orders</span></div>
            
             </div>
             
@@ -974,10 +972,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
                             <?php if ($zone_filter !== 'all'): ?>
                                 <span style="font-size: 13px; font-weight: normal; color: #2563eb;">— Filtered by Zone</span>
                             <?php endif; ?>
-                            <span class="live-indicator" id="live-indicator" title="Auto-refreshing every 3 seconds">
-                                <span class="live-dot"></span>
-                                <span id="live-text">Live 3s</span>
-                            </span>
+                          
                         </div>
                         <div class="table-actions">
                             <a href="create.php" class="btn-action btn-add noselect" style="text-decoration: none;">
