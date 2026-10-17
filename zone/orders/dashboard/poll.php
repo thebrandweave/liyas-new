@@ -302,7 +302,25 @@ try {
         $placeholders = implode(',', array_fill(0, count($pids), '?'));
         $pStmt = $pdo->prepare("
             SELECT 
-                p.product_id, p.name, p.product_name, p.case_price, p.price, p.case_stock, p.stock
+                p.product_id, p.name, p.product_name, p.case_price, p.price, p.case_stock, p.stock,
+                (
+                    COALESCE((
+                        SELECT SUM(oi.quantity)
+                        FROM order_items oi
+                        JOIN orders ord ON oi.order_id = ord.order_id
+                        WHERE oi.product_id = p.product_id AND ord.status IN ('pending', 'processing', 'shipped')
+                    ), 0) + COALESCE((
+                        SELECT SUM(ord2.quantity)
+                        FROM orders ord2
+                        WHERE ord2.product_id = p.product_id 
+                          AND ord2.status IN ('pending', 'processing', 'shipped')
+                          AND NOT EXISTS (SELECT 1 FROM order_items oi2 WHERE oi2.order_id = ord2.order_id)
+                    ), 0) + COALESCE((
+                        SELECT SUM(vl.cases_loaded)
+                        FROM vehicle_loads vl
+                        WHERE vl.product_id = p.product_id AND vl.is_active = 1 AND vl.order_id IS NULL
+                    ), 0)
+                ) AS cases_in_transit
             FROM products p 
             WHERE p.product_id IN ($placeholders)
         ");
@@ -311,7 +329,8 @@ try {
         $dbProdsMap = [];
         foreach ($dbProds as $dp) {
             $cStock = (int)($dp['case_stock'] !== null ? $dp['case_stock'] : ($dp['stock'] ?? 0));
-            $dp['available_stock'] = $cStock;
+            $inTransit = (int)($dp['cases_in_transit'] ?? 0);
+            $dp['available_stock'] = max(0, $cStock - $inTransit);
             $dbProdsMap[(int)$dp['product_id']] = $dp;
         }
 
@@ -835,7 +854,7 @@ try {
             $order['vehicle_storage'] = $stStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
         }
 
-        // Fetch live catalog products with live product stock directly from products table
+        // Fetch live catalog products with live warehouse available stock
         try {
             $productsStmt = $pdo->query("
                 SELECT 
@@ -847,7 +866,25 @@ try {
                     p.case_stock,
                     p.stock,
                     p.net_content,
-                    p.net_content_unit
+                    p.net_content_unit,
+                    (
+                        COALESCE((
+                            SELECT SUM(oi.quantity)
+                            FROM order_items oi
+                            JOIN orders ord ON oi.order_id = ord.order_id
+                            WHERE oi.product_id = p.product_id AND ord.status IN ('pending', 'processing', 'shipped')
+                        ), 0) + COALESCE((
+                            SELECT SUM(ord2.quantity)
+                            FROM orders ord2
+                            WHERE ord2.product_id = p.product_id 
+                              AND ord2.status IN ('pending', 'processing', 'shipped')
+                              AND NOT EXISTS (SELECT 1 FROM order_items oi2 WHERE oi2.order_id = ord2.order_id)
+                        ), 0) + COALESCE((
+                            SELECT SUM(vl.cases_loaded)
+                            FROM vehicle_loads vl
+                            WHERE vl.product_id = p.product_id AND vl.is_active = 1 AND vl.order_id IS NULL
+                        ), 0)
+                    ) AS cases_in_transit
                 FROM products p
                 WHERE p.status != 'inactive' OR p.status IS NULL
                 ORDER BY p.case_price ASC, p.name ASC
@@ -855,9 +892,13 @@ try {
             $liveProducts = $productsStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
             foreach ($liveProducts as &$lp) {
                 $cStock = (int)($lp['case_stock'] !== null ? $lp['case_stock'] : ($lp['stock'] ?? 0));
-                $lp['case_stock'] = $cStock;
-                $lp['stock'] = $cStock;
-                $lp['available_stock'] = $cStock;
+                $inTransit = (int)($lp['cases_in_transit'] ?? 0);
+                $availStock = max(0, $cStock - $inTransit);
+                $lp['raw_stock'] = $cStock;
+                $lp['cases_in_transit'] = $inTransit;
+                $lp['case_stock'] = $availStock;
+                $lp['stock'] = $availStock;
+                $lp['available_stock'] = $availStock;
             }
             unset($lp);
             $order['products'] = $liveProducts;
@@ -884,7 +925,25 @@ try {
                     p.case_stock,
                     p.stock,
                     p.net_content,
-                    p.net_content_unit
+                    p.net_content_unit,
+                    (
+                        COALESCE((
+                            SELECT SUM(oi.quantity)
+                            FROM order_items oi
+                            JOIN orders ord ON oi.order_id = ord.order_id
+                            WHERE oi.product_id = p.product_id AND ord.status IN ('pending', 'processing', 'shipped')
+                        ), 0) + COALESCE((
+                            SELECT SUM(ord2.quantity)
+                            FROM orders ord2
+                            WHERE ord2.product_id = p.product_id 
+                              AND ord2.status IN ('pending', 'processing', 'shipped')
+                              AND NOT EXISTS (SELECT 1 FROM order_items oi2 WHERE oi2.order_id = ord2.order_id)
+                        ), 0) + COALESCE((
+                            SELECT SUM(vl.cases_loaded)
+                            FROM vehicle_loads vl
+                            WHERE vl.product_id = p.product_id AND vl.is_active = 1 AND vl.order_id IS NULL
+                        ), 0)
+                    ) AS cases_in_transit
                 FROM products p
                 WHERE p.status != 'inactive' OR p.status IS NULL
                 ORDER BY p.case_price ASC, p.name ASC
@@ -892,9 +951,13 @@ try {
             $liveProducts = $productsStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
             foreach ($liveProducts as &$lp) {
                 $cStock = (int)($lp['case_stock'] !== null ? $lp['case_stock'] : ($lp['stock'] ?? 0));
-                $lp['case_stock'] = $cStock;
-                $lp['stock'] = $cStock;
-                $lp['available_stock'] = $cStock;
+                $inTransit = (int)($lp['cases_in_transit'] ?? 0);
+                $availStock = max(0, $cStock - $inTransit);
+                $lp['raw_stock'] = $cStock;
+                $lp['cases_in_transit'] = $inTransit;
+                $lp['case_stock'] = $availStock;
+                $lp['stock'] = $availStock;
+                $lp['available_stock'] = $availStock;
             }
             unset($lp);
             echo json_encode(['success' => true, 'products' => $liveProducts]);

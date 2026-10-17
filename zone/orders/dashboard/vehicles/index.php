@@ -28,51 +28,93 @@ unset($_SESSION['success_message'], $_SESSION['error_message']);
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = trim($_POST['action'] ?? '');
 
-    // 1. ADD / LOAD PRODUCT ONTO VEHICLE (Vehicle Product Create)
+    // 1. ADD / LOAD PRODUCT(S) ONTO VEHICLE (Vehicle Product Create)
     if ($action === 'load_product') {
         $vId       = (int)($_POST['vehicle_id'] ?? 0);
-        $pId       = !empty($_POST['product_id']) ? (int)$_POST['product_id'] : null;
         $zId       = !empty($_POST['zone_id']) ? (int)$_POST['zone_id'] : null;
-        $cases     = (int)($_POST['cases'] ?? 0);
-        $shopName  = trim($_POST['shop_name'] ?? '');
         $notes     = trim($_POST['notes'] ?? 'Vehicle Buffer Stock');
+        $shopName  = trim($_POST['shop_name'] ?? '');
+
+        // Collect product items from POST (supports multi-product addition and legacy single)
+        $itemsToLoad = [];
+        if (!empty($_POST['items']) && is_array($_POST['items'])) {
+            foreach ($_POST['items'] as $it) {
+                $pId   = (int)($it['product_id'] ?? 0);
+                $cases = (int)($it['cases'] ?? 0);
+                if ($pId > 0 && $cases > 0) {
+                    $itemsToLoad[] = ['product_id' => $pId, 'cases' => $cases];
+                }
+            }
+        } elseif (!empty($_POST['product_ids']) && is_array($_POST['product_ids'])) {
+            $casesArr = $_POST['product_cases'] ?? [];
+            foreach ($_POST['product_ids'] as $idx => $rawPid) {
+                $pId   = (int)$rawPid;
+                $cases = (int)($casesArr[$idx] ?? 0);
+                if ($pId > 0 && $cases > 0) {
+                    $itemsToLoad[] = ['product_id' => $pId, 'cases' => $cases];
+                }
+            }
+        } elseif (!empty($_POST['product_id'])) {
+            $pId   = (int)$_POST['product_id'];
+            $cases = (int)($_POST['cases'] ?? 0);
+            if ($pId > 0 && $cases > 0) {
+                $itemsToLoad[] = ['product_id' => $pId, 'cases' => $cases];
+            }
+        }
 
         if ($vId <= 0) {
             $_SESSION['error_message'] = "Please select a target delivery vehicle.";
-        } elseif ($cases <= 0) {
-            $_SESSION['error_message'] = "Please enter a positive number of cases (at least 1 case).";
-        } elseif (empty($pId)) {
-            $_SESSION['error_message'] = "Please select a product to load onto the vehicle.";
+        } elseif (empty($itemsToLoad)) {
+            $_SESSION['error_message'] = "Please select at least one product with a valid number of cases (minimum 1 case).";
         } else {
-            // Check if product exists
-            $pStmt = $pdo->prepare("SELECT product_id, COALESCE(product_name, name) as p_name FROM products WHERE product_id = ?");
-            $pStmt->execute([$pId]);
-            $pRow = $pStmt->fetch(PDO::FETCH_ASSOC);
+            // Check vehicle exists
+            $vStmt = $pdo->prepare("SELECT id, vehicle_number, vehicle_name FROM vehicles WHERE id = ?");
+            $vStmt->execute([$vId]);
+            $vehInfo = $vStmt->fetch(PDO::FETCH_ASSOC);
 
-            if (!$pRow) {
-                $_SESSION['error_message'] = "Selected product not found.";
+            if (!$vehInfo) {
+                $_SESSION['error_message'] = "Target vehicle not found.";
             } else {
-                // Insert into vehicle_loads
+                $vehLabel = $vehInfo['vehicle_number'] . ($vehInfo['vehicle_name'] ? " (" . $vehInfo['vehicle_name'] . ")" : "");
+
                 $ins = $pdo->prepare("
                     INSERT INTO vehicle_loads (vehicle_id, zone_id, product_id, order_id, cases_loaded, shop_name, is_active, notes, created_at)
                     VALUES (?, ?, ?, NULL, ?, ?, 1, ?, NOW())
                 ");
-                $ins->execute([
-                    $vId,
-                    $zId,
-                    $pId,
-                    $cases,
-                    $shopName ?: null,
-                    $notes ?: 'Vehicle Storage'
-                ]);
+
+                $loadedSummary = [];
+                $totalCasesLoaded = 0;
+
+                foreach ($itemsToLoad as $item) {
+                    $pId   = $item['product_id'];
+                    $cases = $item['cases'];
+
+                    $pStmt = $pdo->prepare("SELECT product_id, COALESCE(product_name, name) as p_name FROM products WHERE product_id = ?");
+                    $pStmt->execute([$pId]);
+                    $pRow = $pStmt->fetch(PDO::FETCH_ASSOC);
+                    $pName = $pRow ? $pRow['p_name'] : "Product #{$pId}";
+
+                    $ins->execute([
+                        $vId,
+                        $zId,
+                        $pId,
+                        $cases,
+                        $shopName ?: null,
+                        $notes ?: 'Vehicle Storage'
+                    ]);
+
+                    $loadedSummary[] = "{$cases} cs of {$pName}";
+                    $totalCasesLoaded += $cases;
+
+                    if (function_exists('quickLog')) {
+                        quickLog($pdo, 'create', 'vehicle_load', $vId, "Loaded {$cases} cs of {$pName} onto vehicle {$vehLabel}");
+                    }
+                }
 
                 // Update vehicle status to loading if currently active
                 $pdo->prepare("UPDATE vehicles SET status = 'loading', updated_at = NOW() WHERE id = ? AND status = 'active'")->execute([$vId]);
 
-                if (function_exists('quickLog')) {
-                    quickLog($pdo, 'create', 'vehicle_load', $vId, "Loaded {$cases} cs of {$pRow['p_name']} onto vehicle #{$vId}");
-                }
-                $_SESSION['success_message'] = "Successfully loaded {$cases} cases of " . htmlspecialchars($pRow['p_name']) . " onto vehicle!";
+                $_SESSION['success_message'] = "Successfully loaded " . count($itemsToLoad) . " product(s) (total {$totalCasesLoaded} cases) onto vehicle " . htmlspecialchars($vehLabel) . " (" . implode(', ', $loadedSummary) . ")!";
             }
         }
         $redirectZone = $_GET['zone'] ?? 'all';
@@ -361,21 +403,51 @@ if (empty($zoneBackName)) {
 }
 $zoneBackName = ucfirst($zoneBackName);
 
-// 2. Fetch catalog products for Add Product modal with live product stock
+// 2. Fetch catalog products for Add Product modal with live warehouse available stock
 $catalogProducts = [];
 try {
     $catalogProducts = $pdo->query("
         SELECT 
-            p.product_id, p.name, p.product_name, p.case_price, p.price, p.net_content, p.net_content_unit, p.case_stock, p.stock
+            p.product_id, 
+            p.name, 
+            p.product_name, 
+            p.case_price, 
+            p.price, 
+            p.net_content, 
+            p.net_content_unit, 
+            p.case_stock, 
+            p.stock,
+            (
+                COALESCE((
+                    SELECT SUM(oi.quantity)
+                    FROM order_items oi
+                    JOIN orders ord ON oi.order_id = ord.order_id
+                    WHERE oi.product_id = p.product_id AND ord.status IN ('pending', 'processing', 'shipped')
+                ), 0) + COALESCE((
+                    SELECT SUM(ord2.quantity)
+                    FROM orders ord2
+                    WHERE ord2.product_id = p.product_id 
+                      AND ord2.status IN ('pending', 'processing', 'shipped')
+                      AND NOT EXISTS (SELECT 1 FROM order_items oi2 WHERE oi2.order_id = ord2.order_id)
+                ), 0) + COALESCE((
+                    SELECT SUM(vl.cases_loaded)
+                    FROM vehicle_loads vl
+                    WHERE vl.product_id = p.product_id AND vl.is_active = 1 AND vl.order_id IS NULL
+                ), 0)
+            ) AS cases_in_transit
         FROM products p 
         WHERE p.status != 'inactive' OR p.status IS NULL 
         ORDER BY p.case_price ASC, p.name ASC
     ")->fetchAll(PDO::FETCH_ASSOC) ?: [];
     foreach ($catalogProducts as &$cp) {
         $cStock = (int)($cp['case_stock'] !== null ? $cp['case_stock'] : ($cp['stock'] ?? 0));
-        $cp['case_stock'] = $cStock;
-        $cp['stock'] = $cStock;
-        $cp['available_stock'] = $cStock;
+        $inTransit = (int)($cp['cases_in_transit'] ?? 0);
+        $availStock = max(0, $cStock - $inTransit);
+        $cp['raw_stock'] = $cStock;
+        $cp['cases_in_transit'] = $inTransit;
+        $cp['case_stock'] = $availStock;
+        $cp['stock'] = $availStock;
+        $cp['available_stock'] = $availStock;
     }
     unset($cp);
 } catch (Exception $e) {}
@@ -1372,6 +1444,12 @@ if (!empty($searchQuery)) {
             box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
             position: relative;
         }
+        .modal-dialog.modal-dialog-lg {
+            max-width: 760px;
+            width: 95%;
+            max-height: 92vh;
+            overflow-y: auto;
+        }
 
         .modal-header {
             display: flex;
@@ -1771,18 +1849,25 @@ if (!empty($searchQuery)) {
     <!-- ========================================================
          MODAL 1: LOAD PRODUCT ONTO VEHICLE (CREATE)
          ======================================================== -->
+    <!-- ========================================================
+         MODAL 1: LOAD PRODUCTS ONTO VEHICLE (CREATE / MULTI-LOAD)
+         ======================================================== -->
     <div id="modalLoadProduct" class="modal-backdrop" onclick="if(event.target===this) closeLoadProductModal()">
-        <div class="modal-dialog">
+        <div class="modal-dialog modal-dialog-lg">
             <div class="modal-header">
-                <h3 class="modal-title">
-                    <i class='bx bx-plus-circle' style="color: #059669;"></i>
-                    <span id="loadProductModalTitle">Load Product onto Vehicle</span>
-                </h3>
+                <div>
+                    <h3 class="modal-title">
+                        <i class='bx bx-plus-circle' style="color: #059669;"></i>
+                        <span id="loadProductModalTitle">Load Products onto Vehicle</span>
+                    </h3>
+                    <div style="font-size: 12px; color: #64748b; margin-top: 2px;">Load buffer or linesale inventory onto the delivery vehicle</div>
+                </div>
                 <button type="button" class="modal-close" onclick="closeLoadProductModal()">&times;</button>
             </div>
             <form method="POST" action="" onsubmit="return validateLoadProductForm(this);">
                 <input type="hidden" name="action" value="load_product">
 
+                <!-- Vehicle Selector -->
                 <div class="form-group">
                     <label class="form-label">Target Delivery Vehicle *</label>
                     <select name="vehicle_id" id="modalLoadVehicleSelect" class="form-control" required onchange="updateVehicleCapacityHint()">
@@ -1801,82 +1886,86 @@ if (!empty($searchQuery)) {
                     </div>
                 </div>
 
-                <div class="form-group">
-                    <label class="form-label">Select Product from Catalog *</label>
-                    <select name="product_id" id="modalLoadProductSelect" class="form-control" required onchange="updateProductRateHint()">
-                        <option value="">-- Choose Product --</option>
-                        <?php foreach ($catalogProducts as $cp): 
-                            $cPrice = (float)($cp['case_price'] ?: $cp['price']);
-                            $cStock = (int)($cp['case_stock'] ?: $cp['stock']);
-                            $pName  = htmlspecialchars($cp['product_name'] ?: $cp['name']);
-                            $pContent = ($cp['net_content'] ? (float)$cp['net_content'] . ' ' . $cp['net_content_unit'] : '');
-                            $isOutOfStock = $cStock <= 0;
-                        ?>
-                            <option value="<?= (int)$cp['product_id'] ?>" 
-                                    data-price="<?= $cPrice ?>" 
-                                    data-stock="<?= $cStock ?>"
-                                    data-name="<?= $pName ?>"
-                                    data-content="<?= htmlspecialchars($pContent) ?>">
-                                <?= $pName ?><?= $pContent ? " ($pContent)" : "" ?> &bull; ₹<?= number_format($cPrice, 2) ?>/cs &mdash; <?= $isOutOfStock ? '❌ Out of Stock (0 cs)' : '📦 Stock: ' . number_format($cStock) . ' cs' ?>
-                            </option>
-                        <?php endforeach; ?>
-                    </select>
-
-                    <!-- Live Warehouse Stock & Rate Card -->
-                    <div id="loadProductStockCard" style="display: none; margin-top: 10px; padding: 12px; background: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 10px;">
-                        <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;">
-                            <div>
-                                <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #64748b; letter-spacing: 0.03em;">Warehouse Available Stock</div>
-                                <div id="stockBadgeContainer" style="margin-top: 4px;"></div>
-                            </div>
-                            <div style="text-align: right;">
-                                <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #64748b;">Rate / Case</div>
-                                <div id="stockPriceDisplay" style="font-size: 15px; font-weight: 800; color: #0f172a; margin-top: 2px;">₹0.00</div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
                 <div class="grid-2">
                     <div class="form-group">
-                        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
-                            <label class="form-label" style="margin-bottom: 0;">Number of Cases *</label>
-                            <button type="button" id="btnFillMaxStock" onclick="fillMaxStockCases()" style="display: none; background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; border-radius: 6px; padding: 2px 8px; font-size: 11px; font-weight: 700; cursor: pointer;">
-                                <i class='bx bx-check-double'></i> Fill Stock (<span id="fillMaxStockNum">0</span>)
-                            </button>
-                        </div>
-                        <input type="number" name="cases" id="modalLoadCasesInput" class="form-control" min="1" placeholder="e.g. 50" required oninput="calculateLiveLoadEstimate()">
-                        <div id="stockWarningNotice" style="display: none; margin-top: 6px; font-size: 12px; color: #dc2626; background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; padding: 6px 10px;">
-                            <i class='bx bx-error-circle'></i> <strong>Warning:</strong> Entered cases exceed warehouse stock!
-                        </div>
-                        <div id="stockVehicleOverloadNotice" style="display: none; margin-top: 6px; font-size: 12px; color: #b45309; background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; padding: 6px 10px;">
-                            <i class='bx bx-error'></i> <strong>Notice:</strong> Exceeds remaining vehicle capacity.
-                        </div>
-                        <div id="liveLoadEstimateText" style="display: none; margin-top: 4px; font-size: 11px; color: #475569; font-weight: 600;">
-                            Estimated Value: <span id="liveLoadEstimateValue" style="color: #2563eb; font-weight: 700;">₹0.00</span>
-                            &bull; Stock Left: <span id="liveRemainingStockValue" style="color: #059669; font-weight: 700;">--</span>
-                        </div>
-                    </div>
-
-                    <div class="form-group">
-                        <label class="form-label">Assigned Zone</label>
+                        <label class="form-label">Assigned Zone (Optional)</label>
                         <select name="zone_id" id="modalLoadZoneSelect" class="form-control">
-                            <option value="">-- Zone (Optional) --</option>
+                            <option value="">-- Central / All Zones --</option>
                             <?php foreach ($zonesList as $z): ?>
                                 <option value="<?= (int)$z['id'] ?>"><?= htmlspecialchars($z['name']) ?></option>
                             <?php endforeach; ?>
                         </select>
                     </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Loading Notes / Batch Details (Optional)</label>
+                        <input type="text" name="notes" class="form-control" placeholder="e.g. Route 1 buffer / Linesale storage">
+                    </div>
                 </div>
 
-                <div class="form-group">
-                    <label class="form-label">Loading Notes / Batch Details (Optional)</label>
-                    <input type="text" name="notes" class="form-control" placeholder="e.g. Morning linesale buffer / Route 1">
+                <!-- Multi-Product Table -->
+                <div style="margin-top: 8px; margin-bottom: 14px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                        <label class="form-label" style="margin-bottom: 0;">
+                            <i class='bx bx-package' style="color: #059669; font-size: 14px;"></i> Products to Load *
+                        </label>
+                        <span style="font-size: 11px; color: #64748b;">Add one or multiple catalog products below</span>
+                    </div>
+
+                    <div style="max-height: 280px; overflow-y: auto; overflow-x: auto; border: 1px solid #e2e8f0; border-radius: 10px; background: #ffffff;">
+                        <table style="width: 100%; border-collapse: collapse; min-width: 580px;">
+                            <thead>
+                                <tr style="border-bottom: 2px solid #e2e8f0; text-align: left; font-size: 11px; text-transform: uppercase; color: #64748b; font-weight: 700; background: #f8fafc;">
+                                    <th style="padding: 8px 10px;">Product (from Catalog)</th>
+                                    <th style="padding: 8px 10px; width: 120px;">Whse Stock</th>
+                                    <th style="padding: 8px 10px; width: 95px;">Rate (₹)</th>
+                                    <th style="padding: 8px 10px; width: 125px;">Cases *</th>
+                                    <th style="padding: 8px 10px; width: 105px; text-align: right;">Subtotal</th>
+                                    <th style="padding: 8px 6px; width: 36px; text-align: center;"></th>
+                                </tr>
+                            </thead>
+                            <tbody id="loadProductTableBody">
+                                <!-- Dynamic rows inserted by JavaScript -->
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px; flex-wrap: wrap; gap: 8px;">
+                        <button type="button" class="btn-card-action" onclick="addLoadProductRow()" style="font-size: 12px; font-weight: 700; color: #059669; background: #ecfdf5; border: 1px solid #a7f3d0; cursor: pointer; padding: 6px 14px; border-radius: 8px; display: inline-flex; align-items: center; gap: 4px;">
+                            <i class='bx bx-plus'></i> Add Another Product
+                        </button>
+                        <div style="font-size: 12px; color: #64748b;">
+                            Total Products: <strong id="loadTotalProductsCount" style="color: #0f172a;">0</strong>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Live Load Summary & Warnings -->
+                <div id="loadSummaryBox" style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px 14px; margin-bottom: 16px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+                        <div>
+                            <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #64748b;">Total Cases to Load</div>
+                            <div style="font-size: 18px; font-weight: 800; color: #0f172a; margin-top: 2px;">
+                                <span id="loadTotalCasesSum">0</span> <span style="font-size: 12px; font-weight: 600; color: #64748b;">Cases</span>
+                            </div>
+                        </div>
+                        <div style="text-align: right;">
+                            <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #64748b;">Estimated Cargo Value</div>
+                            <div id="loadTotalValueSum" style="font-size: 18px; font-weight: 800; color: #059669; margin-top: 2px;">₹0.00</div>
+                        </div>
+                    </div>
+
+                    <div id="loadStockWarningNotice" style="display: none; margin-top: 8px; font-size: 12px; color: #dc2626; background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; padding: 6px 10px;">
+                        <i class='bx bx-error-circle'></i> <span id="loadStockWarningText">One or more products exceed warehouse available stock!</span>
+                    </div>
+                    <div id="loadVehicleOverloadNotice" style="display: none; margin-top: 8px; font-size: 12px; color: #b45309; background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; padding: 6px 10px;">
+                        <i class='bx bx-error'></i> <span id="loadVehicleOverloadText">Notice: Exceeds remaining vehicle capacity.</span>
+                    </div>
                 </div>
 
                 <div class="modal-btns-row">
-                    <button type="submit" class="btn-header btn-header-success" style="border: none;">
-                        <i class='bx bx-check'></i> Confirm &amp; Load Cases
+                    <button type="submit" id="btnSubmitLoadProduct" class="btn-header btn-header-success" style="border: none; padding: 9px 24px; font-weight: 700;">
+                        <i class='bx bx-check'></i> Confirm &amp; Load Products
                     </button>
                     <button type="button" class="btn-header" onclick="closeLoadProductModal()">
                         Cancel
@@ -2194,35 +2283,317 @@ if (!empty($searchQuery)) {
 
     <!-- Interactive JavaScript Modals & Handlers -->
     <script>
-        // Validation for Load Product Form
+        const BASE_URL = <?= json_encode(BASE_URL) ?>;
+        const apiBase = BASE_URL.replace(/^https?:\/\/[^\/]+/i, window.location.origin);
+        const pollApiUrl = apiBase + '/zone/orders/dashboard/poll.php?zone=<?= urlencode($filterZone) ?>';
+        const AOP_PRODUCTS = <?= json_encode($catalogProducts) ?>;
+
+        let loadProductRowCounter = 0;
+
+        function getLoadProductOptionsHtml(selectedPid = 0) {
+            let html = '<option value="">-- Choose Product --</option>';
+            AOP_PRODUCTS.forEach(p => {
+                const pid = parseInt(p.product_id);
+                const pName = p.product_name || p.name || 'Product';
+                const rate = parseFloat(p.case_price || p.price || 0);
+                const content = p.net_content ? (parseFloat(p.net_content) + ' ' + (p.net_content_unit || '')) : '';
+                const displayName = pName + (content ? ` (${content})` : '');
+                const stock = Math.max(0, parseInt(p.available_stock !== null && p.available_stock !== undefined ? p.available_stock : (p.case_stock || p.stock || 0)));
+                const sel = (pid === parseInt(selectedPid)) ? 'selected' : '';
+
+                if (stock <= 0) {
+                    html += `<option value="${pid}" data-rate="${rate}" data-stock="0" data-name="${displayName}" ${sel} style="color: #94a3b8;">${displayName} &bull; ₹${rate.toFixed(2)}/cs (0 cs)</option>`;
+                } else {
+                    html += `<option value="${pid}" data-rate="${rate}" data-stock="${stock}" data-name="${displayName}" ${sel}>${displayName} &bull; ₹${rate.toFixed(2)}/cs (${stock} cs)</option>`;
+                }
+            });
+            return html;
+        }
+
+        function addLoadProductRow(selectedPid = 0, defaultCases = '') {
+            const tbody = document.getElementById('loadProductTableBody');
+            if (!tbody) return;
+
+            loadProductRowCounter++;
+            const rowId = loadProductRowCounter;
+
+            const tr = document.createElement('tr');
+            tr.className = 'load-prod-row';
+            tr.setAttribute('data-row-id', rowId);
+            tr.style.borderBottom = '1px solid #f1f5f9';
+            tr.innerHTML = `
+                <td style="padding: 6px 8px;">
+                    <select name="items[${rowId}][product_id]" class="form-control load-prod-select" required onchange="handleLoadProdChange(this)" style="font-size: 13px; padding: 6px 8px;">
+                        ${getLoadProductOptionsHtml(selectedPid)}
+                    </select>
+                </td>
+                <td style="padding: 6px 8px; vertical-align: middle;">
+                    <span class="load-prod-stock-badge" style="font-size: 11px; font-weight: 700; color: #64748b; padding: 2px 6px; border-radius: 4px; background: #f1f5f9; display: inline-block;">--</span>
+                </td>
+                <td style="padding: 6px 8px; vertical-align: middle;">
+                    <span class="load-prod-rate" style="font-size: 12px; font-weight: 600; color: #334155;">₹0.00</span>
+                </td>
+                <td style="padding: 6px 8px; vertical-align: middle;">
+                    <div style="display: flex; gap: 4px; align-items: center;">
+                        <input type="number" name="items[${rowId}][cases]" class="form-control load-prod-cases" min="1" placeholder="Cases" value="${defaultCases}" required oninput="calculateLoadTotals()" style="width: 72px; padding: 5px 6px; font-size: 13px; font-weight: 700;">
+                        <button type="button" class="btn-fill-max" onclick="fillRowMaxStock(this)" title="Fill available warehouse stock" style="display: none; background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; border-radius: 4px; padding: 3px 5px; font-size: 10px; font-weight: 700; cursor: pointer; white-space: nowrap;">
+                            Max
+                        </button>
+                    </div>
+                </td>
+                <td style="padding: 6px 8px; text-align: right; vertical-align: middle; font-weight: 700; color: #0f172a; font-size: 13px;">
+                    <span class="load-prod-subtotal">₹0.00</span>
+                </td>
+                <td style="padding: 6px 4px; text-align: center; vertical-align: middle;">
+                    <button type="button" class="btn-crud-mini btn-crud-del" onclick="removeLoadProductRow(this)" title="Remove item" style="background: none; border: 1px solid #fee2e2; color: #ef4444; border-radius: 6px; width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer;">
+                        <i class='bx bx-trash' style="font-size: 14px;"></i>
+                    </button>
+                </td>
+            `;
+            tbody.appendChild(tr);
+
+            const sel = tr.querySelector('.load-prod-select');
+            if (sel && selectedPid) {
+                handleLoadProdChange(sel);
+            }
+            calculateLoadTotals();
+        }
+
+        function removeLoadProductRow(btn) {
+            const row = btn.closest('tr');
+            const tbody = document.getElementById('loadProductTableBody');
+            if (row) row.remove();
+            if (tbody && tbody.children.length === 0) {
+                addLoadProductRow();
+            }
+            calculateLoadTotals();
+        }
+
+        function handleLoadProdChange(selectElem) {
+            const row = selectElem.closest('tr');
+            if (!row) return;
+
+            const opt = selectElem.options[selectElem.selectedIndex];
+            const badge = row.querySelector('.load-prod-stock-badge');
+            const rateSpan = row.querySelector('.load-prod-rate');
+            const btnMax = row.querySelector('.btn-fill-max');
+
+            if (!opt || !opt.value) {
+                if (badge) {
+                    badge.textContent = '--';
+                    badge.style.background = '#f1f5f9';
+                    badge.style.color = '#64748b';
+                    badge.style.border = 'none';
+                }
+                if (rateSpan) rateSpan.textContent = '₹0.00';
+                if (btnMax) btnMax.style.display = 'none';
+                calculateLoadTotals();
+                return;
+            }
+
+            const stock = parseInt(opt.getAttribute('data-stock') || '0', 10);
+            const rate = parseFloat(opt.getAttribute('data-rate') || '0');
+
+            if (rateSpan) rateSpan.textContent = `₹${rate.toFixed(2)}`;
+
+            if (badge) {
+                if (stock > 20) {
+                    badge.textContent = `${stock} cs`;
+                    badge.style.background = '#ecfdf5';
+                    badge.style.color = '#065f46';
+                    badge.style.border = '1px solid #a7f3d0';
+                } else if (stock > 0) {
+                    badge.textContent = `${stock} cs`;
+                    badge.style.background = '#fffbeb';
+                    badge.style.color = '#92400e';
+                    badge.style.border = '1px solid #fde68a';
+                } else {
+                    badge.textContent = 'Out (0)';
+                    badge.style.background = '#fef2f2';
+                    badge.style.color = '#991b1b';
+                    badge.style.border = '1px solid #fecaca';
+                }
+            }
+
+            if (btnMax) {
+                btnMax.style.display = (stock > 0) ? 'inline-block' : 'none';
+            }
+
+            calculateLoadTotals();
+        }
+
+        function fillRowMaxStock(btn) {
+            const row = btn.closest('tr');
+            if (!row) return;
+            const sel = row.querySelector('.load-prod-select');
+            const casesInput = row.querySelector('.load-prod-cases');
+            if (!sel || !casesInput) return;
+
+            const opt = sel.options[sel.selectedIndex];
+            if (opt && opt.value) {
+                const stock = parseInt(opt.getAttribute('data-stock') || '0', 10);
+                if (stock > 0) {
+                    casesInput.value = stock;
+                    calculateLoadTotals();
+                }
+            }
+        }
+
+        function calculateLoadTotals() {
+            const tbody = document.getElementById('loadProductTableBody');
+            const vSel = document.getElementById('modalLoadVehicleSelect');
+            const totalCasesSpan = document.getElementById('loadTotalCasesSum');
+            const totalValSpan = document.getElementById('loadTotalValueSum');
+            const totalCountSpan = document.getElementById('loadTotalProductsCount');
+            const warnStockBox = document.getElementById('loadStockWarningNotice');
+            const warnStockText = document.getElementById('loadStockWarningText');
+            const warnOverloadBox = document.getElementById('loadVehicleOverloadNotice');
+            const warnOverloadText = document.getElementById('loadVehicleOverloadText');
+
+            let grandCases = 0;
+            let grandValue = 0;
+            let validItemsCount = 0;
+            let productTotals = {};
+
+            if (tbody) {
+                const rows = tbody.querySelectorAll('tr.load-prod-row');
+                rows.forEach(r => {
+                    const sel = r.querySelector('.load-prod-select');
+                    const casesInput = r.querySelector('.load-prod-cases');
+                    const subtotalSpan = r.querySelector('.load-prod-subtotal');
+
+                    const pid = parseInt(sel ? sel.value : 0);
+                    const cases = parseInt(casesInput ? casesInput.value : 0) || 0;
+                    const opt = sel && sel.selectedIndex >= 0 ? sel.options[sel.selectedIndex] : null;
+
+                    if (pid > 0 && opt) {
+                        const rate = parseFloat(opt.getAttribute('data-rate') || 0);
+                        const stock = parseInt(opt.getAttribute('data-stock') || 0);
+                        const prodName = opt.getAttribute('data-name') || ('Product #' + pid);
+                        const lineTotal = cases * rate;
+
+                        if (subtotalSpan) {
+                            subtotalSpan.textContent = `₹${lineTotal.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+                        }
+
+                        if (cases > 0) {
+                            grandCases += cases;
+                            grandValue += lineTotal;
+                            validItemsCount++;
+
+                            if (!productTotals[pid]) {
+                                productTotals[pid] = { name: prodName, cases: 0, stock: stock };
+                            }
+                            productTotals[pid].cases += cases;
+                        }
+                    } else {
+                        if (subtotalSpan) subtotalSpan.textContent = '₹0.00';
+                    }
+                });
+            }
+
+            if (totalCasesSpan) totalCasesSpan.textContent = grandCases.toLocaleString();
+            if (totalValSpan) totalValSpan.textContent = `₹${grandValue.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+            if (totalCountSpan) totalCountSpan.textContent = validItemsCount;
+
+            // Check warehouse stock overage
+            let stockOverageMsgs = [];
+            for (let pid in productTotals) {
+                const pt = productTotals[pid];
+                if (pt.cases > pt.stock) {
+                    stockOverageMsgs.push(`${pt.name} (${pt.cases} cs requested vs ${pt.stock} cs available)`);
+                }
+            }
+
+            if (warnStockBox && warnStockText) {
+                if (stockOverageMsgs.length > 0) {
+                    warnStockText.innerHTML = `<strong>Warehouse Stock Warning:</strong> ${stockOverageMsgs.join('; ')} exceeds warehouse available stock!`;
+                    warnStockBox.style.display = 'block';
+                } else {
+                    warnStockBox.style.display = 'none';
+                }
+            }
+
+            // Check vehicle fleet capacity
+            if (warnOverloadBox && warnOverloadText && vSel) {
+                const opt = vSel.options[vSel.selectedIndex];
+                if (opt && opt.value) {
+                    const cap = parseInt(opt.getAttribute('data-capacity') || '100', 10);
+                    const loaded = parseInt(opt.getAttribute('data-loaded') || '0', 10);
+                    const rem = Math.max(0, cap - loaded);
+                    if (grandCases > rem) {
+                        warnOverloadText.innerHTML = `<strong>Vehicle Overload Notice:</strong> Loading ${grandCases} cs exceeds remaining space (${rem} cs) by ${grandCases - rem} cs.`;
+                        warnOverloadBox.style.display = 'block';
+                    } else {
+                        warnOverloadBox.style.display = 'none';
+                    }
+                } else {
+                    warnOverloadBox.style.display = 'none';
+                }
+            }
+        }
+
         function validateLoadProductForm(form) {
             const vSel = document.getElementById('modalLoadVehicleSelect');
-            const casesIn = document.getElementById('modalLoadCasesInput');
-            const pSel = document.getElementById('modalLoadProductSelect');
-
             const vId = parseInt(vSel ? vSel.value : 0);
-            const cases = parseInt(casesIn ? casesIn.value : 0);
-            const pId = parseInt(pSel ? pSel.value : 0);
 
             if (!vId || vId <= 0) {
                 alert('Please select a target delivery vehicle from the dropdown.');
                 if (vSel) vSel.focus();
                 return false;
             }
-            if (!pId || pId <= 0) {
-                alert('Please select a product to load onto the vehicle.');
-                if (pSel) pSel.focus();
+
+            const tbody = document.getElementById('loadProductTableBody');
+            if (!tbody) return false;
+
+            const rows = tbody.querySelectorAll('tr.load-prod-row');
+            if (rows.length === 0) {
+                alert('Please add at least one product to load.');
                 return false;
             }
-            if (!cases || cases <= 0) {
-                alert('Please enter a positive number of cases (at least 1 case).');
-                if (casesIn) casesIn.focus();
+
+            let validCount = 0;
+            let hasInvalidRow = false;
+
+            rows.forEach(r => {
+                const sel = r.querySelector('.load-prod-select');
+                const casesInput = r.querySelector('.load-prod-cases');
+                const pid = parseInt(sel ? sel.value : 0);
+                const cases = parseInt(casesInput ? casesInput.value : 0);
+
+                if (pid > 0 && cases > 0) {
+                    validCount++;
+                } else if (pid > 0 && (!cases || cases <= 0)) {
+                    alert('Please enter a positive number of cases (at least 1 case) for all selected products.');
+                    if (casesInput) casesInput.focus();
+                    hasInvalidRow = true;
+                    return false;
+                } else if (pid <= 0 && cases > 0) {
+                    alert('Please choose a product from the catalog for all entered rows.');
+                    if (sel) sel.focus();
+                    hasInvalidRow = true;
+                    return false;
+                }
+            });
+
+            if (hasInvalidRow) return false;
+
+            if (validCount === 0) {
+                alert('Please add at least one product with a valid number of cases (minimum 1 case).');
                 return false;
             }
+
+            const warnStockBox = document.getElementById('loadStockWarningNotice');
+            if (warnStockBox && warnStockBox.style.display !== 'none') {
+                if (!confirm("Notice: One or more selected items exceed warehouse available stock. Do you still want to proceed with loading?")) {
+                    return false;
+                }
+            }
+
             return true;
         }
 
-        // Modal 1: Load Product
+        // Modal 1: Load Products
         function openLoadProductModal(vId = null, vNum = null) {
             const m = document.getElementById('modalLoadProduct');
             const sel = document.getElementById('modalLoadVehicleSelect');
@@ -2238,14 +2609,21 @@ if (!empty($searchQuery)) {
                     sel.appendChild(opt);
                 }
                 sel.value = parsedVid;
-                if (title && vNum) title.textContent = `Load Product onto ${vNum}`;
+                if (title && vNum) title.textContent = `Load Products onto ${vNum}`;
             } else if (title) {
-                title.textContent = 'Load Product onto Vehicle';
+                title.textContent = 'Load Products onto Vehicle';
             }
+
+            const tbody = document.getElementById('loadProductTableBody');
+            if (tbody && tbody.children.length === 0) {
+                addLoadProductRow();
+            }
+
             updateVehicleCapacityHint();
-            updateProductRateHint();
+            calculateLoadTotals();
             if (m) m.classList.add('open');
         }
+
         function closeLoadProductModal() {
             const m = document.getElementById('modalLoadProduct');
             if (m) m.classList.remove('open');
@@ -2259,6 +2637,7 @@ if (!empty($searchQuery)) {
             const opt = sel.options[sel.selectedIndex];
             if (!opt || !opt.value) {
                 box.style.display = 'none';
+                calculateLoadTotals();
                 return;
             }
 
@@ -2268,128 +2647,7 @@ if (!empty($searchQuery)) {
 
             box.style.display = 'block';
             box.innerHTML = `<strong>Vehicle Fleet Capacity:</strong> Limit: <strong>${cap} cs</strong> &bull; Loaded: <strong>${loaded} cs</strong> &bull; Remaining Space: <strong style="color: ${rem > 0 ? '#059669' : '#dc2626'}">${rem} cs</strong>`;
-            calculateLiveLoadEstimate();
-        }
-
-        // Live Product Stock & Rate Hints
-        function updateProductRateHint() {
-            const pSel = document.getElementById('modalLoadProductSelect');
-            const card = document.getElementById('loadProductStockCard');
-            const badgeContainer = document.getElementById('stockBadgeContainer');
-            const priceDisplay = document.getElementById('stockPriceDisplay');
-            const btnFillMax = document.getElementById('btnFillMaxStock');
-            const fillMaxNum = document.getElementById('fillMaxStockNum');
-
-            if (!pSel || !card) return;
-
-            const opt = pSel.options[pSel.selectedIndex];
-            if (!opt || !opt.value) {
-                card.style.display = 'none';
-                if (btnFillMax) btnFillMax.style.display = 'none';
-                calculateLiveLoadEstimate();
-                return;
-            }
-
-            const stock = parseInt(opt.getAttribute('data-stock') || '0', 10);
-            const price = parseFloat(opt.getAttribute('data-price') || '0');
-
-            card.style.display = 'block';
-            priceDisplay.textContent = `₹${price.toFixed(2)}`;
-
-            let badgeHtml = '';
-            if (stock > 20) {
-                badgeHtml = `<span style="display: inline-flex; align-items: center; gap: 4px; background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; padding: 4px 10px; border-radius: 6px; font-weight: 700; font-size: 13px;">
-                    <i class='bx bx-check-circle' style="color: #059669; font-size: 16px;"></i> ${stock} Cases in Warehouse
-                </span>`;
-            } else if (stock > 0) {
-                badgeHtml = `<span style="display: inline-flex; align-items: center; gap: 4px; background: #fffbeb; color: #92400e; border: 1px solid #fde68a; padding: 4px 10px; border-radius: 6px; font-weight: 700; font-size: 13px;">
-                    <i class='bx bx-error' style="color: #d97706; font-size: 16px;"></i> Low Stock: ${stock} Cases in Warehouse
-                </span>`;
-            } else {
-                badgeHtml = `<span style="display: inline-flex; align-items: center; gap: 4px; background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; padding: 4px 10px; border-radius: 6px; font-weight: 700; font-size: 13px;">
-                    <i class='bx bx-x-circle' style="color: #dc2626; font-size: 16px;"></i> Out of Stock (0 Cases)
-                </span>`;
-            }
-            badgeContainer.innerHTML = badgeHtml;
-
-            if (btnFillMax && fillMaxNum) {
-                if (stock > 0) {
-                    btnFillMax.style.display = 'inline-flex';
-                    fillMaxNum.textContent = stock;
-                } else {
-                    btnFillMax.style.display = 'none';
-                }
-            }
-
-            calculateLiveLoadEstimate();
-        }
-
-        function fillMaxStockCases() {
-            const pSel = document.getElementById('modalLoadProductSelect');
-            const casesInput = document.getElementById('modalLoadCasesInput');
-            if (!pSel || !casesInput) return;
-
-            const opt = pSel.options[pSel.selectedIndex];
-            if (opt && opt.value) {
-                const stock = parseInt(opt.getAttribute('data-stock') || '0', 10);
-                if (stock > 0) {
-                    casesInput.value = stock;
-                    calculateLiveLoadEstimate();
-                }
-            }
-        }
-
-        function calculateLiveLoadEstimate() {
-            const pSel = document.getElementById('modalLoadProductSelect');
-            const vSel = document.getElementById('modalLoadVehicleSelect');
-            const casesInput = document.getElementById('modalLoadCasesInput');
-            const warnStock = document.getElementById('stockWarningNotice');
-            const warnOverload = document.getElementById('stockVehicleOverloadNotice');
-            const estWrap = document.getElementById('liveLoadEstimateText');
-            const estVal = document.getElementById('liveLoadEstimateValue');
-            const remStock = document.getElementById('liveRemainingStockValue');
-
-            if (!pSel || !casesInput) return;
-
-            const opt = pSel.options[pSel.selectedIndex];
-            const casesVal = parseInt(casesInput.value || '0', 10);
-
-            if (!opt || !opt.value || casesVal <= 0) {
-                if (warnStock) warnStock.style.display = 'none';
-                if (warnOverload) warnOverload.style.display = 'none';
-                if (estWrap) estWrap.style.display = 'none';
-                return;
-            }
-
-            const stock = parseInt(opt.getAttribute('data-stock') || '0', 10);
-            const price = parseFloat(opt.getAttribute('data-price') || '0');
-
-            // Warning if exceeds warehouse stock
-            if (warnStock) {
-                warnStock.style.display = (casesVal > stock) ? 'block' : 'none';
-            }
-
-            // Warning if vehicle overload
-            if (warnOverload && vSel) {
-                const vOpt = vSel.options[vSel.selectedIndex];
-                if (vOpt && vOpt.value) {
-                    const cap = parseInt(vOpt.getAttribute('data-capacity') || '100', 10);
-                    const loaded = parseInt(vOpt.getAttribute('data-loaded') || '0', 10);
-                    warnOverload.style.display = ((loaded + casesVal) > cap) ? 'block' : 'none';
-                } else {
-                    warnOverload.style.display = 'none';
-                }
-            }
-
-            // Estimate calculation
-            if (estWrap && estVal && remStock) {
-                estWrap.style.display = 'block';
-                const totalCost = casesVal * price;
-                estVal.textContent = `₹${totalCost.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
-                const left = stock - casesVal;
-                remStock.textContent = `${left} cs ${left < 0 ? '(Deficit)' : ''}`;
-                remStock.style.color = left >= 0 ? '#059669' : '#dc2626';
-            }
+            calculateLoadTotals();
         }
 
         // Modal 2: Edit Product Load
@@ -2501,10 +2759,7 @@ if (!empty($searchQuery)) {
         // ========================================================
         // MODAL 7 & 8: ASSIGN ORDER & EDIT ORDER PRODUCTS
         // ========================================================
-        const BASE_URL = <?= json_encode(BASE_URL) ?>;
-        const apiBase = BASE_URL.replace(/^https?:\/\/[^\/]+/i, window.location.origin);
-        const pollApiUrl = apiBase + '/zone/orders/dashboard/poll.php?zone=<?= urlencode($filterZone) ?>';
-        const AOP_PRODUCTS = <?= json_encode($catalogProducts) ?>;
+        // Constants BASE_URL, apiBase, pollApiUrl, and AOP_PRODUCTS are declared at the top of script scope
 
         // Modal 7: Assign Order to Vehicle
         function openAssignOrderModal(vId, vPlate) {
