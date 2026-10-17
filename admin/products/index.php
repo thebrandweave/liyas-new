@@ -57,7 +57,7 @@ if (isset($_GET['action']) && $_GET['action'] === 'get_product_data') {
         exit;
     }
     $damagedList = getProductDamagedItems($pdo, $pid, 'reported');
-    $vStmt = $pdo->query("SELECT id, vehicle_number, name FROM vehicles WHERE status != 'inactive' ORDER BY vehicle_number ASC");
+    $vStmt = $pdo->query("SELECT id, vehicle_number, vehicle_name FROM vehicles WHERE status != 'inactive' ORDER BY vehicle_number ASC");
     $vehicles = $vStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
     // Calculate cases in transit
@@ -992,7 +992,7 @@ if ($total_records > count($products) && empty($search)) {
             let vHtml = '<option value="">-- Select Delivery Vehicle --</option>';
             vehicles.forEach(veh => {
                 const vNum = veh.vehicle_number || ('Vehicle #' + veh.id);
-                const vName = veh.name ? ` (${veh.name})` : '';
+                const vName = veh.vehicle_name ? ` (${veh.vehicle_name})` : '';
                 vHtml += `<option value="${veh.id}">${vNum}${vName}</option>`;
             });
             vSelect.innerHTML = vHtml;
