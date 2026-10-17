@@ -122,7 +122,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <div class="login-logo-icon" style="background: transparent; padding: 0;">
                 <img src="../assets/images/logo/logo-bg.jpg" alt="Liyas Logo" style="height: 48px;">
             </div>
-            <h1 class="login-title">Liyas</h1>
+            <!-- <h1 class="login-title">Liyas</h1> -->
             <p class="login-subtitle">Admin Panel</p>
         </div>
 

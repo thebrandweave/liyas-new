@@ -544,11 +544,11 @@ if (empty($form_items)) {
                     <?php endif; ?>
 
                     <h2 style="font-size: 21px; font-weight: 700; margin-bottom: 0.4rem; color: #111827;">
-                        <?= $is_reorder ? '🔁 Create Reorder' : 'Create New Warehouse Order' ?>
-                    </h2>
-                    <p style="font-size: 13px; color: #64748b; margin-bottom: 1.75rem;">
+                        <?= $is_reorder ? '🔁 Create Reorder' : 'Create New Order' ?>
+                    </h2><br/>
+                    <!-- <p style="font-size: 13px; color: #64748b; margin-bottom: 1.75rem;">
                         Add single or multiple products in one order. Real-time rates, live warehouse stock, and automated totals calculation.
-                    </p>
+                    </p> -->
 
                     <form action="create.php" method="POST" id="orderForm">
                         <input type="hidden" name="is_reorder" value="<?= $is_reorder ? 1 : 0 ?>">

@@ -524,6 +524,82 @@ if ($total_records > count($products) && empty($search)) {
             background: #dc2626;
             color: #ffffff;
         }
+        /* 3-Dots Action Menu */
+        .action-menu {
+            position: relative;
+            display: inline-block;
+        }
+        .three-dot-btn {
+            width: 32px;
+            height: 32px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid #cbd5e1;
+            border-radius: 8px;
+            background: #ffffff;
+            color: #475569;
+            cursor: pointer;
+            font-size: 20px;
+            transition: all 0.15s ease;
+        }
+        .three-dot-btn:hover {
+            background: #f1f5f9;
+            color: #0f172a;
+            border-color: #94a3b8;
+        }
+        .action-dropdown {
+            display: none;
+            position: fixed;
+            min-width: 175px;
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+            padding: 6px;
+            z-index: 99999;
+            text-align: left;
+        }
+        .action-dropdown.dropup {
+            box-shadow: 0 -10px 25px rgba(0, 0, 0, 0.15);
+        }
+        .action-dropdown.show {
+            display: block;
+        }
+        .action-dropdown a,
+        .action-dropdown button {
+            display: flex;
+            align-items: center;
+            gap: 9px;
+            padding: 8px 10px;
+            color: #334155;
+            text-decoration: none;
+            font-size: 13px;
+            font-family: inherit;
+            border-radius: 6px;
+            white-space: nowrap;
+            width: 100%;
+            text-align: left;
+            background: none;
+            border: none;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+        .action-dropdown a i,
+        .action-dropdown button i {
+            font-size: 17px;
+        }
+        .action-dropdown a:hover,
+        .action-dropdown button:hover {
+            background: #f1f5f9;
+        }
+        .action-dropdown .delete-action {
+            color: #dc2626;
+        }
+        .action-dropdown .delete-action:hover {
+            background: #fef2f2;
+            color: #b91c1c;
+        }
     </style>
 </head>
 <body>
@@ -590,20 +666,19 @@ if ($total_records > count($products) && empty($search)) {
                                 <tr>
                                     <th>Product</th>
                                     <th>Net Content</th>
-                                    <th>Unit</th>
                                     <th>Case Price</th>
                                     <th>Available Stock</th>
                                     <th>Damaged</th>
                                     <th>In Transit</th>
                                     <th>Delivered</th>
                                     <th>Stock Status</th>
-                                    <th>Actions</th>
+                                    <th style="text-align: center; width: 65px;">Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 <?php if (empty($products)): ?>
                                     <tr>
-                                        <td colspan="10" style="text-align: center; padding: 2.5rem; color: #64748b;">
+                                        <td colspan="9" style="text-align: center; padding: 2.5rem; color: #64748b;">
                                              No products found. <a href="add.php" style="color: var(--blue);">Add a product</a>
                                         </td>
                                     </tr>
@@ -612,7 +687,7 @@ if ($total_records > count($products) && empty($search)) {
                                         $displayName = htmlspecialchars($product['product_name'] ?: $product['name']);
                                         $caseStock = (int)($product['case_stock'] ?: $product['stock']);
                                         $casePrice = (float)($product['case_price'] ?: $product['price']);
-                                        $netContent = $product['net_content'] ? (float)$product['net_content'] : '-';
+                                        $netContent = $product['net_content'] ? (float)$product['net_content'] : null;
                                         $unit = htmlspecialchars($product['net_content_unit'] ?: 'ML');
                                         $inTransit = (int)$product['cases_in_transit'];
                                         $delivered = (int)$product['cases_delivered'];
@@ -643,10 +718,11 @@ if ($total_records > count($products) && empty($search)) {
                                             <?php endif; ?>
                                         </td>
                                         <td>
-                                            <strong><?= $netContent ?></strong>
-                                        </td>
-                                        <td>
-                                            <span style="font-weight: 500; color: #475569;"><?= $unit ?></span>
+                                            <?php if ($netContent !== null && $netContent > 0): ?>
+                                                <strong style="color: #0f172a; font-size: 14px;"><?= $netContent ?></strong> <span style="font-weight: 600; color: #475569; font-size: 12px;"><?= $unit ?></span>
+                                            <?php else: ?>
+                                                <span style="color: #94a3b8;">-</span>
+                                            <?php endif; ?>
                                         </td>
                                         <td>
                                             <span class="price-bold"><?= formatCurrency($casePrice) ?></span>
@@ -688,17 +764,32 @@ if ($total_records > count($products) && empty($search)) {
                                                 <?= $statusText ?> (<?= number_format($availableStock) ?>)
                                             </span>
                                         </td>
-                                        <td>
-                                            <div style="display: flex; gap: 6px; align-items: center;">
-                                                <button type="button" onclick="openProductEditModal(<?= $product['product_id'] ?>)" class="btn-action" style="padding: 5px 10px; background: #e0f2fe; color: #0284c7; border: none; border-radius: 6px; cursor: pointer; font-size: 12px; display: inline-flex; align-items: center; gap: 3px; font-weight: 600;" title="Edit Product & Manage Damaged Stock">
-                                                    <i class='bx bx-edit'></i> Edit
+                                        <td style="text-align: center; position: relative;">
+                                            <div class="action-menu">
+                                                <button type="button" 
+                                                        class="three-dot-btn" 
+                                                        onclick="event.stopPropagation(); toggleActionMenu(this)" 
+                                                        title="More actions" 
+                                                        aria-label="Actions" 
+                                                        aria-expanded="false">
+                                                    <i class='bx bx-dots-vertical-rounded'></i>
                                                 </button>
-                                                <a href="edit.php?id=<?= $product['product_id'] ?>" class="btn-action" title="Full Page Edit" style="padding: 5px 7px; background: #f1f5f9; color: #475569; border-radius: 6px; text-decoration: none; font-size: 12px; display: inline-flex; align-items: center;">
-                                                    <i class='bx bx-link-external'></i>
-                                                </a>
-                                                <a href="index.php?delete=<?= $product['product_id'] ?>" onclick="return confirm('Are you sure you want to delete <?= addslashes($displayName) ?>?');" class="btn-action" style="padding: 5px 8px; background: #fee2e2; color: #dc2626; border-radius: 6px; text-decoration: none; font-size: 12px; display: inline-flex; align-items: center;" title="Delete Product">
-                                                    <i class='bx bx-trash'></i> Delete
-                                                </a>
+                                                <div class="action-dropdown">
+                                                    <button type="button" onclick="closeAllActionMenus(); openProductEditModal(<?= (int)$product['product_id'] ?>, 'details');">
+                                                        <i class='bx bx-edit' style="color: #0284c7;"></i> Quick Edit
+                                                    </button>
+                                                    <button type="button" onclick="closeAllActionMenus(); openProductEditModal(<?= (int)$product['product_id'] ?>, 'damaged');">
+                                                        <i class='bx bx-error-circle' style="color: #ea580c;"></i> Damaged Stock
+                                                    </button>
+                                                    <a href="edit.php?id=<?= (int)$product['product_id'] ?>">
+                                                        <i class='bx bx-link-external' style="color: #64748b;"></i> Full Edit Page
+                                                    </a>
+                                                    <a href="index.php?delete=<?= (int)$product['product_id'] ?>" 
+                                                       class="delete-action" 
+                                                       onclick="return confirm('Are you sure you want to delete <?= htmlspecialchars(addslashes($displayName), ENT_QUOTES, 'UTF-8') ?>?');">
+                                                        <i class='bx bx-trash'></i> Delete Product
+                                                    </a>
+                                                </div>
                                             </div>
                                         </td>
                                     </tr>
@@ -1131,6 +1222,81 @@ if ($total_records > count($products) && empty($search)) {
             btn.innerHTML = "<i class='bx bx-loader-alt bx-spin'></i> Saving...";
         }
     }
+
+    function closeAllActionMenus() {
+        document.querySelectorAll('.action-dropdown.show').forEach(menu => {
+            menu.classList.remove('show');
+            menu.classList.remove('dropup');
+            menu.style.top = '';
+            menu.style.bottom = '';
+            menu.style.right = '';
+            menu.style.left = '';
+            menu.style.maxHeight = '';
+            if (menu.previousElementSibling) {
+                menu.previousElementSibling.setAttribute('aria-expanded', 'false');
+            }
+        });
+    }
+
+    function toggleActionMenu(button) {
+        const currentMenu = button.nextElementSibling;
+        if (!currentMenu) return;
+        const isOpen = currentMenu.classList.contains('show');
+
+        closeAllActionMenus();
+
+        if (!isOpen) {
+            currentMenu.classList.add('show');
+            button.setAttribute('aria-expanded', 'true');
+
+            const btnRect = button.getBoundingClientRect();
+            const menuWidth = currentMenu.offsetWidth || 175;
+            const menuHeight = currentMenu.offsetHeight || 150;
+            const viewportWidth = document.documentElement.clientWidth || window.innerWidth;
+            const viewportHeight = document.documentElement.clientHeight || window.innerHeight;
+
+            let rightPos = viewportWidth - btnRect.right;
+            if (rightPos < 10) rightPos = 10;
+            if (viewportWidth - rightPos < menuWidth + 10) {
+                rightPos = Math.max(10, viewportWidth - (menuWidth + 10));
+            }
+
+            const spaceBelow = viewportHeight - btnRect.bottom;
+            const spaceAbove = btnRect.top;
+
+            if (spaceBelow < menuHeight + 12 && spaceAbove > spaceBelow) {
+                currentMenu.classList.add('dropup');
+                currentMenu.style.top = 'auto';
+                currentMenu.style.bottom = (viewportHeight - btnRect.top + 6) + 'px';
+                if (spaceAbove < menuHeight + 12) {
+                    currentMenu.style.maxHeight = Math.max(120, spaceAbove - 20) + 'px';
+                    currentMenu.style.overflowY = 'auto';
+                }
+            } else {
+                currentMenu.classList.remove('dropup');
+                currentMenu.style.bottom = 'auto';
+                currentMenu.style.top = (btnRect.bottom + 6) + 'px';
+                if (spaceBelow < menuHeight + 12) {
+                    currentMenu.style.maxHeight = Math.max(120, spaceBelow - 20) + 'px';
+                    currentMenu.style.overflowY = 'auto';
+                }
+            }
+
+            currentMenu.style.right = rightPos + 'px';
+            currentMenu.style.left = 'auto';
+        }
+    }
+
+    // Close action dropdowns on outside click or scroll
+    document.addEventListener('click', function(event) {
+        if (!event.target.closest('.action-menu')) {
+            closeAllActionMenus();
+        }
+    });
+
+    window.addEventListener('scroll', function() {
+        closeAllActionMenus();
+    }, true);
     </script>
 </body>
 </html>
