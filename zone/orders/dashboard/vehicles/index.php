@@ -442,7 +442,7 @@ try {
     foreach ($catalogProducts as &$cp) {
         $cStock = (int)($cp['case_stock'] !== null ? $cp['case_stock'] : ($cp['stock'] ?? 0));
         $inTransit = (int)($cp['cases_in_transit'] ?? 0);
-        $availStock = max(0, $cStock - $inTransit);
+        $availStock = max(0, $cStock);
         $cp['raw_stock'] = $cStock;
         $cp['cases_in_transit'] = $inTransit;
         $cp['case_stock'] = $availStock;

@@ -330,7 +330,7 @@ try {
         foreach ($dbProds as $dp) {
             $cStock = (int)($dp['case_stock'] !== null ? $dp['case_stock'] : ($dp['stock'] ?? 0));
             $inTransit = (int)($dp['cases_in_transit'] ?? 0);
-            $dp['available_stock'] = max(0, $cStock - $inTransit);
+            $dp['available_stock'] = max(0, $cStock);
             $dbProdsMap[(int)$dp['product_id']] = $dp;
         }
 
@@ -893,7 +893,7 @@ try {
             foreach ($liveProducts as &$lp) {
                 $cStock = (int)($lp['case_stock'] !== null ? $lp['case_stock'] : ($lp['stock'] ?? 0));
                 $inTransit = (int)($lp['cases_in_transit'] ?? 0);
-                $availStock = max(0, $cStock - $inTransit);
+                $availStock = max(0, $cStock);
                 $lp['raw_stock'] = $cStock;
                 $lp['cases_in_transit'] = $inTransit;
                 $lp['case_stock'] = $availStock;
@@ -952,7 +952,7 @@ try {
             foreach ($liveProducts as &$lp) {
                 $cStock = (int)($lp['case_stock'] !== null ? $lp['case_stock'] : ($lp['stock'] ?? 0));
                 $inTransit = (int)($lp['cases_in_transit'] ?? 0);
-                $availStock = max(0, $cStock - $inTransit);
+                $availStock = max(0, $cStock);
                 $lp['raw_stock'] = $cStock;
                 $lp['cases_in_transit'] = $inTransit;
                 $lp['case_stock'] = $availStock;

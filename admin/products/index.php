@@ -288,8 +288,8 @@ foreach ($products as $p) {
     // Cases damaged
     $damaged = (int)($p['cases_damaged'] ?? 0);
 
-    // Available warehouse stock (reduced by cases currently in transit on delivery routes)
-    $availableStock = max(0, $cStock - $inTransit);
+    // Available warehouse stock (case_stock is already adjusted when orders are placed)
+    $availableStock = max(0, $cStock);
 
     // Calculate totals
     $total_available_stock += $availableStock;
@@ -344,7 +344,7 @@ if ($total_records > count($products) && empty($search)) {
         if ($overallData = $overallStmt->fetch(PDO::FETCH_ASSOC)) {
             $total_in_transit = (int)$overallData['total_in_transit'];
             $total_delivered = (int)$overallData['total_delivered'];
-            $total_available_stock = max(0, (int)$overallData['total_stock'] - $total_in_transit);
+            $total_available_stock = max(0, (int)$overallData['total_stock']);
             $total_damaged = (int)$overallData['total_damaged'];
         }
     } catch (Exception $e) {
@@ -693,8 +693,8 @@ if ($total_records > count($products) && empty($search)) {
                                         $delivered = (int)$product['cases_delivered'];
                                         $damagedCases = (int)($product['cases_damaged'] ?? 0);
 
-                                        // Available warehouse stock (reduced by cases currently in transit on delivery routes)
-                                        $availableStock = max(0, $caseStock - $inTransit);
+                                        // Available warehouse stock (case_stock is already adjusted when orders are placed)
+                                        $availableStock = max(0, $caseStock);
 
                                         $stockClass = 'badge-stock-healthy';
                                         $statusText = 'In Stock';
@@ -1064,7 +1064,7 @@ if ($total_records > count($products) && empty($search)) {
 
         const inTransitCases = parseInt(p.cases_in_transit || 0);
         const cStock = parseInt(p.case_stock || p.stock || 0);
-        const availStock = Math.max(0, cStock - inTransitCases);
+        const availStock = Math.max(0, cStock);
 
         let subtitle = 'SKU #' + p.product_id + ' | Available Stock: ' + availStock + ' Cases';
         if (inTransitCases > 0) {
