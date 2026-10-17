@@ -27,12 +27,16 @@ $stmt = $pdo->prepare("
         r.cash_amount as receipt_cash,
         r.credited_amount as receipt_credit,
         r.due_amount as receipt_due,
-        r.created_at as receipt_date
+        r.created_at as receipt_date,
+        COALESCE(o.vehicle_id, (SELECT vl.vehicle_id FROM vehicle_loads vl WHERE vl.order_id = o.order_id AND vl.is_active = 1 LIMIT 1)) AS resolved_vehicle_id,
+        veh.vehicle_number AS assigned_vehicle_number,
+        veh.vehicle_name AS assigned_vehicle_name
     FROM orders o
     LEFT JOIN zones z ON o.zone_id = z.id
     LEFT JOIN products p ON o.product_id = p.product_id
     LEFT JOIN users u ON o.user_id = u.user_id
     LEFT JOIN receipts r ON o.order_id = r.order_id
+    LEFT JOIN vehicles veh ON veh.id = COALESCE(o.vehicle_id, (SELECT vl.vehicle_id FROM vehicle_loads vl WHERE vl.order_id = o.order_id AND vl.is_active = 1 LIMIT 1))
     WHERE o.order_id = ?
 ");
 $stmt->execute([$order_id]);
@@ -685,6 +689,20 @@ $paymentHistory = getOrderPaymentHistory($pdo, $order_id);
                                         <?php endif; ?>
                                     <?php else: ?>
                                         <span style="color: #64748b;">Central Order</span>
+                                    <?php endif; ?>
+                                </span>
+                            </div>
+                            <div class="info-row">
+                                <span class="info-label">Assigned Vehicle:</span>
+                                <span class="info-val">
+                                    <?php if (!empty($order['assigned_vehicle_number'])): ?>
+                                        <span style="background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; padding: 2px 8px; border-radius: 6px; font-weight: 600; font-size: 12px; display: inline-flex; align-items: center; gap: 4px;">
+                                            <i class='bx bxs-truck' style="color: #2563eb;"></i> <?= htmlspecialchars($order['assigned_vehicle_number']) ?><?= !empty($order['assigned_vehicle_name']) ? ' (' . htmlspecialchars($order['assigned_vehicle_name']) . ')' : '' ?>
+                                        </span>
+                                    <?php else: ?>
+                                        <span style="color: #94a3b8; font-size: 12px; display: inline-flex; align-items: center; gap: 4px;">
+                                            <i class='bx bx-car'></i> No Vehicle Assigned
+                                        </span>
                                     <?php endif; ?>
                                 </span>
                             </div>

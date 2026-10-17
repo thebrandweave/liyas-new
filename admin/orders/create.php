@@ -43,6 +43,24 @@ if (isset($_GET['action']) && $_GET['action'] === 'get_live_stock') {
 $zones_stmt = $pdo->query("SELECT id, name, slug FROM zones WHERE status = 'active' ORDER BY name ASC");
 $zones = $zones_stmt->fetchAll(PDO::FETCH_ASSOC);
 
+// Load all active fleet vehicles with linked zones
+$vehicles_stmt = $pdo->query("
+    SELECT v.id, v.vehicle_number, v.vehicle_name, v.zone_id, z.name as zone_name, z.slug as zone_slug
+    FROM vehicles v
+    LEFT JOIN zones z ON v.zone_id = z.id
+    WHERE v.status != 'deleted'
+    ORDER BY v.vehicle_number ASC
+");
+$all_vehicles = $vehicles_stmt->fetchAll(PDO::FETCH_ASSOC);
+
+// Map zone_id => vehicle_id for automated default vehicle selection
+$zone_vehicle_map = [];
+foreach ($all_vehicles as $veh) {
+    if (!empty($veh['zone_id']) && !isset($zone_vehicle_map[(int)$veh['zone_id']])) {
+        $zone_vehicle_map[(int)$veh['zone_id']] = (int)$veh['id'];
+    }
+}
+
 // Load products matching Website Product Inventory (admin/products/index.php)
 $products_stmt = $pdo->query("SELECT product_id, name, product_name, case_price, price, case_stock, stock, net_content, net_content_unit FROM products WHERE status != 'inactive' OR status IS NULL ORDER BY case_price ASC, name ASC");
 $products = $products_stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -80,6 +98,7 @@ if ($reorder_id > 0 && $_SERVER['REQUEST_METHOD'] !== 'POST') {
         $_POST['phone'] = $reorder_source['phone'];
         $_POST['address'] = $reorder_source['address'];
         $_POST['zone_id'] = $reorder_source['zone_id'];
+        $_POST['vehicle_id'] = $reorder_source['vehicle_id'] ?? ($zone_vehicle_map[(int)$reorder_source['zone_id']] ?? '');
         $_POST['discount'] = $reorder_source['discount'];
         
         // Fetch order items
@@ -103,6 +122,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_order'])) {
     $phone         = trim($_POST['phone'] ?? '');
     $address       = trim($_POST['address'] ?? '');
     $zone_id       = (int)($_POST['zone_id'] ?? 0);
+    $vehicle_id    = isset($_POST['vehicle_id']) && $_POST['vehicle_id'] !== '' ? (int)$_POST['vehicle_id'] : 0;
+    // Auto-resolve vehicle from zone if not specified
+    if ($vehicle_id <= 0 && $zone_id > 0 && isset($zone_vehicle_map[$zone_id])) {
+        $vehicle_id = (int)$zone_vehicle_map[$zone_id];
+    }
     $discount      = (float)($_POST['discount'] ?? 0);
     $is_reorder    = (int)($_POST['is_reorder'] ?? ($reorder_id > 0 ? 1 : 0));
     $parent_order_id = ($reorder_id > 0) ? $reorder_id : (!empty($_POST['parent_order_id']) ? (int)$_POST['parent_order_id'] : null);
@@ -207,12 +231,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_order'])) {
 
                 $stmt = $pdo->prepare("
                     INSERT INTO orders (
-                        order_number, zone_id, shop_name, customer_name, 
+                        order_number, zone_id, vehicle_id, shop_name, customer_name, 
                         location, phone, address, product_id, 
                         quantity, unit_price, discount, total_amount, 
                         status, is_zone_read, is_reorder, parent_order_id, created_at, updated_at
                     ) VALUES (
-                        ?, ?, ?, ?, 
+                        ?, ?, ?, ?, ?, 
                         ?, ?, ?, ?, 
                         ?, ?, ?, ?, 
                         'pending', 0, ?, ?, NOW(), NOW()
@@ -222,6 +246,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_order'])) {
                 $stmt->execute([
                     $order_number,
                     $zone_id,
+                    ($vehicle_id > 0 ? $vehicle_id : null),
                     $shop_name,
                     $customer_name ?: $shop_name,
                     $location,
@@ -259,10 +284,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_order'])) {
                     adjustProductStock($pdo, $voi['product_id'], -$voi['quantity'], "New order #{$order_number} created");
                 }
 
+                // If vehicle assigned, sync order items into vehicle_loads and mark vehicle status
+                if ($vehicle_id > 0) {
+                    assignOrderToVehicle($pdo, $new_order_id, $vehicle_id);
+                }
+
                 $pdo->commit();
 
                 $itemsSummary = count($valid_order_items) . " products (" . $total_cases . " cases)";
-                quickLog($pdo, 'create', 'order', $new_order_id, "Created order #{$order_number} for {$shop_name} [{$itemsSummary}, Zone ID: {$zone_id}, Amount: ₹{$total_amount}]");
+                $vehLog = $vehicle_id > 0 ? ", Vehicle ID: {$vehicle_id}" : "";
+                quickLog($pdo, 'create', 'order', $new_order_id, "Created order #{$order_number} for {$shop_name} [{$itemsSummary}, Zone ID: {$zone_id}{$vehLog}, Amount: ₹{$total_amount}]");
 
                 header("Location: index.php?added=1&highlight=" . $new_order_id);
                 exit;
@@ -541,17 +572,9 @@ if (empty($form_items)) {
                         </div>
 
                         <div class="grid-2">
-                            <!-- <div class="form-group">
-                                <label class="form-label" for="customer_name">Contact Person Name</label>
-                                <input type="text" name="customer_name" id="customer_name" class="form-control" placeholder="e.g. Rajesh Kumar" value="<?= htmlspecialchars($_POST['customer_name'] ?? '') ?>">
-                            </div> -->
                             <div class="form-group">
-                                <label class="form-label" for="phone">Phone Number <span style="color: #ef4444;">*</span></label>
-                                <input type="tel" name="phone" id="phone" class="form-control" placeholder="e.g. 9876543210" required value="<?= htmlspecialchars($_POST['phone'] ?? '') ?>">
-                            </div>
-                              <div class="form-group">
                                 <label class="form-label" for="zone_id">Delivery Zone <span style="color: #ef4444;">*</span></label>
-                                <select name="zone_id" id="zone_id" class="form-control" required>
+                                <select name="zone_id" id="zone_id" class="form-control" required onchange="handleZoneChange(this.value)">
                                     <option value="">-- Select Delivery Zone --</option>
                                     <?php foreach ($zones as $zone): ?>
                                         <option value="<?= $zone['id'] ?>" <?= ((int)($_POST['zone_id'] ?? 0) === (int)$zone['id']) ? 'selected' : '' ?>>
@@ -559,16 +582,42 @@ if (empty($form_items)) {
                                         </option>
                                     <?php endforeach; ?>
                                 </select>
-                                <!-- <small style="color: #94a3b8; font-size: 12px;">Order alerts will be sent to this delivery zone immediately</small> -->
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" for="vehicle_id" style="display: flex; justify-content: space-between; align-items: center;">
+                                    <span><i class='bx bxs-truck' style="color: #2563eb;"></i> Assigned Delivery Vehicle</span>
+                                    <span id="vehicle-autolink-tag" style="display: none; font-size: 11px; font-weight: 600; color: #059669; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 7px; border-radius: 10px;">
+                                        ⚡ Auto-linked
+                                    </span>
+                                </label>
+                                <select name="vehicle_id" id="vehicle_id" class="form-control">
+                                    <option value="" data-zone-id="">-- Auto / None --</option>
+                                    <?php foreach ($all_vehicles as $veh): 
+                                        $vPlate = htmlspecialchars($veh['vehicle_number']);
+                                        $vModel = !empty($veh['vehicle_name']) ? ' (' . htmlspecialchars($veh['vehicle_name']) . ')' : '';
+                                        $vFixedZone = !empty($veh['zone_name']) ? ' — ' . htmlspecialchars($veh['zone_name']) : '';
+                                        $isSel = ((int)($_POST['vehicle_id'] ?? 0) === (int)$veh['id']);
+                                    ?>
+                                        <option value="<?= $veh['id'] ?>" data-zone-id="<?= (int)($veh['zone_id'] ?? 0) ?>" <?= $isSel ? 'selected' : '' ?>>
+                                            <?= $vPlate ?><?= $vModel ?><?= $vFixedZone ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                                <small id="vehicle-zone-hint" style="color: #64748b; font-size: 11px; display: block; margin-top: 3px;">
+                                    Orders will be placed directly in this vehicle's load list
+                                </small>
                             </div>
                         </div>
 
                         <div class="grid-2">
-                          
-                            <!-- <div class="form-group">
-                                <label class="form-label" for="address">Full Address</label>
-                                <textarea name="address" id="address" rows="2" class="form-control" placeholder="Street, Building, Landmark..."><?= htmlspecialchars($_POST['address'] ?? '') ?></textarea>
-                            </div> -->
+                            <div class="form-group">
+                                <label class="form-label" for="phone">Phone Number <span style="color: #ef4444;">*</span></label>
+                                <input type="tel" name="phone" id="phone" class="form-control" placeholder="e.g. 9876543210" required value="<?= htmlspecialchars($_POST['phone'] ?? '') ?>">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" for="address">Full Address <span style="color: #94a3b8; font-weight: 400; font-size: 12px;">(Optional)</span></label>
+                                <input type="text" name="address" id="address" class="form-control" placeholder="Street, Building, Landmark..." value="<?= htmlspecialchars($_POST['address'] ?? '') ?>">
+                            </div>
                         </div>
 
                         <!-- Multi-Product Repeater Section -->
@@ -1054,6 +1103,86 @@ if (empty($form_items)) {
 
         btnAddRowBtn.addEventListener('click', addNewRow);
 
+        // Dedicated Zone -> Vehicle Auto Selection
+        function handleZoneChange(zoneId) {
+            const vehicleSelect = document.getElementById('vehicle_id');
+            const autoLinkTag = document.getElementById('vehicle-autolink-tag');
+            const hint = document.getElementById('vehicle-zone-hint');
+            if (!vehicleSelect) return;
+
+            zoneId = parseInt(zoneId) || 0;
+            if (!zoneId) {
+                if (autoLinkTag) autoLinkTag.style.display = 'none';
+                if (hint) {
+                    hint.textContent = "Orders will be placed directly in this vehicle's load list";
+                    hint.style.color = '#64748b';
+                }
+                return;
+            }
+
+            // Find option matching data-zone-id == zoneId
+            let matchedOption = null;
+            for (let i = 0; i < vehicleSelect.options.length; i++) {
+                const opt = vehicleSelect.options[i];
+                const optZid = parseInt(opt.getAttribute('data-zone-id')) || 0;
+                if (optZid === zoneId) {
+                    matchedOption = opt;
+                    break;
+                }
+            }
+
+            if (matchedOption) {
+                vehicleSelect.value = matchedOption.value;
+                if (autoLinkTag) autoLinkTag.style.display = 'inline-block';
+                if (hint) {
+                    const cleanLabel = matchedOption.text.split('—')[0].trim();
+                    hint.innerHTML = `<i class='bx bx-check-circle' style="color: #059669;"></i> Auto-assigned to dedicated vehicle: <strong>${cleanLabel}</strong>`;
+                    hint.style.color = '#059669';
+                }
+            } else {
+                if (autoLinkTag) autoLinkTag.style.display = 'none';
+                if (hint) {
+                    hint.textContent = "No fixed vehicle for this zone. You may assign any fleet vehicle or leave unassigned.";
+                    hint.style.color = '#64748b';
+                }
+            }
+        }
+
+        // When user manually alters vehicle selection
+        const vehSelectEl = document.getElementById('vehicle_id');
+        if (vehSelectEl) {
+            vehSelectEl.addEventListener('change', function() {
+                const zoneSelect = document.getElementById('zone_id');
+                const autoLinkTag = document.getElementById('vehicle-autolink-tag');
+                const hint = document.getElementById('vehicle-zone-hint');
+                const currentZoneId = parseInt(zoneSelect?.value) || 0;
+                const selectedOpt = this.options[this.selectedIndex];
+                const optZid = parseInt(selectedOpt?.getAttribute('data-zone-id')) || 0;
+
+                if (this.value && optZid > 0 && optZid === currentZoneId) {
+                    if (autoLinkTag) autoLinkTag.style.display = 'inline-block';
+                    if (hint) {
+                        const cleanLabel = selectedOpt.text.split('—')[0].trim();
+                        hint.innerHTML = `<i class='bx bx-check-circle' style="color: #059669;"></i> Fixed vehicle for this zone: <strong>${cleanLabel}</strong>`;
+                        hint.style.color = '#059669';
+                    }
+                } else if (this.value) {
+                    if (autoLinkTag) autoLinkTag.style.display = 'none';
+                    if (hint) {
+                        const cleanLabel = selectedOpt.text.split('—')[0].trim();
+                        hint.innerHTML = `<i class='bx bxs-truck' style="color: #2563eb;"></i> Manually assigned: <strong>${cleanLabel}</strong>`;
+                        hint.style.color = '#2563eb';
+                    }
+                } else {
+                    if (autoLinkTag) autoLinkTag.style.display = 'none';
+                    if (hint) {
+                        hint.textContent = "Orders will be created without vehicle assignment.";
+                        hint.style.color = '#64748b';
+                    }
+                }
+            });
+        }
+
         // Run initialization immediately on load
         function initPage() {
             itemsTableBody.querySelectorAll('.item-row').forEach(row => {
@@ -1072,6 +1201,28 @@ if (empty($form_items)) {
                 updateRowLineTotal(row);
             });
             recalculateAll();
+
+            // If zone is already selected, initialize vehicle auto-link state
+            const initZoneSelect = document.getElementById('zone_id');
+            const initVehSelect = document.getElementById('vehicle_id');
+            if (initZoneSelect && initZoneSelect.value) {
+                if (!initVehSelect || !initVehSelect.value) {
+                    handleZoneChange(initZoneSelect.value);
+                } else {
+                    const curOpt = initVehSelect.options[initVehSelect.selectedIndex];
+                    const curZid = parseInt(curOpt?.getAttribute('data-zone-id')) || 0;
+                    if (curZid === parseInt(initZoneSelect.value)) {
+                        const autoLinkTag = document.getElementById('vehicle-autolink-tag');
+                        const hint = document.getElementById('vehicle-zone-hint');
+                        if (autoLinkTag) autoLinkTag.style.display = 'inline-block';
+                        if (hint) {
+                            const cleanLabel = curOpt.text.split('—')[0].trim();
+                            hint.innerHTML = `<i class='bx bx-check-circle' style="color: #059669;"></i> Dedicated vehicle for this zone: <strong>${cleanLabel}</strong>`;
+                            hint.style.color = '#059669';
+                        }
+                    }
+                }
+            }
 
             // Background stock auto-refresh every 15 seconds
             setInterval(() => {

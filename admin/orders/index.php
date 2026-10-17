@@ -80,8 +80,63 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_status'])) {
     }
 }
 
+// Handle Vehicle Assignment
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['assign_vehicle'])) {
+    $order_id   = (int)($_POST['order_id'] ?? 0);
+    $vehicle_id = (int)($_POST['vehicle_id'] ?? 0);
+    $is_ajax    = (isset($_POST['ajax']) && $_POST['ajax'] === '1') || (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest');
+
+    if ($order_id > 0) {
+        if ($vehicle_id > 0) {
+            $res = assignOrderToVehicle($pdo, $order_id, $vehicle_id);
+            if ($res['success']) {
+                $vehNumStmt = $pdo->prepare("SELECT vehicle_number FROM vehicles WHERE id = ?");
+                $vehNumStmt->execute([$vehicle_id]);
+                $vNum = $vehNumStmt->fetchColumn() ?: ('#' . $vehicle_id);
+                quickLog($pdo, 'assign_vehicle', 'order', $order_id, "Assigned order #{$order_id} to vehicle {$vNum}");
+                $success_message = "Order successfully assigned to vehicle {$vNum}!";
+            } else {
+                $error_message = $res['error'] ?? "Failed to assign vehicle.";
+            }
+        } else {
+            $res = unassignOrderFromVehicle($pdo, $order_id);
+            if ($res['success']) {
+                quickLog($pdo, 'unassign_vehicle', 'order', $order_id, "Removed order #{$order_id} from vehicle");
+                $success_message = "Vehicle unassigned from order.";
+            } else {
+                $error_message = $res['error'] ?? "Failed to unassign vehicle.";
+            }
+        }
+
+        if ($is_ajax) {
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode([
+                'success'    => empty($error_message),
+                'message'    => empty($error_message) ? $success_message : $error_message,
+                'vehicle_id' => $vehicle_id
+            ]);
+            exit;
+        }
+    } else {
+        if ($is_ajax) {
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode(['success' => false, 'message' => 'Invalid order ID']);
+            exit;
+        }
+    }
+}
+
 // Load zones for filter dropdown
 $zones_list = $pdo->query("SELECT id, name, slug FROM zones ORDER BY name ASC")->fetchAll(PDO::FETCH_ASSOC);
+
+// Load fleet vehicles for assignment
+$all_vehicles = $pdo->query("
+    SELECT v.id, v.vehicle_number, v.vehicle_name, v.zone_id, z.name as zone_name
+    FROM vehicles v 
+    LEFT JOIN zones z ON v.zone_id = z.id 
+    WHERE v.status != 'deleted' 
+    ORDER BY v.vehicle_number ASC
+")->fetchAll(PDO::FETCH_ASSOC);
 
 // Load all active shops for dropdown
 $shops_list = getAllShopsList($pdo);
@@ -172,6 +227,9 @@ $orders_query = "
         p.net_content_unit,
         u.name as web_user_name,
         r.bill_number,
+        COALESCE(o.vehicle_id, (SELECT vl.vehicle_id FROM vehicle_loads vl WHERE vl.order_id = o.order_id AND vl.is_active = 1 LIMIT 1)) AS resolved_vehicle_id,
+        veh.vehicle_number AS assigned_vehicle_number,
+        veh.vehicle_name AS assigned_vehicle_name,
         (SELECT COUNT(*) FROM order_items oi WHERE oi.order_id = o.order_id) AS items_count,
         (SELECT GROUP_CONCAT(CONCAT(COALESCE(p2.product_name, p2.name), ' (', oi2.quantity, 'cs', IF(oi2.is_extra = 1 OR oi2.price_at_purchase = 0, ' - Extra', ''), ')') SEPARATOR ', ') 
          FROM order_items oi2 
@@ -182,6 +240,7 @@ $orders_query = "
     LEFT JOIN products p ON o.product_id = p.product_id
     LEFT JOIN users u ON o.user_id = u.user_id
     LEFT JOIN receipts r ON o.order_id = r.order_id
+    LEFT JOIN vehicles veh ON veh.id = COALESCE(o.vehicle_id, (SELECT vl.vehicle_id FROM vehicle_loads vl WHERE vl.order_id = o.order_id AND vl.is_active = 1 LIMIT 1))
     $where_sql
     ORDER BY o.created_at DESC
     LIMIT :limit OFFSET :offset
@@ -297,6 +356,20 @@ function renderOrdersTbodyRows(array $orders, string $status_filter = 'all', str
                     <?php else: ?>
                         <span class="order-zone-tag none">Central</span>
                     <?php endif; ?>
+
+                    <?php if (!empty($order['assigned_vehicle_number'])): ?>
+                        <div style="margin-top: 5px;">
+                            <span class="order-veh-badge" style="display: inline-flex; align-items: center; gap: 4px; padding: 2px 7px; border-radius: 5px; font-size: 11px; font-weight: 600; background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe;" title="Assigned Delivery Vehicle: <?= htmlspecialchars($order['assigned_vehicle_number']) ?><?= !empty($order['assigned_vehicle_name']) ? ' (' . htmlspecialchars($order['assigned_vehicle_name']) . ')' : '' ?>">
+                                <i class='bx bxs-truck' style="color: #2563eb;"></i> <?= htmlspecialchars($order['assigned_vehicle_number']) ?>
+                            </span>
+                        </div>
+                    <?php else: ?>
+                        <div style="margin-top: 5px;">
+                            <span style="display: inline-flex; align-items: center; gap: 3px; font-size: 11px; color: #94a3b8; font-weight: 500;" title="No delivery vehicle assigned">
+                                <i class='bx bx-car' style="font-size: 12px;"></i> No Vehicle
+                            </span>
+                        </div>
+                    <?php endif; ?>
                 </td>
                 <td>
                     <div style="font-weight: 600; color: #1e293b; display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
@@ -389,6 +462,10 @@ function renderOrdersTbodyRows(array $orders, string $status_filter = 'all', str
             <a href="edit.php?id=<?= (int)$order['order_id'] ?>">
                 <i class='bx bx-edit'></i> Edit
             </a>
+
+            <button type="button" class="three-dot-menu-item" onclick="openAdminAssignVehicleModal(<?= (int)$order['order_id'] ?>, '<?= htmlspecialchars(addslashes($displayOrderNum), ENT_QUOTES, 'UTF-8') ?>', <?= (int)($order['resolved_vehicle_id'] ?? 0) ?>, <?= (int)($order['zone_id'] ?? 0) ?>)" style="width: 100%; text-align: left; background: none; border: none; padding: 8px 12px; font-size: 13px; color: #1e293b; display: flex; align-items: center; gap: 8px; cursor: pointer; text-decoration: none;">
+                <i class='bx bxs-truck' style="color: #2563eb; font-size: 15px;"></i> <?= !empty($order['assigned_vehicle_number']) ? 'Change Vehicle' : 'Assign Vehicle' ?>
+            </button>
 
             <a href="delete.php?id=<?= (int)$order['order_id'] ?>"
                class="delete-action"
@@ -1171,6 +1248,9 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
                 updateStatusSelectStyle(sel, sel.value);
             });
 
+            // Expose immediate poll trigger
+            window.pollOrdersNow = pollOrders;
+
             // Schedule 3-second auto-refresh
             setInterval(pollOrders, REFRESH_INTERVAL);
         })();
@@ -1269,6 +1349,134 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
         window.addEventListener('resize', function() {
             closeAllActionMenus();
         });
+
+        function openAdminAssignVehicleModal(orderId, orderNum, currentVehId, currentZoneId) {
+            closeAllActionMenus();
+            const modal = document.getElementById('modalAdminAssignVehicle');
+            const inpId = document.getElementById('admin_modal_order_id');
+            const lbl = document.getElementById('admin_modal_order_label');
+            const selVeh = document.getElementById('admin_modal_vehicle_id');
+            const hint = document.getElementById('admin_modal_hint');
+
+            if (!modal || !inpId || !selVeh) return;
+
+            inpId.value = orderId;
+            if (lbl) lbl.textContent = "Order " + orderNum;
+            selVeh.value = currentVehId || 0;
+
+            // If unassigned and currentZoneId > 0, highlight zone vehicle
+            if (!currentVehId && currentZoneId > 0) {
+                for (let i = 0; i < selVeh.options.length; i++) {
+                    const opt = selVeh.options[i];
+                    if (parseInt(opt.getAttribute('data-zone-id')) === currentZoneId) {
+                        selVeh.value = opt.value;
+                        if (hint) {
+                            hint.innerHTML = `<span style="color: #059669; font-weight: 600;"><i class='bx bx-check-circle'></i> Pre-selected dedicated vehicle for this zone.</span>`;
+                        }
+                        break;
+                    }
+                }
+            } else if (hint) {
+                hint.textContent = "Order will be linked to this vehicle and cases synced into vehicle storage.";
+                hint.style.color = '#64748b';
+            }
+
+            modal.style.display = 'flex';
+        }
+
+        function closeAdminAssignVehicleModal() {
+            const modal = document.getElementById('modalAdminAssignVehicle');
+            if (modal) modal.style.display = 'none';
+        }
+
+        async function submitAdminAssignVehicle(e) {
+            e.preventDefault();
+            const form = document.getElementById('formAdminAssignVehicle');
+            const btn = document.getElementById('admin_modal_submit_btn');
+            if (!form) return;
+
+            const formData = new FormData(form);
+            const origHtml = btn.innerHTML;
+            btn.innerHTML = `<i class='bx bx-loader-alt bx-spin'></i> Saving...`;
+            btn.disabled = true;
+
+            try {
+                const res = await fetch('index.php', {
+                    method: 'POST',
+                    body: formData,
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                });
+                const data = await res.json();
+                if (data.success) {
+                    closeAdminAssignVehicleModal();
+                    // Trigger immediate poll to refresh rows seamlessly
+                    if (typeof window.pollOrdersNow === 'function') {
+                        window.pollOrdersNow();
+                    } else {
+                        window.location.reload();
+                    }
+                } else {
+                    alert(data.error || data.message || 'Error updating vehicle assignment.');
+                }
+            } catch (err) {
+                console.error(err);
+                alert('Connection error while saving vehicle assignment.');
+            } finally {
+                btn.innerHTML = origHtml;
+                btn.disabled = false;
+            }
+        }
     </script>
+
+    <!-- Assign Delivery Vehicle Modal -->
+    <div id="modalAdminAssignVehicle" class="modal-overlay" style="display: none; position: fixed; inset: 0; background: rgba(15, 23, 42, 0.6); z-index: 9999; align-items: center; justify-content: center; backdrop-filter: blur(2px);">
+        <div style="background: #ffffff; border-radius: 12px; width: 100%; max-width: 460px; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04); overflow: hidden; margin: 16px;">
+            <div style="padding: 16px 20px; border-bottom: 1px solid #e2e8f0; display: flex; align-items: center; justify-content: space-between; background: #f8fafc;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <i class='bx bxs-truck' style="color: #2563eb; font-size: 20px;"></i>
+                    <h3 style="font-size: 15px; font-weight: 700; color: #0f172a; margin: 0;">Assign Delivery Vehicle</h3>
+                </div>
+                <button type="button" onclick="closeAdminAssignVehicleModal()" style="background: none; border: none; font-size: 20px; color: #94a3b8; cursor: pointer; line-height: 1;">&times;</button>
+            </div>
+            <form id="formAdminAssignVehicle" onsubmit="submitAdminAssignVehicle(event)" style="padding: 20px;">
+                <input type="hidden" name="assign_vehicle" value="1">
+                <input type="hidden" name="ajax" value="1">
+                <input type="hidden" id="admin_modal_order_id" name="order_id" value="">
+
+                <div style="margin-bottom: 14px;">
+                    <label style="display: block; font-size: 12px; font-weight: 600; color: #64748b; margin-bottom: 4px;">Target Order:</label>
+                    <div id="admin_modal_order_label" style="font-size: 14px; font-weight: 700; color: #1e293b;"></div>
+                </div>
+
+                <div style="margin-bottom: 16px;">
+                    <label for="admin_modal_vehicle_id" style="display: block; font-size: 13px; font-weight: 600; color: #334155; margin-bottom: 6px;">Select Delivery Vehicle:</label>
+                    <select id="admin_modal_vehicle_id" name="vehicle_id" class="form-control" style="width: 100%; padding: 9px 12px; border-radius: 8px; border: 1.5px solid #cbd5e1; font-size: 13px;">
+                        <option value="0">-- None / Unassign Vehicle --</option>
+                        <?php foreach ($all_vehicles as $veh): 
+                            $vPlate = htmlspecialchars($veh['vehicle_number']);
+                            $vModel = !empty($veh['vehicle_name']) ? ' (' . htmlspecialchars($veh['vehicle_name']) . ')' : '';
+                            $vFixedZone = !empty($veh['zone_name']) ? ' — Zone: ' . htmlspecialchars($veh['zone_name']) : '';
+                        ?>
+                            <option value="<?= (int)$veh['id'] ?>" data-zone-id="<?= (int)($veh['zone_id'] ?? 0) ?>">
+                                <?= $vPlate ?><?= $vModel ?><?= $vFixedZone ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                    <small id="admin_modal_hint" style="color: #64748b; font-size: 11px; display: block; margin-top: 5px;">
+                        Order will be linked to this vehicle and cases synced into vehicle storage.
+                    </small>
+                </div>
+
+                <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px;">
+                    <button type="button" onclick="closeAdminAssignVehicleModal()" style="padding: 8px 16px; border: 1px solid #cbd5e1; background: #fff; color: #475569; border-radius: 6px; font-weight: 600; font-size: 13px; cursor: pointer;">
+                        Cancel
+                    </button>
+                    <button type="submit" id="admin_modal_submit_btn" style="padding: 8px 18px; border: none; background: #2563eb; color: #fff; border-radius: 6px; font-weight: 600; font-size: 13px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;">
+                        <i class='bx bx-check'></i> Save Assignment
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
 </body>
 </html>
