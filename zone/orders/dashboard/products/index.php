@@ -122,7 +122,12 @@ $query = "
                 FROM vehicle_loads vl
                 WHERE vl.product_id = p.product_id AND vl.is_active = 1 AND vl.order_id IS NULL
             ), 0)
-        ) AS cases_in_transit
+        ) AS cases_in_transit,
+        COALESCE((
+            SELECT SUM(vl.cases_loaded)
+            FROM vehicle_loads vl
+            WHERE vl.product_id = p.product_id AND vl.is_active = 1 AND vl.order_id IS NULL
+        ), 0) AS cases_loaded_vehicle
     FROM products p
     WHERE p.name LIKE :search1 OR p.product_name LIKE :search2 OR p.description LIKE :search3
     ORDER BY p.case_price ASC, p.created_at DESC
@@ -152,14 +157,15 @@ $ordersSummaryStmt = $pdo->query("
             COALESCE((SELECT SUM(oi.quantity) FROM order_items oi JOIN orders o ON oi.order_id = o.order_id WHERE o.status IN ('pending', 'processing', 'shipped')), 0) +
             COALESCE((SELECT SUM(cases_loaded) FROM vehicle_loads WHERE is_active = 1 AND order_id IS NULL), 0)
         ) as active_in_transit,
+        COALESCE((SELECT SUM(cases_loaded) FROM vehicle_loads WHERE is_active = 1 AND order_id IS NULL), 0) as total_vehicle_loaded,
         COALESCE((SELECT SUM(oi.quantity) FROM order_items oi JOIN orders o ON oi.order_id = o.order_id WHERE o.status = 'delivered'), 0) as total_delivered
 ");
-$orderTotals = $ordersSummaryStmt ? ($ordersSummaryStmt->fetch(PDO::FETCH_ASSOC) ?: ['active_in_transit' => 0, 'total_delivered' => 0]) : ['active_in_transit' => 0, 'total_delivered' => 0];
+$orderTotals = $ordersSummaryStmt ? ($ordersSummaryStmt->fetch(PDO::FETCH_ASSOC) ?: ['active_in_transit' => 0, 'total_vehicle_loaded' => 0, 'total_delivered' => 0]) : ['active_in_transit' => 0, 'total_vehicle_loaded' => 0, 'total_delivered' => 0];
 
 $total_raw_stock = (int)$overall['total_stock'];
 $total_in_transit = (int)$orderTotals['active_in_transit'];
 $total_delivered = (int)$orderTotals['total_delivered'];
-$total_available_stock = max(0, $total_raw_stock);
+$total_available_stock = max(0, $total_raw_stock - (int)$orderTotals['total_vehicle_loaded']);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -859,8 +865,10 @@ $total_available_stock = max(0, $total_raw_stock);
                                 $inTransit = (int)$product['cases_in_transit'];
                                 $delivered = (int)$product['cases_delivered'];
 
-                                // Available warehouse stock (case_stock is already adjusted when orders are placed)
-                                $availableStock = max(0, $caseStock);
+                                $loadedVehicle = (int)($product['cases_loaded_vehicle'] ?? 0);
+
+                                // Available warehouse stock (case_stock adjusted for buffer loads currently on delivery vehicles)
+                                $availableStock = max(0, $caseStock - $loadedVehicle);
 
                                 $stockClass = 'badge-stock-healthy';
                                 $statusText = 'In Stock';

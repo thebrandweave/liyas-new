@@ -320,7 +320,12 @@ try {
                         FROM vehicle_loads vl
                         WHERE vl.product_id = p.product_id AND vl.is_active = 1 AND vl.order_id IS NULL
                     ), 0)
-                ) AS cases_in_transit
+                ) AS cases_in_transit,
+                COALESCE((
+                    SELECT SUM(vl.cases_loaded)
+                    FROM vehicle_loads vl
+                    WHERE vl.product_id = p.product_id AND vl.is_active = 1 AND vl.order_id IS NULL
+                ), 0) AS cases_loaded_vehicle
             FROM products p 
             WHERE p.product_id IN ($placeholders)
         ");
@@ -329,8 +334,9 @@ try {
         $dbProdsMap = [];
         foreach ($dbProds as $dp) {
             $cStock = (int)($dp['case_stock'] !== null ? $dp['case_stock'] : ($dp['stock'] ?? 0));
+            $loadedVehicle = (int)($dp['cases_loaded_vehicle'] ?? 0);
             $inTransit = (int)($dp['cases_in_transit'] ?? 0);
-            $dp['available_stock'] = max(0, $cStock);
+            $dp['available_stock'] = max(0, $cStock - $loadedVehicle);
             $dbProdsMap[(int)$dp['product_id']] = $dp;
         }
 
@@ -884,7 +890,12 @@ try {
                             FROM vehicle_loads vl
                             WHERE vl.product_id = p.product_id AND vl.is_active = 1 AND vl.order_id IS NULL
                         ), 0)
-                    ) AS cases_in_transit
+                    ) AS cases_in_transit,
+                    COALESCE((
+                        SELECT SUM(vl.cases_loaded)
+                        FROM vehicle_loads vl
+                        WHERE vl.product_id = p.product_id AND vl.is_active = 1 AND vl.order_id IS NULL
+                    ), 0) AS cases_loaded_vehicle
                 FROM products p
                 WHERE p.status != 'inactive' OR p.status IS NULL
                 ORDER BY p.case_price ASC, p.name ASC
@@ -892,9 +903,11 @@ try {
             $liveProducts = $productsStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
             foreach ($liveProducts as &$lp) {
                 $cStock = (int)($lp['case_stock'] !== null ? $lp['case_stock'] : ($lp['stock'] ?? 0));
+                $loadedVehicle = (int)($lp['cases_loaded_vehicle'] ?? 0);
                 $inTransit = (int)($lp['cases_in_transit'] ?? 0);
-                $availStock = max(0, $cStock);
+                $availStock = max(0, $cStock - $loadedVehicle);
                 $lp['raw_stock'] = $cStock;
+                $lp['cases_loaded_vehicle'] = $loadedVehicle;
                 $lp['cases_in_transit'] = $inTransit;
                 $lp['case_stock'] = $availStock;
                 $lp['stock'] = $availStock;
@@ -943,7 +956,12 @@ try {
                             FROM vehicle_loads vl
                             WHERE vl.product_id = p.product_id AND vl.is_active = 1 AND vl.order_id IS NULL
                         ), 0)
-                    ) AS cases_in_transit
+                    ) AS cases_in_transit,
+                    COALESCE((
+                        SELECT SUM(vl.cases_loaded)
+                        FROM vehicle_loads vl
+                        WHERE vl.product_id = p.product_id AND vl.is_active = 1 AND vl.order_id IS NULL
+                    ), 0) AS cases_loaded_vehicle
                 FROM products p
                 WHERE p.status != 'inactive' OR p.status IS NULL
                 ORDER BY p.case_price ASC, p.name ASC
@@ -951,9 +969,11 @@ try {
             $liveProducts = $productsStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
             foreach ($liveProducts as &$lp) {
                 $cStock = (int)($lp['case_stock'] !== null ? $lp['case_stock'] : ($lp['stock'] ?? 0));
+                $loadedVehicle = (int)($lp['cases_loaded_vehicle'] ?? 0);
                 $inTransit = (int)($lp['cases_in_transit'] ?? 0);
-                $availStock = max(0, $cStock);
+                $availStock = max(0, $cStock - $loadedVehicle);
                 $lp['raw_stock'] = $cStock;
+                $lp['cases_loaded_vehicle'] = $loadedVehicle;
                 $lp['cases_in_transit'] = $inTransit;
                 $lp['case_stock'] = $availStock;
                 $lp['stock'] = $availStock;

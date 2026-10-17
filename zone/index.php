@@ -3709,32 +3709,29 @@ if (!function_exists('buildWhatsAppLink')) {
             if (select) {
                 select.innerHTML = '<option value="">-- Choose Damaged Product --</option>';
 
-                // 1. Prioritize products currently loaded on this vehicle
+                // Show only products currently loaded on this vehicle (removes products catalog)
                 if (Array.isArray(loadedProducts) && loadedProducts.length > 0) {
-                    const loadedGroup = document.createElement('optgroup');
-                    loadedGroup.label = "Currently Items";
                     loadedProducts.forEach(p => {
                         if (p && p.id) {
                             const opt = document.createElement('option');
                             opt.value = p.id;
                             opt.textContent = (p.name || 'Product') + ' (' + (p.cases || 0) + ' cs loaded)';
-                            loadedGroup.appendChild(opt);
+                            opt.setAttribute('data-loaded-cases', p.cases || 0);
+                            select.appendChild(opt);
                         }
                     });
-                    select.appendChild(loadedGroup);
-                }
 
-                // 2. All catalog products
-                if (Array.isArray(window.allCatalogProducts) && window.allCatalogProducts.length > 0) {
-                    const allGroup = document.createElement('optgroup');
-                    allGroup.label = "All Products Catalog";
-                    window.allCatalogProducts.forEach(p => {
-                        const opt = document.createElement('option');
-                        opt.value = p.product_id;
-                        opt.textContent = p.name;
-                        allGroup.appendChild(opt);
-                    });
-                    select.appendChild(allGroup);
+                    // If exactly one loaded product, auto select it
+                    if (loadedProducts.length === 1 && loadedProducts[0] && loadedProducts[0].id) {
+                        select.value = loadedProducts[0].id;
+                    }
+                } else {
+                    const noOpt = document.createElement('option');
+                    noOpt.value = '';
+                    noOpt.disabled = true;
+                    noOpt.selected = true;
+                    noOpt.textContent = '-- No products loaded on this vehicle --';
+                    select.appendChild(noOpt);
                 }
             }
 

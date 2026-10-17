@@ -667,12 +667,35 @@ if (file_exists($logoPath)) {
 
         .btn-modal-secondary:hover { background: #e2e8f0; }
 
-        /* Print Media Styles (A4 + Thermal Printer 80mm/58mm Support) */
+        /* ========================================================
+           Dedicated 80mm Thermal Printer Print Styles
+           ======================================================== */
         @media print {
-            body {
-                background: #ffffff !important;
+            @page {
+                size: 80mm auto;
+                margin: 0;
+            }
+
+            *, *:before, *:after {
+                box-sizing: border-box !important;
+                color: #000000 !important;
+                background: transparent !important;
+                box-shadow: none !important;
+                text-shadow: none !important;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+            }
+
+            html, body {
+                width: 78mm !important;
+                max-width: 80mm !important;
+                margin: 0 auto !important;
                 padding: 0 !important;
-                margin: 0 !important;
+                background: #ffffff !important;
+                color: #000000 !important;
+                font-family: 'JetBrains Mono', 'Courier New', Courier, monospace, sans-serif !important;
+                font-size: 11px !important;
+                line-height: 1.3 !important;
             }
 
             .no-print-bar,
@@ -683,27 +706,216 @@ if (file_exists($logoPath)) {
             }
 
             .receipt-card {
+                width: 100% !important;
+                max-width: 78mm !important;
+                margin: 0 auto !important;
+                padding: 3mm 2mm 8mm 2mm !important;
                 border: none !important;
-                box-shadow: none !important;
-                max-width: 100% !important;
-                padding: 0 !important;
                 border-radius: 0 !important;
+                box-shadow: none !important;
+                background: #ffffff !important;
+                color: #000000 !important;
+                font-size: 11px !important;
             }
 
+            /* Header Section */
             .receipt-header {
-                border-bottom: 2px solid #000 !important;
+                display: flex !important;
+                flex-direction: column !important;
+                align-items: center !important;
+                text-align: center !important;
+                border-bottom: 1px dashed #000000 !important;
+                padding-bottom: 6px !important;
+                margin-bottom: 6px !important;
+                gap: 2px !important;
+            }
+
+            .company-block {
+                display: flex !important;
+                flex-direction: column !important;
+                align-items: center !important;
+                text-align: center !important;
+                width: 100% !important;
+                gap: 1px !important;
+            }
+
+            .company-logo-img {
+                max-height: 24px !important;
+                width: auto !important;
+                filter: grayscale(100%) contrast(150%) !important;
+                margin-bottom: 2px !important;
+            }
+
+            .company-name, .thermal-brand-title {
+                display: block !important;
+                font-size: 14px !important;
+                font-weight: 800 !important;
+                letter-spacing: 0.04em !important;
+                text-transform: uppercase !important;
+                color: #000000 !important;
+                line-height: 1.1 !important;
+            }
+
+            .thermal-subtitle {
+                font-size: 9.5px !important;
+                font-weight: 600 !important;
+                color: #000000 !important;
+            }
+
+            .gstin-tag {
+                font-size: 10px !important;
+                font-weight: 700 !important;
+                color: #000000 !important;
+                margin-top: 2px !important;
+            }
+
+            .invoice-meta {
+                text-align: center !important;
+                width: 100% !important;
+                margin-top: 4px !important;
+                border-top: 1px dotted #888888 !important;
+                padding-top: 4px !important;
+            }
+
+            .official-tag {
+                display: none !important;
+            }
+
+            .bill-num-display {
+                font-size: 15px !important;
+                font-weight: 800 !important;
+                color: #000000 !important;
+                letter-spacing: 0.03em !important;
+            }
+
+            .meta-date {
+                font-size: 10px !important;
+                font-weight: 600 !important;
+                color: #000000 !important;
+            }
+
+            /* Customer Details */
+            .customer-panel {
+                background: transparent !important;
+                border: none !important;
+                border-bottom: 1px dashed #000000 !important;
+                border-radius: 0 !important;
+                padding: 4px 0 6px 0 !important;
+                margin-bottom: 6px !important;
+                display: block !important;
+                font-size: 11px !important;
+            }
+
+            .customer-panel div {
+                margin-bottom: 2px !important;
+            }
+
+            .cust-label {
+                font-size: 9px !important;
+                font-weight: 700 !important;
+                text-transform: uppercase !important;
+                color: #000000 !important;
+                display: inline-block !important;
+            }
+
+            .cust-val {
+                font-size: 12px !important;
+                font-weight: 800 !important;
+                color: #000000 !important;
+                display: block !important;
+            }
+
+            /* Items Table */
+            .receipt-table {
+                width: 100% !important;
+                margin-bottom: 6px !important;
+                border-collapse: collapse !important;
+                font-size: 10.5px !important;
             }
 
             .receipt-table th {
-                background: #000 !important;
-                color: #fff !important;
-                -webkit-print-color-adjust: exact;
-                print-color-adjust: exact;
+                background: transparent !important;
+                color: #000000 !important;
+                border: none !important;
+                border-top: 1px dashed #000000 !important;
+                border-bottom: 1px dashed #000000 !important;
+                padding: 4px 2px !important;
+                font-size: 9.5px !important;
+                font-weight: 800 !important;
+                text-transform: uppercase !important;
+                letter-spacing: 0 !important;
+            }
+
+            .receipt-table td {
+                border: none !important;
+                padding: 3px 2px !important;
+                color: #000000 !important;
+                font-size: 10.5px !important;
+                vertical-align: top !important;
+            }
+
+            .receipt-table tbody tr {
+                border-bottom: 1px dotted #888888 !important;
+            }
+
+            /* Financial Summary */
+            .summary-container {
+                display: block !important;
+                width: 100% !important;
+                margin-bottom: 6px !important;
+                border-top: 1px dashed #000000 !important;
+                padding-top: 4px !important;
+            }
+
+            .summary-table {
+                width: 100% !important;
+                font-size: 11px !important;
+            }
+
+            .summary-table td {
+                padding: 2px 2px !important;
+                color: #000000 !important;
             }
 
             .summary-total-row td {
-                border-top: 2px solid #000 !important;
-                border-bottom: 2px solid #000 !important;
+                border-top: 1px dashed #000000 !important;
+                border-bottom: 1px dashed #000000 !important;
+                font-size: 13px !important;
+                font-weight: 800 !important;
+                padding: 4px 2px !important;
+            }
+
+            .summary-due-row td {
+                border-top: 1px dotted #000000 !important;
+                border-bottom: 1px dotted #000000 !important;
+                font-size: 12px !important;
+                font-weight: 800 !important;
+                padding: 3px 2px !important;
+            }
+
+            /* Footer */
+            .footer-note {
+                border-top: 1px dashed #000000 !important;
+                padding-top: 6px !important;
+                text-align: center !important;
+                font-size: 9.5px !important;
+                color: #000000 !important;
+                margin-top: 6px !important;
+                line-height: 1.35 !important;
+            }
+
+            .footer-note a {
+                color: #000000 !important;
+                text-decoration: none !important;
+            }
+
+            .thermal-cut-guide {
+                display: block !important;
+                text-align: center !important;
+                margin-top: 8px !important;
+                font-size: 10px !important;
+                color: #000000 !important;
+                letter-spacing: 2px !important;
             }
         }
     </style>
@@ -713,28 +925,22 @@ if (file_exists($logoPath)) {
     <!-- On-screen Navigation Controls (Hidden in print) -->
     <div class="no-print-bar">
         <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
-            <a href="<?= zone_url($zone_slug) ?>" class="btn-ctrl">
+            <a href="<?= zone_url($zone_slug) ?>" class="btn-ctrl" title="Back to Zone">
                 <i class='bx bx-arrow-back'></i>
             </a>
 
-  <div class="action-buttons-group">
-            <!-- <button onclick="shareViaWhatsApp()" id="btnWaShare" class="btn-ctrl btn-whatsapp-share" title="Send Receipt via WhatsApp directly with auto PDF download and clipboard image">
-                <i class='bx bxl-whatsapp' style="font-size: 15px;"></i>
-                <span>Send to WhatsApp</span>
-            </button> -->
+            <div class="action-buttons-group">
+                <button onclick="window.print()" id="btnPrintReceipt" class="btn-ctrl btn-print" title="Print receipt via Thermal Printer">
+                    <i class='bx bx-printer' style="font-size: 18px;"></i>
+                    <span>Print Receipt</span>
+                </button>
 
-            <button onclick="downloadReceiptPdf()" id="btnDownloadPdf" class="btn-ctrl btn-pdf-download" title="Download official PDF receipt file">
-                <i class='bx bxs-file-pdf' style="font-size: 18px; color: #dc2626;"></i>
-                <span>Print Receipt</span>
-            </button>
-
-          
-
-          
+                <button onclick="downloadReceiptPdf()" id="btnDownloadPdf" class="btn-ctrl btn-pdf-download" title="Download official PDF receipt file">
+                    <i class='bx bxs-file-pdf' style="font-size: 18px; color: #dc2626;"></i>
+                    <span>Download PDF</span>
+                </button>
+            </div>
         </div>
-        </div>
-
-      
     </div>
 
     <!-- Success banner if freshly generated -->
@@ -761,12 +967,14 @@ if (file_exists($logoPath)) {
         <div class="receipt-header">
             <div class="company-block">
                 <img src="<?= $logoSrc ?>" alt="Liyas Logo" class="company-logo-img">
+                <div class="company-name thermal-brand-title">LIYAS INTERNATIONAL</div>
+                <div class="thermal-subtitle" style="font-size: 11px; color: #64748b;">Packaged Drinking Water &bull; Zone: <?= htmlspecialchars($data['zone_name'] ?: 'Dispatch') ?></div>
                 <div class="gstin-tag">GSTIN: <?= htmlspecialchars($gstin) ?></div>
             </div>
 
             <div class="invoice-meta">
                 <div class="official-tag">Official Bill No</div>
-                <div class="bill-num-display"><?= htmlspecialchars($billNumber) ?></div>
+                <div class="bill-num-display">#<?= htmlspecialchars($billNumber) ?></div>
                 <div class="meta-date"><?= htmlspecialchars($receiptDate) ?> &bull; <?= htmlspecialchars($receiptTime) ?></div>
             </div>
         </div>
@@ -892,6 +1100,7 @@ if (file_exists($logoPath)) {
                 <a class="website-link" href="https://liyasinternational.com/"> <?= htmlspecialchars($website) ?> &bull;</a> <?= htmlspecialchars($phone) ?>
             </div>
             <div>Thank you for doing business with Liyas International!</div>
+            <div class="thermal-cut-guide" style="display: none;">* * * * * THANK YOU * * * * *</div>
         </div>
     </div>
 

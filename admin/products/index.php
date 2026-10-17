@@ -84,6 +84,14 @@ if (isset($_GET['action']) && $_GET['action'] === 'get_product_data') {
     $inTransitStmt->execute([$pid, $pid, $pid]);
     $pRow['cases_in_transit'] = (int)$inTransitStmt->fetchColumn();
 
+    $loadedVehStmt = $pdo->prepare("
+        SELECT COALESCE(SUM(vl.cases_loaded), 0)
+        FROM vehicle_loads vl
+        WHERE vl.product_id = ? AND vl.is_active = 1 AND vl.order_id IS NULL
+    ");
+    $loadedVehStmt->execute([$pid]);
+    $pRow['cases_loaded_vehicle'] = (int)$loadedVehStmt->fetchColumn();
+
     header('Content-Type: application/json');
     echo json_encode([
         'success' => true,
@@ -223,6 +231,11 @@ $query = "
             FROM vehicle_damaged_items vdi
             WHERE vdi.product_id = p.product_id AND vdi.status = 'reported'
         ), 0) AS cases_damaged,
+        COALESCE((
+            SELECT SUM(vl.cases_loaded)
+            FROM vehicle_loads vl
+            WHERE vl.product_id = p.product_id AND vl.is_active = 1 AND vl.order_id IS NULL
+        ), 0) AS cases_loaded_vehicle,
         (
             COALESCE((
                 SELECT SUM(oi.quantity)
@@ -278,6 +291,7 @@ $total_damaged = 0;
 foreach ($products as $p) {
     // Original warehouse stock
     $cStock = (int)($p['case_stock'] ?? $p['stock'] ?? 0);
+    $loadedVehicle = (int)($p['cases_loaded_vehicle'] ?? 0);
 
     // Cases currently in transit
     $inTransit = (int)($p['cases_in_transit'] ?? 0);
@@ -288,8 +302,8 @@ foreach ($products as $p) {
     // Cases damaged
     $damaged = (int)($p['cases_damaged'] ?? 0);
 
-    // Available warehouse stock (case_stock is already adjusted when orders are placed)
-    $availableStock = max(0, $cStock);
+    // Available warehouse stock (case_stock adjusted for buffer loads currently on delivery vehicles)
+    $availableStock = max(0, $cStock - $loadedVehicle);
 
     // Calculate totals
     $total_available_stock += $availableStock;
@@ -304,6 +318,11 @@ if ($total_records > count($products) && empty($search)) {
         $overallStmt = $pdo->query("
             SELECT 
                 COALESCE(SUM(COALESCE(p.case_stock, p.stock, 0)), 0) as total_stock,
+                COALESCE((
+                    SELECT SUM(vl.cases_loaded)
+                    FROM vehicle_loads vl
+                    WHERE vl.is_active = 1 AND vl.order_id IS NULL
+                ), 0) as total_vehicle_loaded,
                 COALESCE((
                     SELECT SUM(vdi.damaged_cases)
                     FROM vehicle_damaged_items vdi
@@ -344,7 +363,7 @@ if ($total_records > count($products) && empty($search)) {
         if ($overallData = $overallStmt->fetch(PDO::FETCH_ASSOC)) {
             $total_in_transit = (int)$overallData['total_in_transit'];
             $total_delivered = (int)$overallData['total_delivered'];
-            $total_available_stock = max(0, (int)$overallData['total_stock']);
+            $total_available_stock = max(0, (int)$overallData['total_stock'] - (int)$overallData['total_vehicle_loaded']);
             $total_damaged = (int)$overallData['total_damaged'];
         }
     } catch (Exception $e) {
@@ -692,9 +711,10 @@ if ($total_records > count($products) && empty($search)) {
                                         $inTransit = (int)$product['cases_in_transit'];
                                         $delivered = (int)$product['cases_delivered'];
                                         $damagedCases = (int)($product['cases_damaged'] ?? 0);
+                                        $loadedVehicle = (int)($product['cases_loaded_vehicle'] ?? 0);
 
-                                        // Available warehouse stock (case_stock is already adjusted when orders are placed)
-                                        $availableStock = max(0, $caseStock);
+                                        // Available warehouse stock (case_stock adjusted for buffer loads currently on delivery vehicles)
+                                        $availableStock = max(0, $caseStock - $loadedVehicle);
 
                                         $stockClass = 'badge-stock-healthy';
                                         $statusText = 'In Stock';
@@ -1055,8 +1075,9 @@ if ($total_records > count($products) && empty($search)) {
         document.getElementById('modalDamagedCountBadge').textContent = totalDamagedCases + ' cs';
 
         const inTransitCases = parseInt(p.cases_in_transit || 0);
+        const loadedVehicleCases = parseInt(p.cases_loaded_vehicle || 0);
         const cStock = parseInt(p.case_stock || p.stock || 0);
-        const availStock = Math.max(0, cStock);
+        const availStock = Math.max(0, cStock - loadedVehicleCases);
 
         let subtitle = 'SKU #' + p.product_id + ' | Available Stock: ' + availStock + ' Cases';
         if (inTransitCases > 0) {

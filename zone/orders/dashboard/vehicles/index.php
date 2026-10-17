@@ -434,16 +434,23 @@ try {
                     FROM vehicle_loads vl
                     WHERE vl.product_id = p.product_id AND vl.is_active = 1 AND vl.order_id IS NULL
                 ), 0)
-            ) AS cases_in_transit
+            ) AS cases_in_transit,
+            COALESCE((
+                SELECT SUM(vl.cases_loaded)
+                FROM vehicle_loads vl
+                WHERE vl.product_id = p.product_id AND vl.is_active = 1 AND vl.order_id IS NULL
+            ), 0) AS cases_loaded_vehicle
         FROM products p 
         WHERE p.status != 'inactive' OR p.status IS NULL 
         ORDER BY p.case_price ASC, p.name ASC
     ")->fetchAll(PDO::FETCH_ASSOC) ?: [];
     foreach ($catalogProducts as &$cp) {
         $cStock = (int)($cp['case_stock'] !== null ? $cp['case_stock'] : ($cp['stock'] ?? 0));
+        $loadedVehicle = (int)($cp['cases_loaded_vehicle'] ?? 0);
         $inTransit = (int)($cp['cases_in_transit'] ?? 0);
-        $availStock = max(0, $cStock);
+        $availStock = max(0, $cStock - $loadedVehicle);
         $cp['raw_stock'] = $cStock;
+        $cp['cases_loaded_vehicle'] = $loadedVehicle;
         $cp['cases_in_transit'] = $inTransit;
         $cp['case_stock'] = $availStock;
         $cp['stock'] = $availStock;
