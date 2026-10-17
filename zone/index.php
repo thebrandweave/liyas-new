@@ -155,7 +155,81 @@ $unread_stmt = $pdo->prepare("
 $unread_stmt->execute([$zone_id]);
 $unread_notifications = $unread_stmt->fetchAll(PDO::FETCH_ASSOC);
 
-// 2. Status counts for filter chips (including due, credit, cash counts)
+// Date filter parameters (Default to 'today' for daily reset)
+$date_preset = strtolower(trim($_GET['date_preset'] ?? 'today'));
+$date_from = trim($_GET['date_from'] ?? ($_GET['start_date'] ?? ''));
+$date_to = trim($_GET['date_to'] ?? ($_GET['end_date'] ?? ''));
+
+$validPresets = ['today', 'yesterday', 'month', 'all', 'custom'];
+if (!in_array($date_preset, $validPresets)) {
+    $date_preset = 'today';
+}
+
+$dateCondition = "";
+$dateParams = [];
+
+if ($date_preset === 'today') {
+    $dateCondition = "DATE(o.created_at) = CURDATE()";
+    $dateLabel = "Today (" . date('d M Y') . ")";
+} elseif ($date_preset === 'yesterday') {
+    $dateCondition = "DATE(o.created_at) = SUBDATE(CURDATE(), 1)";
+    $dateLabel = "Yesterday (" . date('d M Y', strtotime('-1 day')) . ")";
+} elseif ($date_preset === 'month') {
+    $dateCondition = "o.created_at >= DATE_FORMAT(CURDATE(), '%Y-%m-01 00:00:00') AND o.created_at <= NOW()";
+    $dateLabel = "This Month (" . date('M Y') . ")";
+} elseif ($date_preset === 'custom') {
+    if (!empty($date_from) && !empty($date_to)) {
+        $dateCondition = "DATE(o.created_at) BETWEEN :date_from AND :date_to";
+        $dateParams[':date_from'] = $date_from;
+        $dateParams[':date_to'] = $date_to;
+        $dateLabel = date('d M Y', strtotime($date_from)) . " - " . date('d M Y', strtotime($date_to));
+    } elseif (!empty($date_from)) {
+        $dateCondition = "DATE(o.created_at) >= :date_from";
+        $dateParams[':date_from'] = $date_from;
+        $dateLabel = "From " . date('d M Y', strtotime($date_from));
+    } else {
+        $dateCondition = "DATE(o.created_at) = CURDATE()";
+        $dateLabel = "Today (" . date('d M Y') . ")";
+        $date_preset = 'today';
+    }
+} else { // 'all'
+    $dateCondition = "";
+    $dateLabel = "All Time";
+}
+
+$filter = $_GET['filter'] ?? 'all';
+$search = trim($_GET['search'] ?? '');
+
+if (!function_exists('zone_filter_url')) {
+    function zone_filter_url($slug, $extraParams = []) {
+        global $filter, $date_preset, $date_from, $date_to, $search;
+        $params = [
+            'filter' => $filter,
+            'date_preset' => $date_preset,
+        ];
+        if ($date_preset === 'custom') {
+            if (!empty($date_from)) $params['date_from'] = $date_from;
+            if (!empty($date_to)) $params['date_to'] = $date_to;
+        }
+        if (!empty($search)) {
+            $params['search'] = $search;
+        }
+        $merged = array_merge($params, $extraParams);
+        return zone_url($slug, '', array_filter($merged, fn($v) => $v !== null && $v !== ''));
+    }
+}
+
+// 2. Status counts for filter chips
+// Operational counts (total, pending, processing, shipped, delivered, cancelled, credit, cash) reset daily with date filter
+$countsWhere = ["o.zone_id = :c_zid"];
+$countsParams = [':c_zid' => $zone_id];
+if (!empty($dateCondition)) {
+    $countsWhere[] = str_replace([':date_from', ':date_to'], [':c_dfrom', ':c_dto'], $dateCondition);
+    if (isset($dateParams[':date_from'])) $countsParams[':c_dfrom'] = $dateParams[':date_from'];
+    if (isset($dateParams[':date_to'])) $countsParams[':c_dto'] = $dateParams[':date_to'];
+}
+$countsWhereSql = implode(" AND ", $countsWhere);
+
 $counts_stmt = $pdo->prepare("
     SELECT 
         COUNT(DISTINCT o.order_id) as total,
@@ -164,36 +238,81 @@ $counts_stmt = $pdo->prepare("
         SUM(CASE WHEN o.status = 'shipped' THEN 1 ELSE 0 END) as shipped,
         SUM(CASE WHEN o.status = 'delivered' THEN 1 ELSE 0 END) as delivered,
         SUM(CASE WHEN o.status = 'cancelled' THEN 1 ELSE 0 END) as cancelled,
-        SUM(CASE WHEN r.due_amount > 0 THEN 1 ELSE 0 END) as due_count,
         SUM(CASE WHEN r.credited_amount > 0 THEN 1 ELSE 0 END) as credit_count,
         SUM(CASE WHEN r.cash_amount > 0 THEN 1 ELSE 0 END) as cash_count
     FROM orders o
     LEFT JOIN receipts r ON o.order_id = r.order_id
-    WHERE o.zone_id = ?
+    WHERE {$countsWhereSql}
 ");
-$counts_stmt->execute([$zone_id]);
+$counts_stmt->execute($countsParams);
 $status_counts = $counts_stmt->fetch(PDO::FETCH_ASSOC) ?: [
     'total' => 0, 'pending' => 0, 'processing' => 0, 'shipped' => 0, 'delivered' => 0, 'cancelled' => 0,
-    'due_count' => 0, 'credit_count' => 0, 'cash_count' => 0
+    'credit_count' => 0, 'cash_count' => 0
 ];
 
-// 3. Zone Orders (strictly filtered by zone_id)
-$filter = $_GET['filter'] ?? 'all';
-$search = trim($_GET['search'] ?? '');
+// Outstanding Due Count (Cumulative, DOES NOT reset daily; includes orders with receipt due OR shop prior dues)
+$dueCountStmt = $pdo->prepare("
+    SELECT COUNT(DISTINCT o.order_id)
+    FROM orders o
+    LEFT JOIN receipts r ON o.order_id = r.order_id
+    WHERE o.zone_id = :zone_id
+      AND o.status != 'cancelled'
+      AND (
+          r.due_amount > 0
+          OR EXISTS (
+              SELECT 1 FROM receipts r2
+              JOIN orders o2 ON r2.order_id = o2.order_id
+              WHERE r2.due_amount > 0
+                AND o2.status != 'cancelled'
+                AND o2.order_id != o.order_id
+                AND (
+                    (TRIM(LOWER(o2.shop_name)) = TRIM(LOWER(o.shop_name)) AND TRIM(o.shop_name) != '')
+                    OR (TRIM(LOWER(o2.customer_name)) = TRIM(LOWER(o.customer_name)) AND TRIM(o.customer_name) != '')
+                    OR (o.phone != '' AND LENGTH(o.phone) >= 7 AND RIGHT(REGEXP_REPLACE(o2.phone, '[^0-9]', ''), 10) = RIGHT(REGEXP_REPLACE(o.phone, '[^0-9]', ''), 10))
+                )
+          )
+      )
+");
+$dueCountStmt->execute([':zone_id' => $zone_id]);
+$status_counts['due_count'] = (int)$dueCountStmt->fetchColumn();
 
+// 3. Zone Orders (strictly filtered by zone_id)
 $where_clauses = ["o.zone_id = :zone_id"];
 $params = [':zone_id' => $zone_id];
 
 // Dynamic filter matching
 if ($filter === 'due') {
-    $where_clauses[] = "r.due_amount > 0";
-} elseif ($filter === 'credit') {
-    $where_clauses[] = "r.credited_amount > 0";
-} elseif ($filter === 'cash') {
-    $where_clauses[] = "r.cash_amount > 0";
-} elseif (in_array($filter, ['pending', 'processing', 'shipped', 'delivered', 'cancelled'])) {
-    $where_clauses[] = "o.status = :status";
-    $params[':status'] = $filter;
+    // Outstanding Due does NOT reset daily - show all active orders that have due or prior due
+    $where_clauses[] = "o.status != 'cancelled' AND (
+        r.due_amount > 0
+        OR EXISTS (
+            SELECT 1 FROM receipts r2
+            JOIN orders o2 ON r2.order_id = o2.order_id
+            WHERE r2.due_amount > 0
+              AND o2.status != 'cancelled'
+              AND o2.order_id != o.order_id
+              AND (
+                  (TRIM(LOWER(o2.shop_name)) = TRIM(LOWER(o.shop_name)) AND TRIM(o.shop_name) != '')
+                  OR (TRIM(LOWER(o2.customer_name)) = TRIM(LOWER(o.customer_name)) AND TRIM(o.customer_name) != '')
+                  OR (o.phone != '' AND LENGTH(o.phone) >= 7 AND RIGHT(REGEXP_REPLACE(o2.phone, '[^0-9]', ''), 10) = RIGHT(REGEXP_REPLACE(o.phone, '[^0-9]', ''), 10))
+              )
+        )
+    )";
+} else {
+    // Other filters respect the active date condition (Daily Reset by default)
+    if (!empty($dateCondition)) {
+        $where_clauses[] = $dateCondition;
+        $params = array_merge($params, $dateParams);
+    }
+
+    if ($filter === 'credit') {
+        $where_clauses[] = "r.credited_amount > 0";
+    } elseif ($filter === 'cash') {
+        $where_clauses[] = "r.cash_amount > 0";
+    } elseif (in_array($filter, ['pending', 'processing', 'shipped', 'delivered', 'cancelled'])) {
+        $where_clauses[] = "o.status = :status";
+        $params[':status'] = $filter;
+    }
 }
 
 if (!empty($search)) {
@@ -249,20 +368,44 @@ $orders_stmt->execute($params);
 $orders = $orders_stmt->fetchAll(PDO::FETCH_ASSOC);
 
 // 4. Zone Summary Metrics
+// Operational metrics filtered by active date range (daily reset)
+$metricsWhere = ["o.zone_id = :m_zid"];
+$metricsParams = [':m_zid' => $zone_id];
+if (!empty($dateCondition)) {
+    $metricsWhere[] = str_replace([':date_from', ':date_to'], [':m_dfrom', ':m_dto'], $dateCondition);
+    if (isset($dateParams[':date_from'])) $metricsParams[':m_dfrom'] = $dateParams[':date_from'];
+    if (isset($dateParams[':date_to'])) $metricsParams[':m_dto'] = $dateParams[':date_to'];
+}
+$metricsWhereSql = implode(" AND ", $metricsWhere);
+
 $metrics_stmt = $pdo->prepare("
     SELECT 
         COUNT(*) as total_orders,
         SUM(CASE WHEN o.status = 'pending' THEN 1 ELSE 0 END) as pending_count,
         SUM(CASE WHEN o.status = 'delivered' THEN 1 ELSE 0 END) as delivered_count,
         COALESCE(SUM(r.cash_amount), 0) as total_cash_collected,
-        COALESCE(SUM(r.credited_amount), 0) as total_credit,
-        COALESCE(SUM(r.due_amount), 0) as total_due
+        COALESCE(SUM(r.credited_amount), 0) as total_credit
     FROM orders o
     LEFT JOIN receipts r ON o.order_id = r.order_id
-    WHERE o.zone_id = ?
+    WHERE {$metricsWhereSql}
 ");
-$metrics_stmt->execute([$zone_id]);
-$metrics = $metrics_stmt->fetch(PDO::FETCH_ASSOC);
+$metrics_stmt->execute($metricsParams);
+$metrics = $metrics_stmt->fetch(PDO::FETCH_ASSOC) ?: [
+    'total_orders' => 0, 'pending_count' => 0, 'delivered_count' => 0,
+    'total_cash_collected' => 0, 'total_credit' => 0
+];
+
+// All-Time Cumulative Outstanding Due (DOES NOT reset daily)
+$dueTotalStmt = $pdo->prepare("
+    SELECT COALESCE(SUM(r.due_amount), 0) as total_due
+    FROM orders o
+    JOIN receipts r ON o.order_id = r.order_id
+    WHERE o.zone_id = :zone_id
+      AND o.status != 'cancelled'
+      AND r.due_amount > 0
+");
+$dueTotalStmt->execute([':zone_id' => $zone_id]);
+$metrics['total_due'] = (float)$dueTotalStmt->fetchColumn();
 
 // 5. Active Vehicles operating in this zone & load remaining
 $zoneVehiclesStmt = $pdo->prepare("
@@ -340,16 +483,17 @@ $allProductsList = $pdo->query("SELECT product_id, COALESCE(product_name, name) 
 // Active damaged items summary for vehicles in this zone
 $zoneDamagedSummary = getZoneVehicleDamagedSummary($pdo, $zone_id);
 
-// Helper function for WhatsApp link
-function buildWhatsAppLink($phone, $shop, $orderNum, $amount, $itemsText = '') {
-    $clean = preg_replace('/[^0-9]/', '', $phone ?? '');
-    if (empty($clean)) return '';
-    if (strlen($clean) === 10) {
-        $clean = '91' . $clean;
+if (!function_exists('buildWhatsAppLink')) {
+    function buildWhatsAppLink($phone, $shop, $orderNum, $amount, $itemsText = '') {
+        $clean = preg_replace('/[^0-9]/', '', $phone ?? '');
+        if (empty($clean)) return '';
+        if (strlen($clean) === 10) {
+            $clean = '91' . $clean;
+        }
+        $itemDesc = !empty($itemsText) ? " [{$itemsText}]" : "";
+        $text = "Hello {$shop}, this is Liyas Water Delivery regarding Order #{$orderNum}{$itemDesc} (Total: {$amount}).";
+        return "https://wa.me/{$clean}?text=" . rawurlencode($text);
     }
-    $itemDesc = !empty($itemsText) ? " [{$itemsText}]" : "";
-    $text = "Hello {$shop}, this is Liyas Water Delivery regarding Order #{$orderNum}{$itemDesc} (Total: {$amount}).";
-    return "https://wa.me/{$clean}?text=" . rawurlencode($text);
 }
 ?>
 <!DOCTYPE html>
@@ -959,6 +1103,208 @@ function buildWhatsAppLink($phone, $shop, $orderNum, $amount, $itemsText = '') {
         .metric-due .metric-val { color: #dc2626; }
         .metric-due .metric-hint { color: #ef4444; }
         .metric-due.active-card { border-color: #ef4444; background: #fef2f2; }
+
+        /* Date Filter & Daily Reset Bar */
+        .date-filter-section {
+            background: #ffffff;
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-lg);
+            padding: 12px 16px;
+            margin-bottom: 16px;
+            box-shadow: var(--shadow-subtle);
+        }
+
+        .date-filter-header {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        @media (min-width: 768px) {
+            .date-filter-header {
+                flex-direction: row;
+                align-items: center;
+                justify-content: space-between;
+            }
+        }
+
+        .date-filter-title-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .date-scope-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-main);
+        }
+
+        .date-scope-indicator i {
+            color: var(--primary);
+            font-size: 18px;
+        }
+
+        .daily-reset-tag {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 11px;
+            font-weight: 700;
+            color: #047857;
+            background: #ecfdf5;
+            border: 1px solid #a7f3d0;
+            padding: 2px 8px;
+            border-radius: 12px;
+        }
+
+        .btn-reset-today {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 11px;
+            font-weight: 700;
+            color: #2563eb;
+            background: #eff6ff;
+            border: 1px solid #bfdbfe;
+            padding: 4px 10px;
+            border-radius: 12px;
+            text-decoration: none;
+            transition: all 0.15s ease;
+        }
+
+        .btn-reset-today:hover {
+            background: #2563eb;
+            color: #ffffff;
+        }
+
+        .date-preset-pills-row {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            overflow-x: auto;
+            padding-bottom: 2px;
+            scrollbar-width: none;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .date-preset-pills-row::-webkit-scrollbar {
+            display: none;
+        }
+
+        .date-preset-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            background: #f8fafc;
+            color: var(--text-sub);
+            border: 1px solid var(--border-color);
+            text-decoration: none;
+            white-space: nowrap;
+            transition: all 0.15s ease;
+            cursor: pointer;
+            font-family: inherit;
+        }
+
+        .date-preset-pill:hover {
+            background: #f1f5f9;
+            color: #0f172a;
+        }
+
+        .date-preset-pill.active {
+            background: #1e293b;
+            color: #ffffff;
+            border-color: #1e293b;
+            box-shadow: 0 2px 5px rgba(15, 23, 42, 0.2);
+        }
+
+        .custom-date-picker-box {
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px dashed var(--border-color);
+        }
+
+        .custom-date-form .custom-date-inputs {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .date-input-group {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-sub);
+        }
+
+        .date-field {
+            padding: 6px 10px;
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-sm);
+            font-size: 12px;
+            font-family: inherit;
+            color: var(--text-main);
+            background: #f8fafc;
+            outline: none;
+        }
+
+        .date-field:focus {
+            border-color: var(--primary);
+            background: #ffffff;
+        }
+
+        .custom-date-actions {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-apply-date {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 6px 14px;
+            background: #2563eb;
+            color: #ffffff;
+            border: none;
+            border-radius: var(--radius-sm);
+            font-size: 12px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: background 0.15s ease;
+        }
+
+        .btn-apply-date:hover {
+            background: #1d4ed8;
+        }
+
+        .btn-cancel-date {
+            display: inline-flex;
+            align-items: center;
+            padding: 6px 10px;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-decoration: none;
+            background: none;
+            border: none;
+            cursor: pointer;
+        }
+
+        .btn-cancel-date:hover {
+            color: #0f172a;
+        }
 
         /* Filter Chips and Search Control Bar */
         .controls-panel {
@@ -2331,157 +2677,225 @@ function buildWhatsAppLink($phone, $shop, $orderNum, $amount, $itemsText = '') {
             <?php endif; ?>
         </div>
 
+        <!-- DATE FILTER & DAILY RESET TOOLBAR -->
+        <section class="date-filter-section" id="dateFilterSection">
+            <div class="date-filter-header">
+                <div class="date-filter-title-row">
+                    <div class="date-scope-indicator">
+                        <i class='bx bx-calendar-event'></i>
+                        <span>Deliveries: <strong><?= htmlspecialchars($dateLabel) ?></strong></span>
+                        <?php if ($date_preset === 'today'): ?>
+                            <span class="daily-reset-tag" title="Operational delivery counts reset daily"><i class='bx bx-refresh'></i> Daily Reset</span>
+                        <?php endif; ?>
+                    </div>
+                    <?php if ($date_preset !== 'today'): ?>
+                        <a href="<?= zone_filter_url($zone_slug, ['date_preset' => 'today', 'date_from' => null, 'date_to' => null]) ?>" class="btn-reset-today" title="Reset view back to Today">
+                            <i class='bx bx-redo'></i> Switch to Today (Daily)
+                        </a>
+                    <?php endif; ?>
+                </div>
+
+                <div class="date-preset-pills-row">
+                    <a href="<?= zone_filter_url($zone_slug, ['date_preset' => 'today', 'date_from' => null, 'date_to' => null]) ?>" class="date-preset-pill <?= ($date_preset === 'today') ? 'active' : '' ?>">
+                        <i class='bx bx-calendar-check'></i> Today
+                    </a>
+                    <a href="<?= zone_filter_url($zone_slug, ['date_preset' => 'yesterday', 'date_from' => null, 'date_to' => null]) ?>" class="date-preset-pill <?= ($date_preset === 'yesterday') ? 'active' : '' ?>">
+                        <i class='bx bx-history'></i> Yesterday
+                    </a>
+                    <a href="<?= zone_filter_url($zone_slug, ['date_preset' => 'month', 'date_from' => null, 'date_to' => null]) ?>" class="date-preset-pill <?= ($date_preset === 'month') ? 'active' : '' ?>">
+                        <i class='bx bx-calendar'></i> This Month
+                    </a>
+                    <a href="<?= zone_filter_url($zone_slug, ['date_preset' => 'all', 'date_from' => null, 'date_to' => null]) ?>" class="date-preset-pill <?= ($date_preset === 'all') ? 'active' : '' ?>">
+                        <i class='bx bx-layer'></i> All Time
+                    </a>
+                    <button type="button" class="date-preset-pill <?= ($date_preset === 'custom') ? 'active' : '' ?>" onclick="toggleCustomDatePicker()" id="customDateToggleBtn">
+                        <i class='bx bx-calendar-edit'></i> Custom Range <?= ($date_preset === 'custom') ? '▼' : '...' ?>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Custom Date Picker Dropdown / Form -->
+            <div class="custom-date-picker-box" id="customDatePickerBox" style="<?= ($date_preset === 'custom') ? 'display: block;' : 'display: none;' ?>">
+                <form action="<?= zone_url($zone_slug) ?>" method="GET" class="custom-date-form">
+                    <input type="hidden" name="date_preset" value="custom">
+                    <?php if (!empty($filter) && $filter !== 'all'): ?>
+                        <input type="hidden" name="filter" value="<?= htmlspecialchars($filter) ?>">
+                    <?php endif; ?>
+                    <?php if (!empty($search)): ?>
+                        <input type="hidden" name="search" value="<?= htmlspecialchars($search) ?>">
+                    <?php endif; ?>
+
+                    <div class="custom-date-inputs">
+                        <div class="date-input-group">
+                            <label for="date_from"><i class='bx bx-calendar'></i> From:</label>
+                            <input type="date" id="date_from" name="date_from" value="<?= htmlspecialchars($date_from ?: date('Y-m-d')) ?>" class="date-field" required>
+                        </div>
+                        <div class="date-input-group">
+                            <label for="date_to"><i class='bx bx-calendar'></i> To:</label>
+                            <input type="date" id="date_to" name="date_to" value="<?= htmlspecialchars($date_to ?: date('Y-m-d')) ?>" class="date-field" required>
+                        </div>
+                        <div class="custom-date-actions">
+                            <button type="submit" class="btn-apply-date">
+                                <i class='bx bx-filter-alt'></i> Apply Date
+                            </button>
+                            <button type="button" onclick="toggleCustomDatePicker()" class="btn-cancel-date">
+                                Cancel
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </section>
+
         <!-- KEY METRICS OVERVIEW (Clickable Quick Filters) -->
-        <!-- Added Total Credited next to Cash Collected + Instant Click-to-Filter -->
-       <!-- METRICS WRAPPER WITH HAMBURGER TOGGLE FOR MOBILE -->
-<div class="metrics-dropdown-wrapper">
-    <!-- Toggle Button visible only on mobile/small screens -->
-    <button type="button" class="btn-metrics-toggle" id="toggleMetricsBtn" aria-expanded="false" aria-controls="metricsGrid">
-        <div class="toggle-btn-left">
-            <i class='bx bx-menu-alt-left toggle-hamburger-icon'></i>
-            <span>Dashboard</span>
+        <!-- METRICS WRAPPER WITH HAMBURGER TOGGLE FOR MOBILE -->
+        <div class="metrics-dropdown-wrapper">
+            <!-- Toggle Button visible only on mobile/small screens -->
+            <button type="button" class="btn-metrics-toggle" id="toggleMetricsBtn" aria-expanded="false" aria-controls="metricsGrid">
+                <div class="toggle-btn-left">
+                    <i class='bx bx-menu-alt-left toggle-hamburger-icon'></i>
+                    <span>Dashboard</span>
+                </div>
+                <i class='bx bx-chevron-down toggle-chevron' id="toggleMetricsChevron"></i>
+            </button>
+
+            <!-- KEY METRICS OVERVIEW (Collapsed by default on mobile) -->
+            <section class="metrics-grid" id="metricsGrid">
+                <a href="<?= zone_filter_url($zone_slug, ['filter' => 'pending']) ?>" class="metric-card metric-pending <?= ($filter === 'pending') ? 'active-card' : '' ?>" title="Click to show pending deliveries">
+                    <div class="metric-card-top">
+                        <span class="metric-label">Pending</span>
+                        <div class="metric-icon-box">
+                            <i class='bx bx-time-five'></i>
+                        </div>
+                    </div>
+                    <div>
+                        <div class="metric-val"><?= (int)$metrics['pending_count'] ?></div>
+                        <div class="metric-hint">
+                            <span>Orders to deliver</span>
+                            <i class='bx bx-chevron-right'></i>
+                        </div>
+                    </div>
+                </a>
+
+                <a href="<?= zone_filter_url($zone_slug, ['filter' => 'delivered']) ?>" class="metric-card metric-delivered <?= ($filter === 'delivered') ? 'active-card' : '' ?>" title="Click to show delivered orders">
+                    <div class="metric-card-top">
+                        <span class="metric-label">Delivered</span>
+                        <div class="metric-icon-box">
+                            <i class='bx bx-check-circle'></i>
+                        </div>
+                    </div>
+                    <div>
+                        <div class="metric-val"><?= (int)$metrics['delivered_count'] ?></div>
+                        <div class="metric-hint">
+                            <span>Delivered orders</span>
+                            <i class='bx bx-chevron-right'></i>
+                        </div>
+                    </div>
+                </a>
+
+                <!-- In-Hand Cash Collected -->
+                <a href="<?= zone_filter_url($zone_slug, ['filter' => 'cash']) ?>" class="metric-card metric-cash <?= ($filter === 'cash') ? 'active-card' : '' ?>" title="Click to show orders with cash collected">
+                    <div class="metric-card-top">
+                        <span class="metric-label">In-Hand Cash</span>
+                        <div class="metric-icon-box">
+                            <i class='bx bx-money'></i>
+                        </div>
+                    </div>
+                    <div>
+                        <div class="metric-val"><?= formatCurrency($metrics['total_cash_collected']) ?></div>
+                        <div class="metric-hint">
+                            <span>Cash collected</span>
+                            <i class='bx bx-chevron-right'></i>
+                        </div>
+                    </div>
+                </a>
+
+                <!-- Total Credited Amount -->
+                <a href="<?= zone_filter_url($zone_slug, ['filter' => 'credit']) ?>" class="metric-card metric-credit <?= ($filter === 'credit') ? 'active-card' : '' ?>" title="Click to show orders with credit">
+                    <div class="metric-card-top">
+                        <span class="metric-label">Total Credited</span>
+                        <div class="metric-icon-box">
+                            <i class='bx bx-credit-card'></i>
+                        </div>
+                    </div>
+                    <div>
+                        <div class="metric-val"><?= formatCurrency($metrics['total_credit']) ?></div>
+                        <div class="metric-hint">
+                            <span>Credit amount</span>
+                            <i class='bx bx-chevron-right'></i>
+                        </div>
+                    </div>
+                </a>
+
+                <!-- Outstanding Due (Cumulative, NOT reset daily) -->
+                <a href="<?= zone_filter_url($zone_slug, ['filter' => 'due']) ?>" class="metric-card metric-due <?= ($filter === 'due') ? 'active-card' : '' ?>" title="Click to show all orders with pending due balance or prior dues">
+                    <div class="metric-card-top">
+                        <span class="metric-label">Outstanding Due</span>
+                        <div class="metric-icon-box">
+                            <i class='bx bx-error-circle'></i>
+                        </div>
+                    </div>
+                    <div>
+                        <div class="metric-val" style="color: <?= ((float)$metrics['total_due'] > 0) ? '#dc2626' : '#64748b' ?>;">
+                            <?= formatCurrency($metrics['total_due']) ?>
+                        </div>
+                        <div class="metric-hint" style="color: <?= ((float)$metrics['total_due'] > 0) ? '#dc2626' : '#64748b' ?>;">
+                            <span>All-Time Outstanding</span>
+                            <i class='bx bx-chevron-right'></i>
+                        </div>
+                    </div>
+                </a>
+            </section>
         </div>
-        <i class='bx bx-chevron-down toggle-chevron' id="toggleMetricsChevron"></i>
-    </button>
 
-    <!-- KEY METRICS OVERVIEW (Collapsed by default on mobile) -->
-    <section class="metrics-grid" id="metricsGrid">
-        <a href="<?= zone_url($zone_slug, '', ['filter' => 'pending']) ?>" class="metric-card metric-pending <?= ($filter === 'pending') ? 'active-card' : '' ?>" title="Click to show pending deliveries">
-            <div class="metric-card-top">
-                <span class="metric-label">Pending</span>
-                <div class="metric-icon-box">
-                    <i class='bx bx-time-five'></i>
-                </div>
-            </div>
-            <div>
-                <div class="metric-val"><?= (int)$metrics['pending_count'] ?></div>
-                <div class="metric-hint">
-                    <span>Orders to deliver</span>
-                    <i class='bx bx-chevron-right'></i>
-                </div>
-            </div>
-        </a>
-
-        <a href="<?= zone_url($zone_slug, '', ['filter' => 'delivered']) ?>" class="metric-card metric-delivered <?= ($filter === 'delivered') ? 'active-card' : '' ?>" title="Click to show delivered orders">
-            <div class="metric-card-top">
-                <span class="metric-label">Delivered</span>
-                <div class="metric-icon-box">
-                    <i class='bx bx-check-circle'></i>
-                </div>
-            </div>
-            <div>
-                <div class="metric-val"><?= (int)$metrics['delivered_count'] ?></div>
-                <div class="metric-hint">
-                    <span>Delivered orders</span>
-                    <i class='bx bx-chevron-right'></i>
-                </div>
-            </div>
-        </a>
-
-        <!-- In-Hand Cash Collected -->
-        <a href="<?= zone_url($zone_slug, '', ['filter' => 'cash']) ?>" class="metric-card metric-cash <?= ($filter === 'cash') ? 'active-card' : '' ?>" title="Click to show orders with cash collected">
-            <div class="metric-card-top">
-                <span class="metric-label">In-Hand Cash</span>
-                <div class="metric-icon-box">
-                    <i class='bx bx-money'></i>
-                </div>
-            </div>
-            <div>
-                <div class="metric-val"><?= formatCurrency($metrics['total_cash_collected']) ?></div>
-                <div class="metric-hint">
-                    <span>Cash collected</span>
-                    <i class='bx bx-chevron-right'></i>
-                </div>
-            </div>
-        </a>
-
-        <!-- Total Credited Amount -->
-        <a href="<?= zone_url($zone_slug, '', ['filter' => 'credit']) ?>" class="metric-card metric-credit <?= ($filter === 'credit') ? 'active-card' : '' ?>" title="Click to show orders with credit">
-            <div class="metric-card-top">
-                <span class="metric-label">Total Credited</span>
-                <div class="metric-icon-box">
-                    <i class='bx bx-credit-card'></i>
-                </div>
-            </div>
-            <div>
-                <div class="metric-val"><?= formatCurrency($metrics['total_credit']) ?></div>
-                <div class="metric-hint">
-                    <span>Credit amount</span>
-                    <i class='bx bx-chevron-right'></i>
-                </div>
-            </div>
-        </a>
-
-        <!-- Outstanding Due -->
-        <a href="<?= zone_url($zone_slug, '', ['filter' => 'due']) ?>" class="metric-card metric-due <?= ($filter === 'due') ? 'active-card' : '' ?>" title="Click to show orders with pending due balance">
-            <div class="metric-card-top">
-                <span class="metric-label">Outstanding Due</span>
-                <div class="metric-icon-box">
-                    <i class='bx bx-error-circle'></i>
-                </div>
-            </div>
-            <div>
-                <div class="metric-val" style="color: <?= ((float)$metrics['total_due'] > 0) ? '#dc2626' : '#64748b' ?>;">
-                    <?= formatCurrency($metrics['total_due']) ?>
-                </div>
-                <div class="metric-hint" style="color: <?= ((float)$metrics['total_due'] > 0) ? '#dc2626' : '#64748b' ?>;">
-                    <span>Pending due balance</span>
-                    <i class='bx bx-chevron-right'></i>
-                </div>
-            </div>
-        </a>
-    </section>
-</div>
-
-        <!-- CONTROLS: FILTER CHIPS & LIVE SEARCH -->
         <!-- CONTROLS: FILTER CHIPS & LIVE SEARCH -->
         <section class="controls-panel">
             <div class="filter-scroll-container">
                 <!-- Keep on Mobile: All Orders -->
-                <a href="<?= zone_url($zone_slug, '', ['filter' => 'all']) ?>" class="filter-pill <?= ($filter === 'all') ? 'active' : '' ?>">
+                <a href="<?= zone_filter_url($zone_slug, ['filter' => 'all']) ?>" class="filter-pill <?= ($filter === 'all') ? 'active' : '' ?>">
                     <span>All Orders</span>
                     <span class="filter-counter"><?= (int)$status_counts['total'] ?></span>
                 </a>
 
-                <!-- Keep on Mobile: Due -->
-                <a href="<?= zone_url($zone_slug, '', ['filter' => 'due']) ?>" class="filter-pill <?= ($filter === 'due') ? 'active' : '' ?>" style="border-color: #fecaca; background: <?= ($filter === 'due') ? '#dc2626' : '#fef2f2' ?>; color: <?= ($filter === 'due') ? '#fff' : '#dc2626' ?>;">
+                <!-- Keep on Mobile: Due (Cumulative, includes pending prior dues) -->
+                <a href="<?= zone_filter_url($zone_slug, ['filter' => 'due']) ?>" class="filter-pill <?= ($filter === 'due') ? 'active' : '' ?>" style="border-color: #fecaca; background: <?= ($filter === 'due') ? '#dc2626' : '#fef2f2' ?>; color: <?= ($filter === 'due') ? '#fff' : '#dc2626' ?>;" title="All-time active dues and prior unpaid dues">
                     <i class='bx bx-error-circle'></i>
                     <span>Due</span>
                     <span class="filter-counter"><?= (int)$status_counts['due_count'] ?></span>
                 </a>
 
                 <!-- Hide on Mobile: Pending -->
-                <a href="<?= zone_url($zone_slug, '', ['filter' => 'pending']) ?>" class="filter-pill hide-mobile <?= ($filter === 'pending') ? 'active' : '' ?>">
+                <a href="<?= zone_filter_url($zone_slug, ['filter' => 'pending']) ?>" class="filter-pill hide-mobile <?= ($filter === 'pending') ? 'active' : '' ?>">
                     <span>Pending</span>
                     <span class="filter-counter"><?= (int)$status_counts['pending'] ?></span>
                 </a>
 
                 <!-- Hide on Mobile: Delivered -->
-                <a href="<?= zone_url($zone_slug, '', ['filter' => 'delivered']) ?>" class="filter-pill hide-mobile <?= ($filter === 'delivered') ? 'active' : '' ?>">
+                <a href="<?= zone_filter_url($zone_slug, ['filter' => 'delivered']) ?>" class="filter-pill hide-mobile <?= ($filter === 'delivered') ? 'active' : '' ?>">
                     <span>Delivered</span>
                     <span class="filter-counter"><?= (int)$status_counts['delivered'] ?></span>
                 </a>
 
                 <!-- Keep on Mobile: Cash Paid -->
-                <a href="<?= zone_url($zone_slug, '', ['filter' => 'cash']) ?>" class="filter-pill <?= ($filter === 'cash') ? 'active' : '' ?>">
+                <a href="<?= zone_filter_url($zone_slug, ['filter' => 'cash']) ?>" class="filter-pill <?= ($filter === 'cash') ? 'active' : '' ?>">
                     <span>Cash Paid</span>
                     <span class="filter-counter"><?= (int)$status_counts['cash_count'] ?></span>
                 </a>
 
                 <!-- Hide on Mobile: Credited -->
-                <a href="<?= zone_url($zone_slug, '', ['filter' => 'credit']) ?>" class="filter-pill hide-mobile <?= ($filter === 'credit') ? 'active' : '' ?>">
+                <a href="<?= zone_filter_url($zone_slug, ['filter' => 'credit']) ?>" class="filter-pill hide-mobile <?= ($filter === 'credit') ? 'active' : '' ?>">
                     <span>Credited</span>
                     <span class="filter-counter"><?= (int)$status_counts['credit_count'] ?></span>
                 </a>
 
                 <!-- Hide on Mobile: Processing -->
-                <a href="<?= zone_url($zone_slug, '', ['filter' => 'processing']) ?>" class="filter-pill hide-mobile <?= ($filter === 'processing') ? 'active' : '' ?>">
+                <a href="<?= zone_filter_url($zone_slug, ['filter' => 'processing']) ?>" class="filter-pill hide-mobile <?= ($filter === 'processing') ? 'active' : '' ?>">
                     <span>Processing</span>
                     <span class="filter-counter"><?= (int)$status_counts['processing'] ?></span>
                 </a>
 
                 <!-- Hide on Mobile: Shipped -->
-                <a href="<?= zone_url($zone_slug, '', ['filter' => 'shipped']) ?>" class="filter-pill hide-mobile <?= ($filter === 'shipped') ? 'active' : '' ?>">
+                <a href="<?= zone_filter_url($zone_slug, ['filter' => 'shipped']) ?>" class="filter-pill hide-mobile <?= ($filter === 'shipped') ? 'active' : '' ?>">
                     <span>Shipped</span>
                     <span class="filter-counter"><?= (int)$status_counts['shipped'] ?></span>
                 </a>
@@ -2500,10 +2914,10 @@ function buildWhatsAppLink($phone, $shop, $orderNum, $amount, $itemsText = '') {
         <?php if ($filter !== 'all'): ?>
             <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; padding: 8px 14px; background: #ffffff; border: 1px solid var(--border-color); border-radius: var(--radius-sm); font-size: 13px;">
                 <span>
-                    Filtered by: <strong><?= ucfirst($filter === 'due' ? 'Outstanding Due' : ($filter === 'credit' ? 'Credited Orders' : ($filter === 'cash' ? 'Cash Collected' : $filter))) ?></strong> 
+                    Filtered by: <strong><?= ucfirst($filter === 'due' ? 'Outstanding Due (Including Prior Dues)' : ($filter === 'credit' ? 'Credited Orders' : ($filter === 'cash' ? 'Cash Collected' : $filter))) ?></strong> 
                     (<?= count($orders) ?> <?= count($orders) === 1 ? 'order' : 'orders' ?> found)
                 </span>
-                <a href="<?= zone_url($zone_slug, '', ['filter' => 'all']) ?>" style="color: #2563eb; text-decoration: none; font-weight: 700; font-size: 12px; display: inline-flex; align-items: center; gap: 4px;">
+                <a href="<?= zone_filter_url($zone_slug, ['filter' => 'all']) ?>" style="color: #2563eb; text-decoration: none; font-weight: 700; font-size: 12px; display: inline-flex; align-items: center; gap: 4px;">
                     <i class='bx bx-x'></i> Clear filter
                 </a>
             </div>
@@ -2516,11 +2930,28 @@ function buildWhatsAppLink($phone, $shop, $orderNum, $amount, $itemsText = '') {
                     <i class='bx bx-box empty-state-icon'></i>
                     <h3 class="empty-state-title">No orders found</h3>
                     <p style="font-size: 14px; margin-bottom: 16px;">
-                        There are currently no orders in <?= htmlspecialchars($zone_name) ?> matching the filter "<strong><?= htmlspecialchars($filter) ?></strong>".
+                        <?php if ($filter === 'all' && $date_preset === 'today'): ?>
+                            There are currently no deliveries placed today (<?= date('d M Y') ?>) in <?= htmlspecialchars($zone_name) ?>.
+                            <?php if (!empty($status_counts['due_count'])): ?>
+                                <br><strong style="color: #dc2626;">There are <?= (int)$status_counts['due_count'] ?> pending unpaid dues to collect across earlier orders.</strong>
+                            <?php endif; ?>
+                        <?php else: ?>
+                            There are currently no orders in <?= htmlspecialchars($zone_name) ?> matching the filter "<strong><?= htmlspecialchars($filter) ?></strong>" for <?= htmlspecialchars($dateLabel) ?>.
+                        <?php endif; ?>
                     </p>
                     <div style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
-                        <a href="<?= zone_url($zone_slug) ?>" class="btn-card-action btn-card-secondary" style="font-size: 13px;">
-                            Clear Filters
+                        <?php if (!empty($status_counts['due_count']) && $filter !== 'due'): ?>
+                            <a href="<?= zone_filter_url($zone_slug, ['filter' => 'due']) ?>" class="btn-card-action" style="font-size: 13px; background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; font-weight: 700;">
+                                <i class='bx bx-error-circle'></i> View Outstanding Dues (<?= (int)$status_counts['due_count'] ?>)
+                            </a>
+                        <?php endif; ?>
+                        <?php if ($date_preset !== 'all'): ?>
+                            <a href="<?= zone_filter_url($zone_slug, ['date_preset' => 'all', 'filter' => 'all']) ?>" class="btn-card-action btn-card-secondary" style="font-size: 13px;">
+                                <i class='bx bx-history'></i> View All Time
+                            </a>
+                        <?php endif; ?>
+                        <a href="<?= zone_filter_url($zone_slug, ['date_preset' => 'today', 'filter' => 'all']) ?>" class="btn-card-action btn-card-secondary" style="font-size: 13px;">
+                            Reset Filters
                         </a>
                         <a href="<?= zone_url($zone_slug, 'generate-receipt') ?>" class="btn-card-action btn-deliver-primary" style="font-size: 13px;">
                             <i class='bx bx-plus-circle'></i> Create Spot Delivery
@@ -2636,28 +3067,43 @@ function buildWhatsAppLink($phone, $shop, $orderNum, $amount, $itemsText = '') {
                             <?php endif; ?>
 
                             <div class="bill-info-tag">
+                                <?php 
+                                $ordReceiptCash = (float)($order['receipt_cash'] ?? 0);
+                                $ordReceiptCredit = (float)($order['receipt_credit'] ?? 0);
+                                $ordReceiptDue = (float)($order['receipt_due'] ?? 0);
+                                $ordPriorDue = (float)($order['prior_due_amount'] ?? 0);
+                                $ordTotalDue = $ordReceiptDue + $ordPriorDue;
+                                ?>
                                 <?php if ($hasReceipt): ?>
                                     <span class="bill-number-badge">
                                         <i class='bx bx-check'></i> Bill: <?= htmlspecialchars($order['bill_number']) ?>
                                     </span>
-                                    <?php if ((float)$order['receipt_cash'] > 0): ?>
-                                        <span style="font-size: 11px; color: #047857; font-weight: 700;">Cash: <?= formatCurrency($order['receipt_cash']) ?></span>
+                                    <?php if ($ordReceiptCash > 0): ?>
+                                        <span style="font-size: 11px; color: #047857; font-weight: 700;">Cash: <?= formatCurrency($ordReceiptCash) ?></span>
                                     <?php endif; ?>
-                                    <?php if ((float)$order['receipt_credit'] > 0): ?>
-                                        <span class="credit-badge">Credit: <?= formatCurrency($order['receipt_credit']) ?></span>
+                                    <?php if ($ordReceiptCredit > 0): ?>
+                                        <span class="credit-badge">Credit: <?= formatCurrency($ordReceiptCredit) ?></span>
                                     <?php endif; ?>
-                                    <?php if ((float)$order['receipt_due'] > 0): ?>
-                                        <span class="due-badge">Due: <?= formatCurrency($order['receipt_due']) ?></span>
+                                    <?php if ($ordTotalDue > 0): ?>
+                                        <span class="due-badge" title="Total Due: <?= formatCurrency($ordTotalDue) ?><?= ($ordPriorDue > 0 && $ordReceiptDue > 0) ? ' (Current Order: ' . formatCurrency($ordReceiptDue) . ' + Prior Unpaid: ' . formatCurrency($ordPriorDue) . ')' : '' ?>">
+                                            <i class='bx bx-error-circle'></i> Due: <?= formatCurrency($ordTotalDue) ?>
+                                            <?php if ($ordPriorDue > 0 && $ordReceiptDue > 0): ?>
+                                                <span style="font-size: 10px; font-weight: 600; opacity: 0.95;">(Incl. Prior: <?= formatCurrency($ordPriorDue) ?>)</span>
+                                            <?php elseif ($ordPriorDue > 0 && $ordReceiptDue <= 0): ?>
+                                                <span style="font-size: 10px; font-weight: 600; opacity: 0.95;">(Prior Due)</span>
+                                            <?php endif; ?>
+                                        </span>
                                     <?php endif; ?>
                                 <?php else: ?>
                                     <span style="color: #d97706; font-size: 11px;">
                                         <i class='bx bx-info-circle'></i> Unbilled
                                     </span>
-                                <?php endif; ?>
-                                <?php if ((float)($order['prior_due_amount'] ?? 0) > 0): ?>
-                                    <span class="due-badge" style="background: #fff1f2; border: 1px solid #fecdd3; color: #e11d48;" title="Pending earlier due balance from previous orders">
-                                        <i class='bx bx-history'></i> Prior Due: <?= formatCurrency($order['prior_due_amount']) ?>
-                                    </span>
+                                    <?php if ($ordTotalDue > 0): ?>
+                                        <span class="due-badge" title="Total Prior Due: <?= formatCurrency($ordTotalDue) ?>">
+                                            <i class='bx bx-error-circle'></i> Due: <?= formatCurrency($ordTotalDue) ?>
+                                            <span style="font-size: 10px; font-weight: 600; opacity: 0.95;">(Prior Due)</span>
+                                        </span>
+                                    <?php endif; ?>
                                 <?php endif; ?>
                             </div>
                         </div>
@@ -2984,6 +3430,19 @@ function buildWhatsAppLink($phone, $shop, $orderNum, $amount, $itemsText = '') {
                         currentVehPanel.innerHTML = newVehPanel.innerHTML;
                     }
 
+                    // 3.2 Update Date Filter Section (while preserving custom date picker open state)
+                    const currentDateFilter = document.getElementById('dateFilterSection');
+                    const newDateFilter = doc.getElementById('dateFilterSection');
+                    if (currentDateFilter && newDateFilter) {
+                        const customBox = document.getElementById('customDatePickerBox');
+                        const isCustomOpen = customBox && customBox.style.display !== 'none';
+                        currentDateFilter.innerHTML = newDateFilter.innerHTML;
+                        if (isCustomOpen) {
+                            const reloadedBox = document.getElementById('customDatePickerBox');
+                            if (reloadedBox) reloadedBox.style.display = 'block';
+                        }
+                    }
+
                     // 4. Update Metrics Grid while preserving mobile accordion open state
                     const currentMetrics = document.getElementById('metricsGrid');
                     const newMetrics = doc.getElementById('metricsGrid');
@@ -3088,6 +3547,18 @@ function buildWhatsAppLink($phone, $shop, $orderNum, $amount, $itemsText = '') {
                         btn.innerHTML = "<i class='bx bx-check-double'></i> Check";
                     }
                 });
+            };
+
+            window.toggleCustomDatePicker = function() {
+                const box = document.getElementById('customDatePickerBox');
+                if (!box) return;
+                if (box.style.display === 'none' || !box.style.display) {
+                    box.style.display = 'block';
+                    const fromInput = document.getElementById('date_from');
+                    if (fromInput) fromInput.focus();
+                } else {
+                    box.style.display = 'none';
+                }
             };
 
             window.openAssignVehicleModalZone = function(orderId, shopName, orderNum) {
