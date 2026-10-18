@@ -335,10 +335,10 @@ if (file_exists($logoPath)) {
         }
 
         .company-logo-img {
-            height: 39px;
+            height: 45px;
             width: auto;
-            border-radius: 6px;
-            object-fit: contain;
+            /* border-radius: 6px; */
+            object-fit: cover;
         }
 
         .company-name {
@@ -355,7 +355,7 @@ if (file_exists($logoPath)) {
 
         .bill-num-display {
             font-family: 'JetBrains Mono', monospace;
-            font-size: 20px;
+            font-size: 18px;
             font-weight: 800;
             color: #d11507;
             letter-spacing: 0.02em;
@@ -740,7 +740,7 @@ if (file_exists($logoPath)) {
             }
 
             .company-logo-img {
-                max-height: 24px !important;
+                max-height: 28px !important;
                 width: auto !important;
                 filter: grayscale(100%) contrast(150%) !important;
                 margin-bottom: 2px !important;
@@ -782,7 +782,7 @@ if (file_exists($logoPath)) {
             }
 
             .bill-num-display {
-                font-size: 15px !important;
+                font-size: 11px !important;
                 font-weight: 800 !important;
                 color: #000000 !important;
                 letter-spacing: 0.03em !important;
@@ -837,7 +837,7 @@ if (file_exists($logoPath)) {
                 background: transparent !important;
                 color: #000000 !important;
                 border: none !important;
-                border-top: 1px dashed #000000 !important;
+                /* border-top: 1px dashed #000000 !important; */
                 border-bottom: 1px dashed #000000 !important;
                 padding: 4px 2px !important;
                 font-size: 9.5px !important;
@@ -863,7 +863,7 @@ if (file_exists($logoPath)) {
                 display: block !important;
                 width: 100% !important;
                 margin-bottom: 6px !important;
-                border-top: 1px dashed #000000 !important;
+                /* border-top: 1px dashed #000000 !important; */
                 padding-top: 4px !important;
             }
 
@@ -967,8 +967,8 @@ if (file_exists($logoPath)) {
         <div class="receipt-header">
             <div class="company-block">
                 <img src="<?= $logoSrc ?>" alt="Liyas Logo" class="company-logo-img">
-                <div class="company-name thermal-brand-title">LIYAS INTERNATIONAL</div>
-                <div class="thermal-subtitle" style="font-size: 11px; color: #64748b;">Packaged Drinking Water &bull; Zone: <?= htmlspecialchars($data['zone_name'] ?: 'Dispatch') ?></div>
+                <!-- <div class="company-name thermal-brand-title">LIYAS INTERNATIONAL</div> -->
+                <div class="thermal-subtitle" style="font-size: 11px; color: #64748b;">Packaged Drinking Water</div>
                 <div class="gstin-tag">GSTIN: <?= htmlspecialchars($gstin) ?></div>
             </div>
 
@@ -991,7 +991,7 @@ if (file_exists($logoPath)) {
                 <?php endif; ?>
             </div>
             <div>
-                <span class="cust-label">Delivery Location &amp; Phone:</span>
+                <span class="cust-label">Delivery Location :</span>
                 <div class="cust-val"><?= $place ?></div>
                 <div style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">
                     Phone: <?= $customerTel ?: 'N/A' ?>
@@ -1003,9 +1003,9 @@ if (file_exists($logoPath)) {
         <table class="receipt-table">
             <thead>
                 <tr>
-                    <th style="text-align: left;">Product Item</th>
+                    <th style="text-align: left;">Product</th>
                     <th style="text-align: center;">Qty (Cases)</th>
-                    <th style="text-align: right;">Rate / Case</th>
+                    <th style="text-align: right;">Rate</th>
                     <th style="text-align: right;">Amount</th>
                 </tr>
             </thead>
@@ -1019,14 +1019,8 @@ if (file_exists($logoPath)) {
                 <tr>
                     <td>
                         <strong><?= $pItemName ?></strong>
-                        <?php if (!empty($item['net_content'])): ?>
-                            <span style="font-size: 12px; color: var(--text-muted); margin-left: 4px;">
-                                (<?= (float)$item['net_content'] ?> <?= htmlspecialchars($item['net_content_unit'] ?? '') ?>)
-                            </span>
-                        <?php endif; ?>
-                        <?php if (!empty($item['is_extra'])): ?>
-                            <span style="font-size: 10px; font-weight: 700; color: #1e40af; background: #eff6ff; border: 1px solid #bfdbfe; padding: 1px 5px; border-radius: 4px; margin-left: 6px;">Extra</span>
-                        <?php endif; ?>
+                 
+                    
                     </td>
                     <td style="text-align: center; font-weight: 700;">
                         <?= $pItemQty ?>
