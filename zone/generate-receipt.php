@@ -1112,7 +1112,7 @@ foreach ($vehicle_products as $pid => $vp) {
             <div class="form-header">
                 <h1 class="form-title">
                     <?php if ($reorder_id > 0 && !empty($reorder_source)): ?>
-                        <i class='bx bx-refresh' style="color: #2563eb;"></i> Place Reorder Delivery Receipt
+                        <i class='bx bx-refresh' style="color: #2563eb; "></i> <span style="font-size: 17px;">Place Reorder Delivery Receipt</span>
                     <?php else: ?>
                         <i class='bx bx-receipt' style="color: #059669;"></i>
                         <?= ($order_id > 0) ? 'Generate Delivery Receipt' : 'New Spot Delivery Receipt' ?>
@@ -1132,7 +1132,7 @@ foreach ($vehicle_products as $pid => $vp) {
                 <input type="hidden" name="vehicle_id" id="assignedVehicleIdInput" value="<?= $assignedVehicleId ?>">
 
                 <?php if ($reorder_id > 0 && !empty($reorder_source)): ?>
-                    <div style="background: #eff6ff; border: 1.5px solid #bfdbfe; border-radius: 12px; padding: 12px 16px; margin-bottom: 18px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
+                    <div style="background: #eff6ff; border: 1.5px solid #bfdbfe; border-radius: 12px; padding: 8px 10px; margin-bottom: 18px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
                         <div style="display: flex; align-items: center; gap: 10px;">
                             <div style="width: 36px; height: 36px; border-radius: 8px; background: #2563eb; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 20px; flex-shrink: 0;">
                                 <i class='bx bx-refresh'></i>
@@ -1141,14 +1141,10 @@ foreach ($vehicle_products as $pid => $vp) {
                                 <div style="font-weight: 800; font-size: 14px; color: #1e40af;">
                                     Reordering from Order #<?= htmlspecialchars($reorder_source['order_number'] ?: ('#' . $reorder_id)) ?>
                                 </div>
-                                <div style="font-size: 12px; color: #3b82f6;">
-                                    Customer &amp; delivery details pre-filled. Select products from vehicle below to place reorder.
-                                </div>
+                              
                             </div>
                         </div>
-                        <span style="background: #dbeafe; color: #1e40af; font-size: 11px; font-weight: 800; padding: 4px 10px; border-radius: 6px; display: inline-flex; align-items: center; gap: 4px;">
-                            🔁 REORDER MODE
-                        </span>
+                    
                     </div>
                 <?php endif; ?>
 
@@ -1225,16 +1221,16 @@ foreach ($vehicle_products as $pid => $vp) {
                 <!-- Add Products from Vehicle Section -->
                 <div class="vehicle-product-selector-box" style="background: #eff6ff; border: 1.5px solid #bfdbfe; border-radius: var(--radius-md); padding: 14px; margin-bottom: 16px;">
                     <div style="font-size: 13px; font-weight: 800; color: #1e40af; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px;">
-                        <span style="display: flex; align-items: center; gap: 6px;">
+                        <span style="display: flex; align-items: center; font-size: 11px; gap: 6px;">
                             <i class='bx bxs-truck' style="font-size: 18px; color: #2563eb;"></i>
                             <?= !empty($vehicle_products) ? 'Add Products from Vehicle' : 'Add Products to Delivery' ?>
                             <?= !empty($assignedVehicle['vehicle_number']) ? ' (' . htmlspecialchars($assignedVehicle['vehicle_number']) . (!empty($assignedVehicle['vehicle_name']) ? ' - ' . htmlspecialchars($assignedVehicle['vehicle_name']) : '') . ')' : '' ?>
                         </span>
-                        <?php if (!empty($vehicle_products)): ?>
+                        <!-- <?php if (!empty($vehicle_products)): ?>
                             <span style="font-size: 11px; font-weight: 700; color: #047857; background: #d1fae5; padding: 2px 8px; border-radius: 6px;">
                                 <?= count($vehicle_products) ?> Products Loaded in Vehicle
                             </span>
-                        <?php endif; ?>
+                        <?php endif; ?> -->
                     </div>
 
                     <?php if (!empty($dropdown_vehicle_products)): ?>
