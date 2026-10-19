@@ -197,7 +197,7 @@ $products = $products_stmt->fetchAll(PDO::FETCH_ASSOC);
                data-litre="<?= htmlspecialchars($product['litre']) ?>"
                data-category="<?= strtolower(htmlspecialchars($product['category_name'])) ?>">
 
-            <div class="size-badge"><?= htmlspecialchars($product['litre']) ?> L</div>
+          
 
             <div class="product-image-wrap">
               <img src="<?= BASE_URL ?>/admin/uploads/products/<?= htmlspecialchars($product['image']) ?>" alt="<?= htmlspecialchars($product['name']) ?>">
