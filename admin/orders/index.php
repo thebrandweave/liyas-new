@@ -303,8 +303,8 @@ function renderOrdersTbodyRows(array $orders, string $status_filter = 'all', str
                             <?= htmlspecialchars($displayOrderNum) ?>
                         </a>
                         <?php if ((int)($order['is_reorder'] ?? 0) === 1): ?>
-                            <span style="background: #eff6ff; color: #2563eb; border: 1px solid #bfdbfe; font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 4px; display: inline-flex; align-items: center; gap: 2px;" title="Reorder">
-                                🔁 Reorder
+                            <span style="background: #eff6ff; color: #2563eb; border: 1px solid #bfdbfe; font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 4px; display: inline-flex; align-items: center; gap: 2px;" title="<?= !empty($order['parent_order_id']) ? 'Reordered from Order #' . $order['parent_order_id'] : 'Reorder' ?>">
+                                🔁 Reorder <?= !empty($order['parent_order_id']) ? '(#' . $order['parent_order_id'] . ')' : '' ?>
                             </span>
                         <?php endif; ?>
                         <?php if (!empty($order['zone_name'])): ?>

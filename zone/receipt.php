@@ -939,6 +939,11 @@ if (file_exists($logoPath)) {
                     <i class='bx bxs-file-pdf' style="font-size: 18px; color: #dc2626;"></i>
                     <span>Download PDF</span>
                 </button>
+
+                <a href="<?= zone_url($zone_slug, 'generate-receipt', ['reorder_id' => $order_id]) ?>" class="btn-ctrl" style="background: #f5f3ff; color: #7c3aed; border-color: #ddd6fe;" title="Place Reorder for this Shop">
+                    <i class='bx bx-refresh' style="font-size: 18px;"></i>
+                    <span>Reorder</span>
+                </a>
             </div>
         </div>
     </div>

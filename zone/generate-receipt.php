@@ -13,11 +13,32 @@ if (isset($_GET['action']) && $_GET['action'] === 'check_prior_due') {
 }
 
 $order_id = isset($_GET['order_id']) ? (int)$_GET['order_id'] : (isset($_POST['order_id']) ? (int)$_POST['order_id'] : 0);
+$reorder_id = isset($_GET['reorder_id']) ? (int)$_GET['reorder_id'] : (isset($_POST['reorder_id']) ? (int)$_POST['reorder_id'] : 0);
+$is_reorder = ($reorder_id > 0 || !empty($_POST['is_reorder'])) ? 1 : 0;
 
-// Load existing order if order_id provided
+// Load existing order or reorder source
 $order = null;
 $order_items = [];
-if ($order_id > 0) {
+$reorder_source = null;
+
+if ($reorder_id > 0) {
+    // Reorder mode: Load source order to prefill all details, but do not set $order
+    // so billing creates a brand new order record in the database
+    $rStmt = $pdo->prepare("
+        SELECT o.*, p.product_name, p.name as fallback_product_name, p.case_price, p.price, p.net_content, p.net_content_unit
+        FROM orders o
+        LEFT JOIN products p ON o.product_id = p.product_id
+        WHERE o.order_id = ?
+    ");
+    $rStmt->execute([$reorder_id]);
+    $reorder_source = $rStmt->fetch(PDO::FETCH_ASSOC);
+
+    if ($reorder_source) {
+        $order = null;
+        $order_id = 0; // Fresh order id to be created on submit
+        $order_items = []; // Do not prefill earlier products for reorder
+    }
+} elseif ($order_id > 0) {
     $stmt = $pdo->prepare("
         SELECT o.*, p.product_name, p.name as fallback_product_name, p.case_price, p.price, p.net_content, p.net_content_unit
         FROM orders o
@@ -60,11 +81,12 @@ foreach ($products as $p) {
     $productsById[(int)$p['product_id']] = $p;
 }
 
-// Fallback: If no order items found for existing order, construct from order row ONLY if valid product_id > 0 and quantity > 0
-if ($order && empty($order_items) && !empty($order['product_id']) && (int)$order['product_id'] > 0 && (int)$order['quantity'] > 0) {
-    $pid = (int)$order['product_id'];
-    $pRate = (float)($order['unit_price'] ?: ($order['case_price'] ?: $order['price']));
-    $pQty = (int)$order['quantity'];
+// Fallback: If no order items found for existing order (not reorder), construct from order row ONLY if valid product_id > 0 and quantity > 0
+$checkOrd = $order;
+if ($checkOrd && empty($order_items) && !empty($checkOrd['product_id']) && (int)$checkOrd['product_id'] > 0 && (int)$checkOrd['quantity'] > 0) {
+    $pid = (int)$checkOrd['product_id'];
+    $pRate = (float)($checkOrd['unit_price'] ?: ($checkOrd['case_price'] ?: $checkOrd['price']));
+    $pQty = (int)$checkOrd['quantity'];
     $order_items[] = [
         'order_item_id' => 0,
         'order_id' => $order_id,
@@ -72,20 +94,23 @@ if ($order && empty($order_items) && !empty($order['product_id']) && (int)$order
         'quantity' => $pQty,
         'price_at_purchase' => $pRate,
         'line_total' => $pQty * $pRate,
-        'name' => $order['product_name'] ?: ($order['fallback_product_name'] ?: 'Liyas Water'),
-        'product_name' => $order['product_name'] ?: ($order['fallback_product_name'] ?: 'Liyas Water'),
-        'net_content' => $order['net_content'],
-        'net_content_unit' => $order['net_content_unit'],
+        'name' => $checkOrd['product_name'] ?: ($checkOrd['fallback_product_name'] ?: 'Liyas Water'),
+        'product_name' => $checkOrd['product_name'] ?: ($checkOrd['fallback_product_name'] ?: 'Liyas Water'),
+        'net_content' => $checkOrd['net_content'],
+        'net_content_unit' => $checkOrd['net_content_unit'],
         'is_extra' => 0
     ];
 }
 
 // Determine assigned vehicle
-$assignedVehicleId = (int)($order['vehicle_id'] ?? 0);
+$assignedVehicleId = (int)($order['vehicle_id'] ?? ($reorder_source['vehicle_id'] ?? 0));
 if ($assignedVehicleId <= 0 && $order_id > 0) {
     $vChk = $pdo->prepare("SELECT vehicle_id FROM vehicle_loads WHERE order_id = ? AND is_active = 1 LIMIT 1");
     $vChk->execute([$order_id]);
     $assignedVehicleId = (int)$vChk->fetchColumn();
+}
+if ($assignedVehicleId <= 0 && $reorder_source && !empty($reorder_source['vehicle_id'])) {
+    $assignedVehicleId = (int)$reorder_source['vehicle_id'];
 }
 if ($assignedVehicleId <= 0) {
     $assignedVehicleId = (int)($_GET['vehicle_id'] ?? ($_POST['vehicle_id'] ?? 0));
@@ -113,9 +138,10 @@ if ($assignedVehicleId > 0) {
     $assignedVehicle = $vStmt->fetch(PDO::FETCH_ASSOC);
 }
 
-// Build list of extra cases loaded in this vehicle
-$vehicle_extra_products = [];
-// 1. Extra cases attached to this order in order_items (is_extra = 1)
+// Build list of products currently loaded in this vehicle
+$vehicle_products = [];
+
+// 1. Extra cases attached to this order in order_items (is_extra = 1) if editing an existing order
 if ($order_id > 0) {
     foreach ($order_items as $oi) {
         if (!empty($oi['is_extra'])) {
@@ -127,8 +153,8 @@ if ($order_id > 0) {
             if ($pPrice <= 0 && $pInfo) {
                 $pPrice = (float)($pInfo['case_price'] ?: $pInfo['price']);
             }
-            if (!isset($vehicle_extra_products[$pid])) {
-                $vehicle_extra_products[$pid] = [
+            if (!isset($vehicle_products[$pid])) {
+                $vehicle_products[$pid] = [
                     'product_id' => $pid,
                     'product_name' => $pName,
                     'available_cases' => 0,
@@ -137,21 +163,22 @@ if ($order_id > 0) {
                     'net_content_unit' => $pInfo['net_content_unit'] ?? ($oi['net_content_unit'] ?? '')
                 ];
             }
-            $vehicle_extra_products[$pid]['available_cases'] += $qty;
+            $vehicle_products[$pid]['available_cases'] += $qty;
         }
     }
 }
 
-// 2. Extra storage cases currently in the assigned vehicle from vehicle_loads
+// 2. Active storage cases currently in the assigned vehicle from vehicle_loads
 if ($assignedVehicleId > 0) {
     $vlStmt = $pdo->prepare("
-        SELECT vl.product_id, vl.cases_loaded, p.product_name, p.name, p.case_price, p.price, p.net_content, p.net_content_unit
+        SELECT vl.product_id, SUM(vl.cases_loaded) as cases_loaded, p.product_name, p.name, p.case_price, p.price, p.net_content, p.net_content_unit
         FROM vehicle_loads vl
         LEFT JOIN products p ON vl.product_id = p.product_id
         WHERE vl.vehicle_id = ? 
           AND vl.is_active = 1 
           AND vl.product_id IS NOT NULL 
           AND (vl.order_id IS NULL OR vl.order_id != ?)
+        GROUP BY vl.product_id
     ");
     $vlStmt->execute([$assignedVehicleId, $order_id]);
     $vlRows = $vlStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
@@ -161,8 +188,8 @@ if ($assignedVehicleId > 0) {
         if ($qty > 0) {
             $pName = $vr['product_name'] ?: ($vr['name'] ?: 'Product #' . $pid);
             $pPrice = (float)($vr['case_price'] ?: $vr['price']);
-            if (!isset($vehicle_extra_products[$pid])) {
-                $vehicle_extra_products[$pid] = [
+            if (!isset($vehicle_products[$pid])) {
+                $vehicle_products[$pid] = [
                     'product_id' => $pid,
                     'product_name' => $pName,
                     'available_cases' => 0,
@@ -171,10 +198,36 @@ if ($assignedVehicleId > 0) {
                     'net_content_unit' => $vr['net_content_unit']
                 ];
             }
-            $vehicle_extra_products[$pid]['available_cases'] += $qty;
+            $vehicle_products[$pid]['available_cases'] += $qty;
+        }
+    }
+
+    // 3. Also check getVehicleLoadedProductsWithCounts to catch all vehicle loads (storage + active trip orders)
+    if (function_exists('getVehicleLoadedProductsWithCounts')) {
+        $vCounts = getVehicleLoadedProductsWithCounts($pdo, $assignedVehicleId);
+        foreach ($vCounts as $pid => $vc) {
+            if ($pid <= 0) continue;
+            $qty = (int)($vc['loaded_cases'] ?? 0);
+            if ($qty > 0) {
+                if (!isset($vehicle_products[$pid])) {
+                    $vehicle_products[$pid] = [
+                        'product_id' => $pid,
+                        'product_name' => $vc['product_name'],
+                        'available_cases' => $qty,
+                        'price' => (float)($vc['case_price'] ?: $vc['price']),
+                        'net_content' => $vc['net_content'] ?? '',
+                        'net_content_unit' => $vc['net_content_unit'] ?? ''
+                    ];
+                } else {
+                    $vehicle_products[$pid]['available_cases'] = max($vehicle_products[$pid]['available_cases'], $qty);
+                }
+            }
         }
     }
 }
+
+// Keep $vehicle_extra_products alias for backwards compatibility
+$vehicle_extra_products = $vehicle_products;
 
 $error = '';
 
@@ -272,7 +325,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['generate_receipt'])) 
     } elseif ($cash_amount < 0 || $credited_amount < 0) {
         $error = "Payment amounts cannot be negative.";
     } else {
-        $discount = $order ? (float)$order['discount'] : 0.00;
+        $discount = $order ? (float)$order['discount'] : (float)($_POST['discount'] ?? ($reorder_source['discount'] ?? 0.00));
         if ($discount > $base_subtotal) {
             $discount = $base_subtotal;
         }
@@ -399,7 +452,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['generate_receipt'])) 
                     $order_number = $order['order_number'] ?: ('#' . $order_id);
 
                 } else {
-                    // New direct spot delivery without prior order
+                    // New direct spot delivery without prior order OR Reorder
                     $assignedVehicleId = (int)($_POST['vehicle_id'] ?? 0);
                     if ($assignedVehicleId <= 0 && !empty($availVehicles)) {
                         $assignedVehicleId = (int)$availVehicles[0]['id'];
@@ -409,15 +462,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['generate_receipt'])) 
                     $nextOrdId = (int)$maxOrdStmt->fetchColumn() + 1;
                     $order_number = '' . str_pad($nextOrdId, 3, '0', STR_PAD_LEFT);
 
+                    $is_reorder_post = ($reorder_id > 0 || !empty($_POST['is_reorder'])) ? 1 : 0;
+                    $parent_order_id_post = ($reorder_id > 0) ? $reorder_id : (!empty($_POST['parent_order_id']) ? (int)$_POST['parent_order_id'] : null);
+
                     $insOrd = $pdo->prepare("
                         INSERT INTO orders (
                             order_number, zone_id, vehicle_id, shop_name, customer_name, location, 
                             phone, product_id, quantity, unit_price, discount, 
-                            total_amount, status, is_zone_read, created_at, updated_at
+                            total_amount, status, is_zone_read, is_reorder, parent_order_id, created_at, updated_at
                         ) VALUES (
                             ?, ?, ?, ?, ?, ?, 
-                            ?, ?, ?, ?, 0, 
-                            ?, 'delivered', 1, NOW(), NOW()
+                            ?, ?, ?, ?, ?, 
+                            ?, 'delivered', 1, ?, ?, NOW(), NOW()
                         )
                     ");
                     $insOrd->execute([
@@ -431,7 +487,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['generate_receipt'])) 
                         $primary_pid,
                         $total_delivered_cases,
                         $primary_rate,
-                        $total_amount
+                        $discount,
+                        $total_amount,
+                        $is_reorder_post,
+                        $parent_order_id_post
                     ]);
                     $order_id = (int)$pdo->lastInsertId();
 
@@ -442,7 +501,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['generate_receipt'])) 
                     ");
                     $deliveredExtraByPid = [];
                     foreach ($processed_items as $pi) {
-                        adjustProductStock($pdo, $pi['product_id'], -$pi['quantity'], "Direct delivery #{$order_number}");
+                        adjustProductStock($pdo, $pi['product_id'], -$pi['quantity'], ($is_reorder_post ? "Reorder #{$order_number}" : "Direct delivery #{$order_number}"));
                         $insOi->execute([$order_id, $pi['product_id'], $pi['quantity'], $pi['rate'], $pi['is_extra']]);
                         $p_id = (int)$pi['product_id'];
                         // In direct spot delivery, delivered products from vehicle storage are tracked for vehicle deduction
@@ -606,11 +665,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['generate_receipt'])) 
 }
 
 // Prefill form values
-$def_shop       = $order['shop_name'] ?? '';
-$def_customer   = $order['customer_name'] ?? '';
-$def_place      = $order['location'] ?? '';
-$def_phone      = $order['phone'] ?? '';
-$def_discount   = (float)($order['discount'] ?? 0);
+$def_shop       = $order['shop_name'] ?? ($reorder_source['shop_name'] ?? '');
+$def_customer   = $order['customer_name'] ?? ($reorder_source['customer_name'] ?? '');
+$def_place      = $order['location'] ?? ($reorder_source['location'] ?? '');
+$def_phone      = $order['phone'] ?? ($reorder_source['phone'] ?? '');
+$def_discount   = ($reorder_id > 0) ? 0.00 : (float)($order['discount'] ?? 0);
 
 // Load prior pending dues for this shop/phone
 $priorDues = getShopPendingDueDetails($pdo, $def_shop ?: $def_customer, $def_phone, $order_id, $zone_id);
@@ -637,7 +696,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['items']) && is_array(
             'price_at_purchase' => $rate,
             'original_rate' => $origRate,
             'is_extra' => $isEx,
-            'max_cases' => (int)($it['max_cases'] ?? ($vehicle_extra_products[$pId]['available_cases'] ?? 999)),
+            'max_cases' => (int)($it['max_cases'] ?? ($vehicle_products[$pId]['available_cases'] ?? 999)),
             'line_total' => $pQty * $rate,
             'name' => $pName,
             'product_name' => $pName,
@@ -647,26 +706,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['items']) && is_array(
         $regular_items[] = $rowItem;
     }
 } else {
-    foreach ($order_items as $it) {
-        $pid = (int)$it['product_id'];
-        $catPrice = isset($productsById[$pid]) ? (float)($productsById[$pid]['case_price'] ?: $productsById[$pid]['price']) : (float)($it['case_price'] ?: $it['price']);
-        $isEx = !empty($it['is_extra']) ? 1 : 0;
-        
-        // On initial load, extra cases loaded in vehicle are available via the vehicle dropdown, NOT pre-added to the customer bill!
-        if ($isEx) {
-            continue;
-        }
+    // For reorders, earlier products should NOT be shown; user selects from vehicle dropdown
+    if ($reorder_id > 0) {
+        $regular_items = [];
+    } else {
+        foreach ($order_items as $it) {
+            $pid = (int)$it['product_id'];
+            $catPrice = isset($productsById[$pid]) ? (float)($productsById[$pid]['case_price'] ?: $productsById[$pid]['price']) : (float)($it['case_price'] ?: $it['price']);
+            $isEx = !empty($it['is_extra']) ? 1 : 0;
+            
+            // On initial load, extra cases loaded in vehicle are available via the vehicle dropdown, NOT pre-added to the customer bill!
+            if ($isEx) {
+                continue;
+            }
 
-        $origRate = isset($it['original_rate']) && (float)$it['original_rate'] > 0 ? (float)$it['original_rate'] : $catPrice;
-        if ($origRate <= 0 && (float)$it['price_at_purchase'] > 0) $origRate = (float)$it['price_at_purchase'];
-        $rate = (float)($it['price_at_purchase'] > 0 ? $it['price_at_purchase'] : $origRate);
-        
-        $rowItem = $it;
-        $rowItem['price_at_purchase'] = $rate;
-        $rowItem['original_rate'] = $origRate;
-        $rowItem['is_extra'] = 0;
-        $rowItem['line_total'] = (int)$it['quantity'] * $rate;
-        $regular_items[] = $rowItem;
+            $origRate = isset($it['original_rate']) && (float)$it['original_rate'] > 0 ? (float)$it['original_rate'] : $catPrice;
+            if ($origRate <= 0 && (float)$it['price_at_purchase'] > 0) $origRate = (float)$it['price_at_purchase'];
+            $rate = (float)($it['price_at_purchase'] > 0 ? $it['price_at_purchase'] : $origRate);
+            
+            $rowItem = $it;
+            $rowItem['price_at_purchase'] = $rate;
+            $rowItem['original_rate'] = $origRate;
+            $rowItem['is_extra'] = 0;
+            $rowItem['line_total'] = (int)$it['quantity'] * $rate;
+            $regular_items[] = $rowItem;
+        }
     }
 }
 ?>
@@ -1052,17 +1116,46 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['items']) && is_array(
         <div class="card-main">
             <div class="form-header">
                 <h1 class="form-title">
-                    <i class='bx bx-receipt' style="color: #059669;"></i>
-                    <?= ($order_id > 0) ? 'Generate Delivery Receipt' : 'New Spot Delivery Receipt' ?>
+                    <?php if ($reorder_id > 0 && !empty($reorder_source)): ?>
+                        <i class='bx bx-refresh' style="color: #2563eb;"></i> Place Reorder Delivery Receipt
+                    <?php else: ?>
+                        <i class='bx bx-receipt' style="color: #059669;"></i>
+                        <?= ($order_id > 0) ? 'Generate Delivery Receipt' : 'New Spot Delivery Receipt' ?>
+                    <?php endif; ?>
                 </h1>
                
             </div>
 
             <form action="<?= zone_url($zone_slug, 'generate-receipt') ?>" method="POST" id="receiptForm">
-                <?php if ($order_id > 0): ?>
+                <?php if ($reorder_id > 0): ?>
+                    <input type="hidden" name="reorder_id" value="<?= $reorder_id ?>">
+                    <input type="hidden" name="is_reorder" value="1">
+                    <input type="hidden" name="parent_order_id" value="<?= $reorder_id ?>">
+                <?php elseif ($order_id > 0): ?>
                     <input type="hidden" name="order_id" value="<?= $order_id ?>">
                 <?php endif; ?>
                 <input type="hidden" name="vehicle_id" id="assignedVehicleIdInput" value="<?= $assignedVehicleId ?>">
+
+                <?php if ($reorder_id > 0 && !empty($reorder_source)): ?>
+                    <div style="background: #eff6ff; border: 1.5px solid #bfdbfe; border-radius: 12px; padding: 12px 16px; margin-bottom: 18px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <div style="width: 36px; height: 36px; border-radius: 8px; background: #2563eb; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 20px; flex-shrink: 0;">
+                                <i class='bx bx-refresh'></i>
+                            </div>
+                            <div>
+                                <div style="font-weight: 800; font-size: 14px; color: #1e40af;">
+                                    Reordering from Order #<?= htmlspecialchars($reorder_source['order_number'] ?: ('#' . $reorder_id)) ?>
+                                </div>
+                                <div style="font-size: 12px; color: #3b82f6;">
+                                    Customer &amp; delivery details pre-filled. Select products from vehicle below to place reorder.
+                                </div>
+                            </div>
+                        </div>
+                        <span style="background: #dbeafe; color: #1e40af; font-size: 11px; font-weight: 800; padding: 4px 10px; border-radius: 6px; display: inline-flex; align-items: center; gap: 4px;">
+                            🔁 REORDER MODE
+                        </span>
+                    </div>
+                <?php endif; ?>
 
                 <!-- Shop & Customer Details -->
                 <div class="section-hdr">
@@ -1091,7 +1184,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['items']) && is_array(
                         <label class="form-label" for="vehicleSelect">
                             <i class='bx bxs-truck' style="color: #2563eb;"></i> Delivering Vehicle
                         </label>
-                        <select name="vehicle_id" id="vehicleSelect" class="form-control" onchange="window.location.href = '<?= zone_url($zone_slug, 'generate-receipt') ?>?vehicle_id=' + this.value;">
+                        <select name="vehicle_id" id="vehicleSelect" class="form-control" onchange="window.location.href = '<?= zone_url($zone_slug, 'generate-receipt') ?>?' + <?= json_encode($reorder_id > 0 ? ('reorder_id=' . $reorder_id . '&') : '') ?> + 'vehicle_id=' + this.value;">
                             <?php foreach ($availVehicles as $av): ?>
                                 <option value="<?= $av['id'] ?>" <?= ($assignedVehicleId === (int)$av['id']) ? 'selected' : '' ?>>
                                     <?= htmlspecialchars($av['vehicle_number']) ?><?= !empty($av['vehicle_name']) ? ' - ' . htmlspecialchars($av['vehicle_name']) : '' ?><?= !empty($av['driver_name']) ? ' (' . htmlspecialchars($av['driver_name']) . ')' : '' ?>
@@ -1134,13 +1227,94 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['items']) && is_array(
                     <i class='bx bx-box' style="color: #059669;"></i> Delivered Items &amp; Quantity (<span id="regularCountDisplay"><?= count($regular_items) ?> <?= count($regular_items) === 1 ? 'Product' : 'Products' ?></span>)
                 </div>
 
+                <!-- Add Products from Vehicle Section -->
+                <div class="vehicle-product-selector-box" style="background: #eff6ff; border: 1.5px solid #bfdbfe; border-radius: var(--radius-md); padding: 14px; margin-bottom: 16px;">
+                    <div style="font-size: 13px; font-weight: 800; color: #1e40af; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px;">
+                        <span style="display: flex; align-items: center; gap: 6px;">
+                            <i class='bx bxs-truck' style="font-size: 18px; color: #2563eb;"></i>
+                            <?= !empty($vehicle_products) ? 'Add Products from Vehicle' : 'Add Products to Delivery' ?>
+                            <?= !empty($assignedVehicle['vehicle_number']) ? ' (' . htmlspecialchars($assignedVehicle['vehicle_number']) . (!empty($assignedVehicle['vehicle_name']) ? ' - ' . htmlspecialchars($assignedVehicle['vehicle_name']) : '') . ')' : '' ?>
+                        </span>
+                        <?php if (!empty($vehicle_products)): ?>
+                            <span style="font-size: 11px; font-weight: 700; color: #047857; background: #d1fae5; padding: 2px 8px; border-radius: 6px;">
+                                <?= count($vehicle_products) ?> Products Loaded in Vehicle
+                            </span>
+                        <?php endif; ?>
+                    </div>
+
+                    <?php if (!empty($vehicle_products)): ?>
+                    <!-- Quick-add pill buttons for fast one-tap selection -->
+                    <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px;">
+                        <?php foreach ($vehicle_products as $vp): ?>
+                            <button type="button" class="btn-quick-prod" onclick="quickAddProduct(<?= $vp['product_id'] ?>)" 
+                                    style="background: #ffffff; border: 1.5px solid #93c5fd; color: #1e40af; padding: 6px 12px; border-radius: 8px; font-size: 12px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; box-shadow: 0 1px 2px rgba(0,0,0,0.04); transition: all 0.15s ease;"
+                                    onmouseover="this.style.background='#eff6ff'; this.style.borderColor='#2563eb';"
+                                    onmouseout="this.style.background='#ffffff'; this.style.borderColor='#93c5fd';"
+                                    title="Click to add <?= htmlspecialchars($vp['product_name']) ?> to delivery">
+                                <i class='bx bx-plus-circle' style="color: #2563eb; font-size: 15px;"></i>
+                                <span><?= htmlspecialchars($vp['product_name']) ?></span>
+                                <span style="background: #dbeafe; color: #1e40af; padding: 1px 6px; border-radius: 4px; font-size: 11px; font-weight: 800;"><?= (int)$vp['available_cases'] ?> cs</span>
+                                <span style="color: #059669; font-weight: 800;">₹<?= number_format($vp['price'], 2) ?></span>
+                            </button>
+                        <?php endforeach; ?>
+                    </div>
+                    <?php endif; ?>
+
+                    <!-- Dropdown + Quantity Input + Add Product Button -->
+                    <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                        <select id="vehicleProductSelect" class="form-control" style="flex: 1; min-width: 220px;">
+                            <option value="">-- Select Product from Vehicle --</option>
+                            <?php if (!empty($vehicle_products)): ?>
+                                <optgroup label="Available in Vehicle (<?= htmlspecialchars($assignedVehicle['vehicle_number'] ?? 'Assigned Vehicle') ?>)">
+                                    <?php foreach ($vehicle_products as $vp): ?>
+                                        <option value="<?= $vp['product_id'] ?>" 
+                                                data-name="<?= htmlspecialchars($vp['product_name']) ?>" 
+                                                data-price="<?= (float)$vp['price'] ?>" 
+                                                data-max="<?= (int)$vp['available_cases'] ?>"
+                                                data-content="<?= htmlspecialchars(($vp['net_content'] ? (float)$vp['net_content'] . ' ' . $vp['net_content_unit'] : '')) ?>"
+                                                data-in-vehicle="1">
+                                            <?= htmlspecialchars($vp['product_name']) ?> (<?= (int)$vp['available_cases'] ?> cs in vehicle) &bull; <?= formatCurrency($vp['price']) ?>/case
+                                        </option>
+                                    <?php endforeach; ?>
+                                </optgroup>
+                            <?php endif; ?>
+
+                            <?php 
+                            $otherProds = array_filter($products, function($p) use ($vehicle_products) {
+                                return !isset($vehicle_products[(int)$p['product_id']]);
+                            });
+                            if (!empty($otherProds)): ?>
+                                <optgroup label="<?= !empty($vehicle_products) ? 'Other Catalog Products' : 'Catalog Products' ?>">
+                                    <?php foreach ($otherProds as $p): ?>
+                                        <option value="<?= $p['product_id'] ?>" 
+                                                data-name="<?= htmlspecialchars($p['product_name'] ?: $p['name']) ?>" 
+                                                data-price="<?= (float)($p['case_price'] ?: $p['price']) ?>" 
+                                                data-max="999"
+                                                data-content="<?= htmlspecialchars(($p['net_content'] ? (float)$p['net_content'] . ' ' . $p['net_content_unit'] : '')) ?>"
+                                                data-in-vehicle="0">
+                                            <?= htmlspecialchars($p['product_name'] ?: $p['name']) ?> &bull; <?= formatCurrency($p['case_price'] ?: $p['price']) ?>/case
+                                        </option>
+                                    <?php endforeach; ?>
+                                </optgroup>
+                            <?php endif; ?>
+                        </select>
+
+                        <div style="display: flex; align-items: center; gap: 6px;">
+                            <input type="number" id="addQtyInput" min="1" value="1" class="form-control" style="width: 70px; text-align: center; font-weight: 700; padding: 10px 4px;" placeholder="Qty" title="Number of cases to add">
+                            <button type="button" onclick="addProductFromDropdown()" style="background: #2563eb; color: #ffffff; border: none; padding: 11px 16px; border-radius: 10px; font-size: 13px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; box-shadow: 0 2px 4px rgba(37,99,235,0.25);">
+                                <i class='bx bx-plus-circle' style="font-size: 17px;"></i> + Add Product
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Interactive Item Delivery Cards -->
                 <div id="itemsContainer" style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 16px;">
                     <div id="noItemsPlaceholder" style="<?= !empty($regular_items) ? 'display: none;' : '' ?> text-align: center; padding: 22px 16px; background: #ffffff; border: 2px dashed #cbd5e1; border-radius: 12px; color: #64748b;">
                         <i class='bx bx-package' style="font-size: 32px; color: #94a3b8; display: block; margin-bottom: 6px;"></i>
-                        <div style="font-weight: 700; font-size: 14px; color: #334155;">No products added to bill yet</div>
+                        <div style="font-weight: 700; font-size: 14px; color: #334155;">No products added to delivery yet</div>
                         <div style="font-size: 12px; color: #64748b; margin-top: 3px;">
-                            <?= !empty($vehicle_extra_products) ? 'Click the extra products loaded in the vehicle below or catalog products to add to this delivery.' : 'Add catalog products below to begin delivery.' ?>
+                            Select products from the vehicle dropdown above to add items to this delivery.
                         </div>
                     </div>
                     <?php foreach ($regular_items as $idx => $it): 
@@ -1154,7 +1328,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['items']) && is_array(
                         }
                         $lineTotal = $qty * $rate;
                         $netContentStr = !empty($it['net_content']) ? (float)$it['net_content'] . ' ' . htmlspecialchars($it['net_content_unit'] ?? '') : '';
-                        $maxCases = (int)($it['max_cases'] ?? ($vehicle_extra_products[$pid]['available_cases'] ?? 999));
+                        $maxCases = (int)($it['max_cases'] ?? ($vehicle_products[$pid]['available_cases'] ?? 999));
                     ?>
                     <div class="item-delivery-card item-regular-card <?= $isExtra ? 'item-vehicle-extra-card' : '' ?>" id="itemRow_<?= $idx ?>" data-idx="<?= $idx ?>" style="<?= $isExtra ? 'border-left: 4px solid #2563eb;' : '' ?>">
                         <input type="hidden" name="items[<?= $idx ?>][product_id]" value="<?= $pid ?>" class="item-pid">
@@ -1169,31 +1343,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['items']) && is_array(
                                 <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
                                     <strong style="font-size: 15px; color: #0f172a;"><?= $pName ?></strong>
                                     <?php if ($isExtra): ?>
-                                        <span style="font-size: 11px; font-weight: 700; color: #1e40af; background: #dbeafe; padding: 2px 7px; border-radius: 4px;">EXTRA VEHICLE CASE</span>
+                                        <span style="font-size: 11px; font-weight: 700; color: #1e40af; background: #dbeafe; padding: 2px 7px; border-radius: 4px;">VEHICLE STOCK</span>
                                     <?php endif; ?>
-                             
                                 </div>
                                 <?php if ($isExtra): ?>
                                     <div style="font-size: 11px; color: #64748b; margin-top: 2px;">
                                         Loaded in vehicle: <strong><?= $maxCases ?> cases</strong>
                                     </div>
                                 <?php endif; ?>
-                               <div style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #475569; margin-top: 4px;">
-    <span>Rate: ₹</span>
-
-    <span style="font-weight: 700; color: #0f172a;">
-        <?= htmlspecialchars(number_format((float)$rate, 2), ENT_QUOTES, 'UTF-8') ?>
-    </span>
-
-    <input
-        type="hidden"
-        name="items[<?= $idx ?>][rate]"
-        value="<?= htmlspecialchars((string)$rate, ENT_QUOTES, 'UTF-8') ?>"
-        class="item-rate"
-    >
-
-    <span>/ case</span>
-</div>
+                                <div style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #475569; margin-top: 4px;">
+                                    <span>Rate: ₹</span>
+                                    <span style="font-weight: 700; color: #0f172a;">
+                                        <?= htmlspecialchars(number_format((float)$rate, 2), ENT_QUOTES, 'UTF-8') ?>
+                                    </span>
+                                    <input type="hidden" name="items[<?= $idx ?>][rate]" value="<?= htmlspecialchars((string)$rate, ENT_QUOTES, 'UTF-8') ?>" class="item-rate">
+                                    <span>/ case</span>
+                                </div>
                                 <div class="item-calc-text" style="font-size: 12px; color: #64748b; font-weight: 600; margin-top: 3px;">
                                     Rate × Qty: ₹<span class="calc-rate-val"><?= number_format($rate, 2) ?></span> × <span class="calc-qty-val"><?= $qty ?></span> cs = ₹<span class="calc-sub-val"><?= number_format($lineTotal, 2) ?></span>
                                 </div>
@@ -1217,77 +1382,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['items']) && is_array(
                     </div>
                     <?php endforeach; ?>
                 </div>
-
-                <?php if (!empty($vehicle_extra_products)): ?>
-                <!-- Add from Extra Cases Loaded in Vehicle Dropdown -->
-                <div style="background: #eff6ff; border: 1.5px solid #bfdbfe; border-radius: var(--radius-md); padding: 4px; margin-bottom: 16px;">
-                  
-
-                    <!-- One-click Quick Add Pills -->
-                    <!-- <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 12px;">
-                        <?php foreach ($vehicle_extra_products as $vep): ?>
-                            <button type="button" class="btn-quick-extra" onclick="quickAddVehicleExtra(<?= $vep['product_id'] ?>)" 
-                                    style="background: #ffffff; border: 1.5px solid #93c5fd; color: #1e40af; padding: 7px 12px; border-radius: 8px; font-size: 12px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); transition: all 0.15s ease;"
-                                    onmouseover="this.style.background='#eff6ff'; this.style.borderColor='#2563eb';"
-                                    onmouseout="this.style.background='#ffffff'; this.style.borderColor='#93c5fd';"
-                                    title="Click to add <?= htmlspecialchars($vep['product_name']) ?> to bill">
-                                <i class='bx bx-plus-circle' style="color: #2563eb; font-size: 16px;"></i>
-                                <span><?= htmlspecialchars($vep['product_name']) ?></span>
-                                <span style="background: #dbeafe; color: #1e40af; padding: 1px 6px; border-radius: 4px; font-size: 11px; font-weight: 800;"><?= (int)$vep['available_cases'] ?> cs</span>
-                                <span style="color: #059669; font-weight: 800;">₹<?= number_format($vep['price'], 2) ?></span>
-                            </button>
-                        <?php endforeach; ?>
-                        <?php if (count($vehicle_extra_products) > 1): ?>
-                            <button type="button" onclick="addAllVehicleExtras()" 
-                                    style="background: #2563eb; border: 1.5px solid #2563eb; color: #ffffff; padding: 7px 12px; border-radius: 8px; font-size: 12px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); transition: all 0.15s ease;"
-                                    onmouseover="this.style.background='#1d4ed8';"
-                                    onmouseout="this.style.background='#2563eb';"
-                                    title="Add all loaded products from vehicle to bill">
-                                <i class='bx bx-check-double' style="font-size: 16px;"></i>
-                                <span>+ Add All to Bill</span>
-                            </button>
-                        <?php endif; ?>
-                    </div> -->
-
-                    <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
-                        <select id="extraVehicleSelect" class="form-control" style="flex: 1; min-width: 200px;">
-                            <option value="">- Select extra cases from vehicle -</option>
-                            <?php foreach ($vehicle_extra_products as $vep): ?>
-                                <option value="<?= $vep['product_id'] ?>" 
-                                        data-name="<?= htmlspecialchars($vep['product_name']) ?>" 
-                                        data-price="<?= (float)$vep['price'] ?>" 
-                                        data-max="<?= (int)$vep['available_cases'] ?>"
-                                        data-content="<?= htmlspecialchars(($vep['net_content'] ? (float)$vep['net_content'] . ' ' . $vep['net_content_unit'] : '')) ?>">
-                                    <?= htmlspecialchars($vep['product_name']) ?> (<?= (int)$vep['available_cases'] ?> cs in vehicle) &bull; <?= formatCurrency($vep['price']) ?>/case
-                                </option>
-                            <?php endforeach; ?>
-                        </select>
-                        <button type="button" onclick="addExtraCaseFromVehicle()" style="background: #2563eb; color: #ffffff; border: none; padding: 9px 16px; border-radius: 10px; font-size: 13px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;">
-                            <i class='bx bx-plus-circle'></i> Add Extra to Bill
-                        </button>
-                    </div>
-                </div>
-                <?php endif; ?>
-
-                <!-- Add Regular Product Row -->
-                <!-- <div style="background: #f8fafc; border: 1.5px dashed #cbd5e1; border-radius: var(--radius-md); padding: 14px; margin-bottom: 20px;">
-                    <div style="font-size: 12px; font-weight: 700; color: #475569; margin-bottom: 6px; display: flex; align-items: center; gap: 4px;">
-                        <i class='bx bx-plus-circle' style="color: #475569;"></i> Add another catalog product to bill
-                    </div>
-                    <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
-                        <select id="addProductSelect" class="form-control" style="flex: 1; min-width: 200px;">
-                            <option value="">-- Add another product to bill --</option>
-                            <?php foreach ($products as $p): ?>
-                                <option value="<?= $p['product_id'] ?>" data-name="<?= htmlspecialchars($p['product_name'] ?: $p['name']) ?>" data-price="<?= (float)($p['case_price'] ?: $p['price']) ?>" data-content="<?= htmlspecialchars(($p['net_content'] ? (float)$p['net_content'] . ' ' . $p['net_content_unit'] : '')) ?>">
-                                    <?= htmlspecialchars($p['product_name'] ?: $p['name']) ?> &bull; <?= formatCurrency($p['case_price'] ?: $p['price']) ?>/case
-                                </option>
-                            <?php endforeach; ?>
-                        </select>
-                        <button type="button" onclick="addNewProductItem()" style="background: #475569; color: #ffffff; border: none; padding: 9px 16px; border-radius: 10px; font-size: 13px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;">
-                            <i class='bx bx-plus'></i> Add to Bill
-                        </button>
-                    </div>
-                </div> -->
 
                 <!-- Earlier Due Balance Section -->
                 <div id="priorDueSection" data-total-due="<?= (float)($priorDues['total_due'] ?? 0) ?>" style="<?= !empty($priorDues['has_due']) ? '' : 'display: none;' ?> background: #fffaf0; border: 2px solid #fecaca; border-radius: var(--radius-md); padding: 16px; margin-bottom: 20px;">
@@ -1485,7 +1579,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['items']) && is_array(
                 <div class="mobile-sticky-submit">
                     <button type="submit" name="generate_receipt" id="submitBtn" class="btn-submit-bill">
                         <i class='bx bx-check-circle' style="font-size: 20px;"></i>
-                        <span>Generate Bill &amp; Complete Delivery</span>
+                        <span><?= ($reorder_id > 0) ? 'Generate Reorder Bill &amp; Complete Delivery' : 'Generate Bill &amp; Complete Delivery' ?></span>
                     </button>
                 </div>
             </form>
@@ -1556,86 +1650,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['items']) && is_array(
             recalculate();
         }
 
-        function addNewProductItem() {
-            const sel = document.getElementById('addProductSelect');
-            const opt = sel.options[sel.selectedIndex];
-            if (!sel.value || !opt) return;
-
-            const pid = sel.value;
-            const name = opt.getAttribute('data-name');
-            const price = parseFloat(opt.getAttribute('data-price')) || 0;
-            const content = opt.getAttribute('data-content') || '';
-
-            // Check if product already exists in regular list, if so increment qty
-            const existingCard = itemsContainer.querySelector(`.item-pid[value="${pid}"]`);
-            if (existingCard) {
-                const card = existingCard.closest('.item-delivery-card');
-                const qtyInput = card.querySelector('.item-qty-input');
-                qtyInput.value = (parseInt(qtyInput.value) || 0) + 1;
-                sel.value = '';
-                recalculate();
+        function addProductFromDropdown() {
+            const sel = document.getElementById('vehicleProductSelect');
+            if (!sel || !sel.value) {
+                alert('Please select a product from the dropdown.');
                 return;
             }
-
-            const idx = nextItemIdx++;
-            const contentHtml = content ? `<span style="font-size: 11px; color: #64748b; background: #f1f5f9; padding: 2px 6px; border-radius: 4px; margin-left: 6px;">${content}</span>` : '';
-
-            const div = document.createElement('div');
-            div.className = 'item-delivery-card item-regular-card';
-            div.id = 'itemRow_' + idx;
-            div.setAttribute('data-idx', idx);
-            div.innerHTML = `
-                <input type="hidden" name="items[${idx}][product_id]" value="${pid}" class="item-pid">
-                <input type="hidden" name="items[${idx}][original_rate]" value="${price}" class="item-original-rate">
-                <input type="hidden" name="items[${idx}][is_extra]" value="0" class="item-is-extra">
-                
-                <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; margin-bottom: 10px;">
-                    <div>
-                        <strong style="font-size: 15px; color: #0f172a;">${name}</strong>
-                        ${contentHtml}
-                        <div style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #475569; margin-top: 4px;">
-                            <span>Rate: ₹</span>
-                            <input type="text" step="0.01" min="0" name="items[${idx}][rate]" value="${price.toFixed(2)}" class="form-control item-rate" style="width: 85px; height: 28px; padding: 2px 6px; font-size: 12px; font-weight: 700; border: 1.5px solid #cbd5e1; border-radius: 6px; background: #ffffff;" oninput="recalculate()" title="Edit rate if needed">
-                            <span> / case</span>
-                        </div>
-                        <div class="item-calc-text" style="font-size: 12px; color: #64748b; font-weight: 600; margin-top: 3px;">
-                            Rate × Qty: ₹<span class="calc-rate-val">${price.toFixed(2)}</span> × <span class="calc-qty-val">1</span> cs = ₹<span class="calc-sub-val">${price.toFixed(2)}</span>
-                        </div>
-                    </div>
-                    <div style="text-align: right;">
-                        <div class="item-line-total" style="font-size: 16px; font-weight: 800; color: #0f172a;">₹${price.toFixed(2)}</div>
-                        <button type="button" onclick="removeItemRow(this)" style="background: none; border: none; color: #dc2626; font-size: 12px; cursor: pointer; padding: 3px 0; display: inline-flex; align-items: center; gap: 2px;" title="Remove this product">
-                            <i class='bx bx-trash'></i> Remove
-                        </button>
-                    </div>
-                </div>
-
-                <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; background: #f8fafc; padding: 8px 12px; border-radius: 8px;">
-                    <span style="font-size: 13px; font-weight: 600; color: #475569;">Delivered Cases:</span>
-                    <div class="stepper-box">
-                        <button type="button" class="btn-stepper" onclick="stepItemQty(this, -1)" aria-label="Decrease">&minus;</button>
-                        <input type="text" min="0" name="items[${idx}][quantity]" value="1" class="form-control stepper-input item-qty-input" required oninput="recalculate()">
-                        <button type="button" class="btn-stepper" onclick="stepItemQty(this, 1)" aria-label="Increase">&plus;</button>
-                    </div>
-                </div>
-            `;
-
-            itemsContainer.appendChild(div);
-            sel.value = '';
-            recalculate();
-        }
-
-        function addExtraCaseFromVehicle() {
-            const sel = document.getElementById('extraVehicleSelect');
-            if (!sel || !sel.value) return;
             const opt = sel.options[sel.selectedIndex];
             if (!opt) return;
+
+            const qtyInputEl = document.getElementById('addQtyInput');
+            const addQty = Math.max(1, parseInt(qtyInputEl ? qtyInputEl.value : 1) || 1);
 
             const pid = sel.value;
             const name = opt.getAttribute('data-name');
             const price = parseFloat(opt.getAttribute('data-price')) || 0;
             const maxCases = parseInt(opt.getAttribute('data-max')) || 999;
             const content = opt.getAttribute('data-content') || '';
+            const inVehicle = opt.getAttribute('data-in-vehicle') === '1';
 
             // Check if product already exists in items list
             const existingCard = itemsContainer.querySelector(`.item-pid[value="${pid}"]`);
@@ -1643,62 +1675,69 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['items']) && is_array(
                 const card = existingCard.closest('.item-delivery-card');
                 const qtyInput = card.querySelector('.item-qty-input');
                 let currentQty = parseInt(qtyInput.value) || 0;
-                if (currentQty >= maxCases) {
-                    alert(`Only ${maxCases} cases of ${name} are loaded in this vehicle.`);
-                    return;
+                let newQty = currentQty + addQty;
+                if (inVehicle && newQty > maxCases) {
+                    alert(`Only ${maxCases} cases of ${name} are loaded in this vehicle (currently added: ${currentQty}).`);
+                    newQty = maxCases;
                 }
-                qtyInput.value = currentQty + 1;
+                qtyInput.value = newQty;
                 sel.value = '';
+                if (qtyInputEl) qtyInputEl.value = '1';
                 recalculate();
                 return;
+            }
+
+            if (inVehicle && addQty > maxCases) {
+                alert(`Notice: Only ${maxCases} cases of ${name} are loaded in this vehicle.`);
             }
 
             const idx = nextItemIdx++;
             const contentHtml = content ? `<span style="font-size: 11px; color: #64748b; background: #f1f5f9; padding: 2px 6px; border-radius: 4px; margin-left: 6px;">${content}</span>` : '';
 
             const div = document.createElement('div');
-            div.className = 'item-delivery-card item-regular-card item-vehicle-extra-card';
+            div.className = 'item-delivery-card item-regular-card' + (inVehicle ? ' item-vehicle-extra-card' : '');
             div.id = 'itemRow_' + idx;
             div.setAttribute('data-idx', idx);
-            div.style.borderLeft = '4px solid #2563eb';
+            if (inVehicle) {
+                div.style.borderLeft = '4px solid #2563eb';
+            }
             div.innerHTML = `
                 <input type="hidden" name="items[${idx}][product_id]" value="${pid}" class="item-pid">
                 <input type="hidden" name="items[${idx}][original_rate]" value="${price}" class="item-original-rate">
-                <input type="hidden" name="items[${idx}][is_extra]" value="1" class="item-is-extra">
+                <input type="hidden" name="items[${idx}][is_extra]" value="${inVehicle ? '1' : '0'}" class="item-is-extra">
                 <input type="hidden" name="items[${idx}][max_cases]" value="${maxCases}" class="item-max-cases">
                 
                 <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; margin-bottom: 10px;">
                     <div>
                         <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
                             <strong style="font-size: 15px; color: #0f172a;">${name}</strong>
-                            <span style="font-size: 11px; font-weight: 700; color: #1e40af; background: #dbeafe; padding: 2px 7px; border-radius: 4px;">EXTRA VEHICLE CASE</span>
+                            ${inVehicle ? `<span style="font-size: 11px; font-weight: 700; color: #1e40af; background: #dbeafe; padding: 2px 7px; border-radius: 4px;">VEHICLE STOCK</span>` : ''}
                             ${contentHtml}
                         </div>
-                        <div style="font-size: 11px; color: #64748b; margin-top: 2px;">
-                            Loaded in vehicle: <strong>${maxCases} cases</strong>
-                        </div>
+                        ${inVehicle ? `<div style="font-size: 11px; color: #64748b; margin-top: 2px;">Loaded in vehicle: <strong>${maxCases} cases</strong></div>` : ''}
                         <div style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #475569; margin-top: 4px;">
                             <span>Rate: ₹</span>
-                            <input type="text" step="0.01" min="0" name="items[${idx}][rate]" value="${price.toFixed(2)}" class="form-control item-rate" style="width: 85px; height: 28px; padding: 2px 6px; font-size: 12px; font-weight: 700; border: 1.5px solid #cbd5e1; border-radius: 6px; background: #ffffff;" oninput="recalculate()" title="Edit rate if needed">
+                            <span style="font-weight: 700; color: #0f172a;">${price.toFixed(2)}</span>
+                            <input type="hidden" name="items[${idx}][rate]" value="${price.toFixed(2)}" class="item-rate">
                             <span>/ case</span>
                         </div>
                         <div class="item-calc-text" style="font-size: 12px; color: #64748b; font-weight: 600; margin-top: 3px;">
-                            Rate × Qty: ₹<span class="calc-rate-val">${price.toFixed(2)}</span> × <span class="calc-qty-val">1</span> cs = ₹<span class="calc-sub-val">${price.toFixed(2)}</span>
+                            Rate × Qty: ₹<span class="calc-rate-val">${price.toFixed(2)}</span> × <span class="calc-qty-val">${addQty}</span> cs = ₹<span class="calc-sub-val">${(price * addQty).toFixed(2)}</span>
                         </div>
                     </div>
                     <div style="text-align: right;">
-                        <div class="item-line-total" style="font-size: 16px; font-weight: 800; color: #0f172a;">₹${price.toFixed(2)}</div>
-                        <button type="button" onclick="removeItemRow(this)" style="background: none; border: none; color: #dc2626; font-size: 12px; cursor: pointer; padding: 3px 0; display: inline-flex; align-items: center; gap: 2px;" title="Remove this extra product">
+                        <div class="item-line-total" style="font-size: 16px; font-weight: 800; color: #0f172a;">₹${(price * addQty).toFixed(2)}</div>
+                        <button type="button" onclick="removeItemRow(this)" style="background: none; border: none; color: #dc2626; font-size: 12px; cursor: pointer; padding: 3px 0; display: inline-flex; align-items: center; gap: 2px;" title="Remove this product from delivery">
                             <i class='bx bx-trash'></i> Remove
                         </button>
                     </div>
                 </div>
 
                 <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; background: #f8fafc; padding: 8px 12px; border-radius: 8px;">
-                    <span style="font-size: 13px; font-weight: 600; color: #475569;">Delivered Cases:</span>
+                    <span style="font-size: 11px; font-weight: 600; color: #475569;">Delivered Cases:</span>
                     <div class="stepper-box">
                         <button type="button" class="btn-stepper" onclick="stepItemQty(this, -1)" aria-label="Decrease">&minus;</button>
-                        <input type="text" min="0" max="${maxCases}" name="items[${idx}][quantity]" value="1" class="form-control stepper-input item-qty-input" required oninput="checkMaxCases(this); recalculate()">
+                        <input type="text" min="0" ${inVehicle ? `max="${maxCases}"` : ''} name="items[${idx}][quantity]" value="${addQty}" class="form-control stepper-input item-qty-input" required oninput="checkMaxCases(this); recalculate()">
                         <button type="button" class="btn-stepper" onclick="stepItemQty(this, 1)" aria-label="Increase">&plus;</button>
                     </div>
                 </div>
@@ -1706,23 +1745,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['items']) && is_array(
 
             itemsContainer.appendChild(div);
             sel.value = '';
+            if (qtyInputEl) qtyInputEl.value = '1';
             recalculate();
         }
 
-        function quickAddVehicleExtra(pid) {
-            const sel = document.getElementById('extraVehicleSelect');
+        function quickAddProduct(pid) {
+            const sel = document.getElementById('vehicleProductSelect');
             if (!sel) return;
             sel.value = pid;
-            addExtraCaseFromVehicle();
+            addProductFromDropdown();
+        }
+
+        // Backward compatibility helpers
+        function addNewProductItem() {
+            addProductFromDropdown();
+        }
+
+        function addExtraCaseFromVehicle() {
+            addProductFromDropdown();
+        }
+
+        function quickAddVehicleExtra(pid) {
+            quickAddProduct(pid);
         }
 
         function addAllVehicleExtras() {
-            const sel = document.getElementById('extraVehicleSelect');
+            const sel = document.getElementById('vehicleProductSelect');
             if (!sel) return;
-            const options = Array.from(sel.options).filter(o => o.value !== '');
+            const options = Array.from(sel.options).filter(o => o.value !== '' && o.dataset.inVehicle === '1');
             options.forEach(opt => {
                 sel.value = opt.value;
-                addExtraCaseFromVehicle();
+                addProductFromDropdown();
             });
         }
 

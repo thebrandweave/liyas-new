@@ -325,7 +325,7 @@ $paymentHistory = getOrderPaymentHistory($pdo, $order_id);
                     <span>Order <?= htmlspecialchars($displayOrderNum) ?></span>
                     <?php if ((int)($order['is_reorder'] ?? 0) === 1): ?>
                         <span style="background: #eff6ff; color: #2563eb; border: 1px solid #bfdbfe; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 4px; margin-left: 6px;">
-                            🔁 Reorder
+                            🔁 Reorder <?= !empty($order['parent_order_id']) ? '(from Order <a href="view.php?id=' . (int)$order['parent_order_id'] . '" style="color:#1d4ed8; font-weight:800; text-decoration:underline;">#' . (int)$order['parent_order_id'] . '</a>)' : '' ?>
                         </span>
                     <?php endif; ?>
                 </div>

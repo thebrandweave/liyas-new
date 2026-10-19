@@ -2155,6 +2155,18 @@ if (!function_exists('buildWhatsAppLink')) {
             color: #2563eb;
             border: 1px solid #bfdbfe;
         }
+
+        .btn-card-reorder {
+            background: #f5f3ff;
+            color: #7c3aed;
+            border: 1px solid #ddd6fe;
+        }
+
+        .btn-card-reorder:hover, .btn-card-reorder:active {
+            background: #ede9fe;
+            color: #6d28d9;
+            transform: translateY(-1px);
+        }
 /* Metrics Container & Toggle Button */
 .metrics-dropdown-wrapper {
     margin-bottom: 20px;
@@ -2307,29 +2319,38 @@ if (!function_exists('buildWhatsAppLink')) {
         width: 100%;
     }
 
-    /* Keep the 3 buttons in one line */
+    /* Keep the action buttons well-spaced */
     .action-btn-group {
         display: flex;
         flex-direction: row;
         gap: 6px;
         width: 100%;
+        flex-wrap: wrap;
     }
 
-    /* Distribute space evenly across the 3 buttons */
+    /* Distribute space evenly across the buttons */
     .action-btn-group .btn-card-action {
-        flex: 1 1 0;
-        min-width: 0;
+        flex: 1 1 calc(25% - 6px);
+        min-width: 65px;
         display: inline-flex;
         align-items: center;
         justify-content: center;
         padding: 8px 4px;
-        font-size: 13px;
+        font-size: 12.5px;
         white-space: nowrap;
         text-align: center;
     }
 
     .action-btn-group .btn-card-action i {
         margin-right: 4px;
+    }
+
+    @media (max-width: 480px) {
+        .action-btn-group .btn-card-action {
+            flex: 1 1 calc(50% - 6px);
+            padding: 8px 6px;
+            font-size: 12px;
+        }
     }
 
     /* Make the dropdown take full width underneath */
@@ -3042,6 +3063,11 @@ if (!function_exists('buildWhatsAppLink')) {
                                     <i class='bx bx-copy-alt' style="font-size: 12px;"></i>
                                     <?= htmlspecialchars($ordNum) ?>
                                 </span>
+                                <?php if (!empty($order['is_reorder'])): ?>
+                                    <span style="background: #eff6ff; color: #2563eb; border: 1px solid #bfdbfe; font-size: 10px; font-weight: 800; padding: 2px 7px; border-radius: 6px; letter-spacing: 0.02em;" title="<?= !empty($order['parent_order_id']) ? 'Reordered from Order #' . $order['parent_order_id'] : 'Reorder' ?>">
+                                        🔁 REORDER
+                                    </span>
+                                <?php endif; ?>
                                 <?php if (!empty($order['assigned_vehicle_number'])): 
                                     $ovId = (int)($order['resolved_vehicle_id'] ?? ($order['vehicle_id'] ?? 0));
                                     $ovLoad = $vehiclesLoadMap[$ovId] ?? null;
@@ -3166,28 +3192,21 @@ if (!function_exists('buildWhatsAppLink')) {
 
                     <!-- Touch Actions Bar -->
                  <div class="order-actions-bar">
-    <!-- Row of 3 buttons: (Bill/Receipt), Details, and Discount -->
+    <!-- Row of action buttons: (Bill/Receipt), Details, Discount, and Reorder -->
     <div class="action-btn-group">
         <?php if (!$hasReceipt): ?>
-            <?php if (empty($order['assigned_vehicle_number'])): ?>
-                <!-- <button type="button" class="btn-card-action btn-card-unassigned-veh" onclick="openAssignVehicleModalZone(<?= $ordId ?>, <?= htmlspecialchars(json_encode($shop), ENT_QUOTES, 'UTF-8') ?>, <?= htmlspecialchars(json_encode((string)$ordNum), ENT_QUOTES, 'UTF-8') ?>)" style="background: #fef2f2; color: #b91c1c; border-color: #fecaca; font-weight: 700;" title="Assign Vehicle to Bill">
-                    <i class='bx bxs-truck' style="font-size: 18px;"></i> 
-                    <span>Assign Vehicle</span>
-                </button> -->
-            <?php else: ?>
-                <a href="<?= zone_url($zone_slug, 'generate-receipt', ['order_id' => $ordId]) ?>" class="btn-card-action btn-deliver-primary">
-                    <i class='bx bx-receipt' style="font-size: 18px;"></i> 
-                    <span><?= $hasReceipt ? 'View' : 'Bill' ?></span>
-                </a>
-            <?php endif; ?>
+            <a href="<?= zone_url($zone_slug, 'generate-receipt', ['order_id' => $ordId]) ?>" class="btn-card-action btn-deliver-primary" title="Deliver &amp; Bill Order">
+                <i class='bx bx-receipt' style="font-size: 18px;"></i> 
+                <span>Bill</span>
+            </a>
         <?php else: ?>
-            <a href="<?= zone_url($zone_slug, 'receipt', ['id' => $ordId]) ?>" target="_blank" class="btn-card-action btn-receipt-view">
+            <a href="<?= zone_url($zone_slug, 'receipt', ['id' => $ordId]) ?>" target="_blank" class="btn-card-action btn-receipt-view" title="View Delivery Receipt">
                 <i class='bx bx-printer' style="font-size: 17px;"></i> 
                 <span>Receipt</span>
             </a>
         <?php endif; ?>
 
-        <a href="<?= zone_url($zone_slug, 'order', ['id' => $ordId]) ?>" class="btn-card-action btn-card-secondary">
+        <a href="<?= zone_url($zone_slug, 'order', ['id' => $ordId]) ?>" class="btn-card-action btn-card-secondary" title="View Order Details">
             <i class='bx bx-show'></i> 
             <span>Details</span>
         </a>
@@ -3195,6 +3214,11 @@ if (!function_exists('buildWhatsAppLink')) {
         <a href="<?= zone_url($zone_slug, 'edit-order', ['id' => $ordId]) ?>" class="btn-card-action btn-discount-tag" title="Edit Discount">
             <i class='bx bx-purchase-tag'></i> 
             <span>Discount</span>
+        </a>
+
+        <a href="<?= zone_url($zone_slug, 'generate-receipt', ['reorder_id' => $ordId]) ?>" class="btn-card-action btn-card-reorder" title="Place Reorder for <?= htmlspecialchars($shop) ?>">
+            <i class='bx bx-refresh'></i> 
+            <span>Reorder</span>
         </a>
     </div>
 

@@ -597,6 +597,11 @@ $stepLevel = $statusSteps[$currentStatus] ?? 1;
                     <h1 class="shop-heading"><?= htmlspecialchars($shopName) ?></h1>
                     <div class="order-subheading">
                         <span style="color: #2563eb; font-weight: 700;"><?= htmlspecialchars($displayOrderNum) ?></span>
+                        <?php if (!empty($order['is_reorder'])): ?>
+                            <span style="background: #eff6ff; color: #2563eb; border: 1px solid #bfdbfe; font-size: 10px; font-weight: 800; padding: 2px 7px; border-radius: 6px; letter-spacing: 0.02em;">
+                                🔁 REORDER <?= !empty($order['parent_order_id']) ? '(#' . $order['parent_order_id'] . ')' : '' ?>
+                            </span>
+                        <?php endif; ?>
                         <span>&bull;</span>
                         <span><?= date('d M Y, h:i A', strtotime($order['created_at'])) ?></span>
                     </div>
@@ -916,6 +921,9 @@ $stepLevel = $statusSteps[$currentStatus] ?? 1;
                                 <i class='bx bxl-whatsapp' style="font-size: 20px;"></i> Send Receipt via WhatsApp
                             </a>
                         <?php endif; ?>
+                        <a href="<?= zone_url($zone_slug, 'generate-receipt', ['reorder_id' => $order_id]) ?>" class="btn-action-large" style="background: #7c3aed; color: #fff; text-decoration: none;">
+                            <i class='bx bx-refresh' style="font-size: 20px;"></i> Reorder This Order
+                        </a>
                     </div>
                 </div>
             <?php else: ?>
@@ -937,6 +945,9 @@ $stepLevel = $statusSteps[$currentStatus] ?? 1;
                             <i class='bx bx-check-shield' style="font-size: 20px;"></i> Generate Delivery Receipt
                         </a>
                     <?php endif; ?>
+                    <a href="<?= zone_url($zone_slug, 'generate-receipt', ['reorder_id' => $order_id]) ?>" class="btn-action-large" style="background: #f5f3ff; color: #7c3aed; border: 1.5px solid #ddd6fe; text-decoration: none; margin-top: 10px;">
+                        <i class='bx bx-refresh' style="font-size: 20px;"></i> Reorder This Order
+                    </a>
                 </div>
             <?php endif; ?>
         </section>
