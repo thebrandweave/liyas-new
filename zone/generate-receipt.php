@@ -169,6 +169,7 @@ if ($order_id > 0) {
 }
 
 // 2. Active storage cases currently in the assigned vehicle from vehicle_loads
+// Note: Only include unreserved vehicle storage (order_id IS NULL or order_id = 0), NOT cases assigned to other customer orders
 if ($assignedVehicleId > 0) {
     $vlStmt = $pdo->prepare("
         SELECT vl.product_id, SUM(vl.cases_loaded) as cases_loaded, p.product_name, p.name, p.case_price, p.price, p.net_content, p.net_content_unit
@@ -177,10 +178,11 @@ if ($assignedVehicleId > 0) {
         WHERE vl.vehicle_id = ? 
           AND vl.is_active = 1 
           AND vl.product_id IS NOT NULL 
-          AND (vl.order_id IS NULL OR vl.order_id != ?)
+          AND (vl.order_id IS NULL OR vl.order_id = 0)
         GROUP BY vl.product_id
+        HAVING SUM(vl.cases_loaded) > 0
     ");
-    $vlStmt->execute([$assignedVehicleId, $order_id]);
+    $vlStmt->execute([$assignedVehicleId]);
     $vlRows = $vlStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
     foreach ($vlRows as $vr) {
         $pid = (int)$vr['product_id'];
@@ -199,29 +201,6 @@ if ($assignedVehicleId > 0) {
                 ];
             }
             $vehicle_products[$pid]['available_cases'] += $qty;
-        }
-    }
-
-    // 3. Also check getVehicleLoadedProductsWithCounts to catch all vehicle loads (storage + active trip orders)
-    if (function_exists('getVehicleLoadedProductsWithCounts')) {
-        $vCounts = getVehicleLoadedProductsWithCounts($pdo, $assignedVehicleId);
-        foreach ($vCounts as $pid => $vc) {
-            if ($pid <= 0) continue;
-            $qty = (int)($vc['loaded_cases'] ?? 0);
-            if ($qty > 0) {
-                if (!isset($vehicle_products[$pid])) {
-                    $vehicle_products[$pid] = [
-                        'product_id' => $pid,
-                        'product_name' => $vc['product_name'],
-                        'available_cases' => $qty,
-                        'price' => (float)($vc['case_price'] ?: $vc['price']),
-                        'net_content' => $vc['net_content'] ?? '',
-                        'net_content_unit' => $vc['net_content_unit'] ?? ''
-                    ];
-                } else {
-                    $vehicle_products[$pid]['available_cases'] = max($vehicle_products[$pid]['available_cases'], $qty);
-                }
-            }
         }
     }
 }
@@ -733,6 +712,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['items']) && is_array(
         }
     }
 }
+
+// Collect IDs of products already ordered / present in the delivery bill
+$ordered_product_ids = [];
+foreach ($regular_items as $ri) {
+    if (!empty($ri['product_id'])) {
+        $ordered_product_ids[(int)$ri['product_id']] = true;
+    }
+}
+
+// Filter dropdown products: ONLY loaded products in the vehicle that are NOT already in the ordered items
+$dropdown_vehicle_products = [];
+foreach ($vehicle_products as $pid => $vp) {
+    if (!isset($ordered_product_ids[$pid])) {
+        $dropdown_vehicle_products[$pid] = $vp;
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -1242,11 +1237,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['items']) && is_array(
                         <?php endif; ?>
                     </div>
 
-                    <?php if (!empty($vehicle_products)): ?>
-                    <!-- Quick-add pill buttons for fast one-tap selection -->
-                    <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px;">
-                        <?php foreach ($vehicle_products as $vp): ?>
-                            <button type="button" class="btn-quick-prod" onclick="quickAddProduct(<?= $vp['product_id'] ?>)" 
+                    <?php if (!empty($dropdown_vehicle_products)): ?>
+                    <!-- Quick-add pill buttons for fast one-tap selection (only loaded products, excluding ordered items) -->
+                    <div id="quickAddPillsBox" style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px;">
+                        <?php foreach ($dropdown_vehicle_products as $vp): ?>
+                            <button type="button" class="btn-quick-prod" data-product-id="<?= $vp['product_id'] ?>" onclick="quickAddProduct(<?= $vp['product_id'] ?>)" 
                                     style="background: #ffffff; border: 1.5px solid #93c5fd; color: #1e40af; padding: 6px 12px; border-radius: 8px; font-size: 12px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; box-shadow: 0 1px 2px rgba(0,0,0,0.04); transition: all 0.15s ease;"
                                     onmouseover="this.style.background='#eff6ff'; this.style.borderColor='#2563eb';"
                                     onmouseout="this.style.background='#ffffff'; this.style.borderColor='#93c5fd';"
@@ -1263,45 +1258,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['items']) && is_array(
                     <!-- Dropdown + Quantity Input + Add Product Button -->
                     <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
                         <select id="vehicleProductSelect" class="form-control" style="flex: 1; min-width: 220px;">
-                            <option value="">-- Select Product from Vehicle --</option>
-                            <?php if (!empty($vehicle_products)): ?>
-                                <optgroup label="Available in Vehicle (<?= htmlspecialchars($assignedVehicle['vehicle_number'] ?? 'Assigned Vehicle') ?>)">
-                                    <?php foreach ($vehicle_products as $vp): ?>
-                                        <option value="<?= $vp['product_id'] ?>" 
-                                                data-name="<?= htmlspecialchars($vp['product_name']) ?>" 
-                                                data-price="<?= (float)$vp['price'] ?>" 
-                                                data-max="<?= (int)$vp['available_cases'] ?>"
-                                                data-content="<?= htmlspecialchars(($vp['net_content'] ? (float)$vp['net_content'] . ' ' . $vp['net_content_unit'] : '')) ?>"
-                                                data-in-vehicle="1">
-                                            <?= htmlspecialchars($vp['product_name']) ?> (<?= (int)$vp['available_cases'] ?> cs in vehicle) &bull; <?= formatCurrency($vp['price']) ?>/case
-                                        </option>
-                                    <?php endforeach; ?>
-                                </optgroup>
-                            <?php endif; ?>
-
-                            <?php 
-                            $otherProds = array_filter($products, function($p) use ($vehicle_products) {
-                                return !isset($vehicle_products[(int)$p['product_id']]);
-                            });
-                            if (!empty($otherProds)): ?>
-                                <optgroup label="<?= !empty($vehicle_products) ? 'Other Catalog Products' : 'Catalog Products' ?>">
-                                    <?php foreach ($otherProds as $p): ?>
-                                        <option value="<?= $p['product_id'] ?>" 
-                                                data-name="<?= htmlspecialchars($p['product_name'] ?: $p['name']) ?>" 
-                                                data-price="<?= (float)($p['case_price'] ?: $p['price']) ?>" 
-                                                data-max="999"
-                                                data-content="<?= htmlspecialchars(($p['net_content'] ? (float)$p['net_content'] . ' ' . $p['net_content_unit'] : '')) ?>"
-                                                data-in-vehicle="0">
-                                            <?= htmlspecialchars($p['product_name'] ?: $p['name']) ?> &bull; <?= formatCurrency($p['case_price'] ?: $p['price']) ?>/case
-                                        </option>
-                                    <?php endforeach; ?>
-                                </optgroup>
+                            <?php if (!empty($dropdown_vehicle_products)): ?>
+                                <option value="">-- Select Product from Vehicle --</option>
+                                <?php foreach ($dropdown_vehicle_products as $vp): ?>
+                                    <option value="<?= $vp['product_id'] ?>" 
+                                            data-name="<?= htmlspecialchars($vp['product_name']) ?>" 
+                                            data-price="<?= (float)$vp['price'] ?>" 
+                                            data-max="<?= (int)$vp['available_cases'] ?>"
+                                            data-content="<?= htmlspecialchars(($vp['net_content'] ? (float)$vp['net_content'] . ' ' . $vp['net_content_unit'] : '')) ?>"
+                                            data-in-vehicle="1">
+                                        <?= htmlspecialchars($vp['product_name']) ?> (<?= (int)$vp['available_cases'] ?> cs in vehicle) &bull; <?= formatCurrency($vp['price']) ?>/case
+                                    </option>
+                                <?php endforeach; ?>
+                            <?php elseif (empty($vehicle_products)): ?>
+                                <option value="" disabled selected>-- No products loaded in vehicle --</option>
+                            <?php else: ?>
+                                <option value="" disabled selected>-- All loaded vehicle products already in bill --</option>
                             <?php endif; ?>
                         </select>
 
                         <div style="display: flex; align-items: center; gap: 6px;">
                             <input type="number" id="addQtyInput" min="1" value="1" class="form-control" style="width: 70px; text-align: center; font-weight: 700; padding: 10px 4px;" placeholder="Qty" title="Number of cases to add">
-                            <button type="button" onclick="addProductFromDropdown()" style="background: #2563eb; color: #ffffff; border: none; padding: 11px 16px; border-radius: 10px; font-size: 13px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; box-shadow: 0 2px 4px rgba(37,99,235,0.25);">
+                            <button type="button" id="btnAddProductFromVehicle" onclick="addProductFromDropdown()" <?= empty($dropdown_vehicle_products) ? 'disabled' : '' ?> style="background: #2563eb; color: #ffffff; border: none; padding: 11px 16px; border-radius: 10px; font-size: 13px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; box-shadow: 0 2px 4px rgba(37,99,235,0.25);">
                                 <i class='bx bx-plus-circle' style="font-size: 17px;"></i> + Add Product
                             </button>
                         </div>
@@ -1643,11 +1621,71 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['items']) && is_array(
             }
         }
 
+        function syncDropdownWithOptions() {
+            const sel = document.getElementById('vehicleProductSelect');
+            const addBtn = document.getElementById('btnAddProductFromVehicle');
+            if (!sel) return;
+
+            // Collect all product IDs currently in the bill cards
+            const cardPids = new Set();
+            const allCards = itemsContainer.querySelectorAll('.item-delivery-card');
+            allCards.forEach(card => {
+                const pidInput = card.querySelector('.item-pid');
+                if (pidInput && pidInput.value) {
+                    cardPids.add(String(pidInput.value));
+                }
+            });
+
+            let visibleCount = 0;
+            const validOptions = Array.from(sel.options).filter(o => o.value !== '');
+            validOptions.forEach(opt => {
+                const pid = String(opt.value);
+                const inBill = cardPids.has(pid);
+                opt.hidden = inBill;
+                opt.disabled = inBill;
+                if (!inBill) {
+                    visibleCount++;
+                }
+
+                // Sync matching quick-add pill
+                const pill = document.querySelector(`.btn-quick-prod[data-product-id="${pid}"]`);
+                if (pill) {
+                    pill.style.display = inBill ? 'none' : 'inline-flex';
+                }
+            });
+
+            // Update first option text
+            const firstOpt = sel.options[0];
+            if (firstOpt) {
+                if (validOptions.length === 0) {
+                    firstOpt.textContent = '-- No products loaded in vehicle --';
+                } else if (visibleCount === 0) {
+                    firstOpt.textContent = '-- All loaded vehicle products already in bill --';
+                    sel.value = '';
+                } else {
+                    firstOpt.textContent = '-- Select Product from Vehicle --';
+                }
+            }
+
+            if (addBtn) {
+                if (visibleCount === 0) {
+                    addBtn.disabled = true;
+                    addBtn.style.opacity = '0.5';
+                    addBtn.style.cursor = 'not-allowed';
+                } else {
+                    addBtn.disabled = false;
+                    addBtn.style.opacity = '1';
+                    addBtn.style.cursor = 'pointer';
+                }
+            }
+        }
+
         function removeItemRow(btn) {
             const card = btn.closest('.item-delivery-card');
             if (!card) return;
             card.remove();
             recalculate();
+            syncDropdownWithOptions();
         }
 
         function addProductFromDropdown() {
@@ -1684,6 +1722,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['items']) && is_array(
                 sel.value = '';
                 if (qtyInputEl) qtyInputEl.value = '1';
                 recalculate();
+                syncDropdownWithOptions();
                 return;
             }
 
@@ -1747,6 +1786,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['items']) && is_array(
             sel.value = '';
             if (qtyInputEl) qtyInputEl.value = '1';
             recalculate();
+            syncDropdownWithOptions();
         }
 
         function quickAddProduct(pid) {
@@ -2088,6 +2128,7 @@ if (collectPriorCheckbox && priorDueAmountInput && priorDueFields) {
             cashInput.value = total.toFixed(2);
         }
         recalculate();
+        syncDropdownWithOptions();
     </script>
 </body>
 </html>
