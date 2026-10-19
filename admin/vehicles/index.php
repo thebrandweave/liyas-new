@@ -1656,16 +1656,41 @@ if ($percent > 85) {
                                 <div>
                                   
 
-                                    <div class="v-card-footer" onclick="event.stopPropagation();">
-                                        <button type="button" class="v-action-btn btn-act-load" onclick="event.stopPropagation(); openLoadCasesModal(<?= $vId ?>, '<?= addslashes($vNum) ?>')">
-                                            <i class='bx bx-package'></i> Load Cases
-                                        </button>
-                                        <div style="display: flex; gap: 4px;">
-                                            <button type="button" class="v-action-btn" onclick="event.stopPropagation(); openEditVehicleModal(<?= htmlspecialchars(json_encode($v), ENT_QUOTES, 'UTF-8') ?>)" title="Edit Vehicle Details">
-                                                <i class='bx bx-edit'></i> Edit
-                                            </button>
-                                        </div>
-                                    </div>
+                              
+<div class="v-card-footer" onclick="event.stopPropagation();">
+
+    <button type="button" class="v-action-btn btn-act-load"
+        onclick="event.stopPropagation(); openLoadCasesModal(<?= $vId ?>, <?= htmlspecialchars(json_encode($vNum), ENT_QUOTES, 'UTF-8') ?>)">
+        <i class='bx bx-package'></i> Load Cases
+    </button>
+
+    <div style="display: flex; gap: 4px; flex-wrap: wrap;">
+
+        <!-- Edit Vehicle -->
+        <button type="button" class="v-action-btn"
+            onclick="event.stopPropagation(); openEditVehicleModal(<?= htmlspecialchars(json_encode($v), ENT_QUOTES, 'UTF-8') ?>)"
+            title="Edit Vehicle Details">
+            <i class='bx bx-edit'></i> Edit
+        </button>
+
+        <!-- Delete Vehicle -->
+        <form method="POST" action="index.php"
+            style="display:inline;"
+            onsubmit="event.stopPropagation(); return confirm('Are you sure you want to delete vehicle <?= htmlspecialchars($v['vehicle_number'] ?? '', ENT_QUOTES, 'UTF-8') ?>? Its load history will also be deleted.');">
+
+            <input type="hidden" name="action" value="delete_vehicle">
+            <input type="hidden" name="vehicle_id" value="<?= $vId ?>">
+
+            <button type="submit" class="v-action-btn"
+                style="color:#dc2626; background:#fef2f2; border-color:#fecaca;"
+                title="Delete Vehicle">
+                <i class='bx bx-trash'></i> Delete
+            </button>
+
+        </form>
+
+    </div>
+</div>
                                 </div>
                             </div>
                         <?php endforeach; ?>
