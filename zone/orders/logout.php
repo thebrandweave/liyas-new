@@ -1,4 +1,8 @@
 <?php
+/**
+ * /zone/orders/logout.php
+ * Handles logout and redirects directly to dashboard (since access code login has been removed).
+ */
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
@@ -15,11 +19,9 @@ if (isset($_GET['admin']) && $_GET['admin'] == '1') {
             $params["secure"], $params["httponly"]
         );
     }
-    header("Location: " . BASE_URL . '/zone/orders/?logged_out=1');
-    exit;
 }
 
-// Clear all zone orders portal session variables
+// Clear any remaining legacy session variables
 unset(
     $_SESSION['zone_orders_authenticated'],
     $_SESSION['zone_orders_scope'],
@@ -27,12 +29,9 @@ unset(
     $_SESSION['zone_orders_zone_name'],
     $_SESSION['zone_orders_zone_slug'],
     $_SESSION['zone_orders_auth_time'],
-    $_SESSION['zone_orders_code']
+    $_SESSION['zone_orders_code'],
+    $_SESSION['zone_orders_locked']
 );
 
-// Explicitly lock the zone portal so admin session does not auto-bypass without entering access code
-$_SESSION['zone_orders_locked'] = true;
-
-$redirectUrl = BASE_URL . '/zone/orders/?logged_out=1';
-header("Location: " . $redirectUrl);
+header("Location: " . BASE_URL . '/zone/orders/dashboard/');
 exit;

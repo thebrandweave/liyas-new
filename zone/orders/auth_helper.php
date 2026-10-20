@@ -1,6 +1,7 @@
 <?php
 /**
- * Zone Orders Portal - Authentication & Scope Helpers
+ * Zone Orders Portal - Helpers
+ * (Zone access code login requirement has been removed; portal is directly accessible)
  */
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
@@ -10,86 +11,34 @@ require_once dirname(dirname(__DIR__)) . '/config/config.php';
 require_once dirname(dirname(__DIR__)) . '/admin/includes/functions.php';
 
 /**
- * Check if current user is authenticated for Zone Orders portal
+ * Check if current user is authenticated for Zone Orders portal.
+ * Always returns true since access code login has been removed.
  */
 function isZoneOrdersAuthenticated(): bool {
-    // If explicitly locked out, require entering access code again
-    if (!empty($_SESSION['zone_orders_locked']) && $_SESSION['zone_orders_locked'] === true) {
-        return false;
-    }
-    // Check zone orders session
-    if (!empty($_SESSION['zone_orders_authenticated']) && $_SESSION['zone_orders_authenticated'] === true) {
-        return true;
-    }
-    // Admin login automatically passes (only when not locked)
-    if (!empty($_SESSION['admin_id'])) {
-        return true;
-    }
-    return false;
+    return true;
 }
 
 /**
- * Require authentication; redirects unauthenticated visitors to /zone/orders/
+ * Guard to require authentication.
+ * No-op since access codes and login requirement have been removed.
  */
 function requireZoneOrdersAuth(): void {
-    if (!isZoneOrdersAuthenticated()) {
-        $loginUrl = BASE_URL . '/zone/orders/';
-        header("Location: " . $loginUrl);
-        exit;
-    }
+    // Direct open access to the dashboard
+    return;
 }
 
 /**
- * Validate an access code against system settings and zones table
+ * Legacy stub for access code verification.
+ * Kept for backward compatibility if called elsewhere.
  */
-function verifyZoneAccessCode(PDO $pdo, string $code): array {
-    $code = trim($code);
-    if ($code === '') {
-        return ['valid' => false, 'error' => 'Please enter an access code.'];
-    }
-
-    // 1. Fetch global access code from system_settings
-    $globalCode = getSystemSetting($pdo, 'zone_orders_access_code', 'ZONE2026');
-    if (empty($globalCode)) {
-        $globalCode = 'ZONE2026';
-    }
-
-    if (strcasecmp($code, $globalCode) === 0 || strcasecmp($code, 'ZONE2026') === 0) {
-        return [
-            'valid'      => true,
-            'scope'      => 'all',
-            'zone_id'    => null,
-            'zone_name'  => 'All Delivery Zones',
-            'zone_slug'  => 'all'
-        ];
-    }
-
-    // 2. Check per-zone access codes
-    try {
-        $stmt = $pdo->prepare("
-            SELECT id, name, slug, access_code 
-            FROM zones 
-            WHERE status = 'active' AND access_code IS NOT NULL AND access_code != ''
-        ");
-        $stmt->execute();
-        $zones = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-        foreach ($zones as $z) {
-            if (strcasecmp($code, trim($z['access_code'])) === 0) {
-                return [
-                    'valid'     => true,
-                    'scope'     => 'zone',
-                    'zone_id'   => (int)$z['id'],
-                    'zone_name' => $z['name'],
-                    'zone_slug' => $z['slug']
-                ];
-            }
-        }
-    } catch (PDOException $e) {
-        error_log("Error verifying zone code: " . $e->getMessage());
-    }
-
-    return ['valid' => false, 'error' => 'Invalid access code. Please try again.'];
+function verifyZoneAccessCode(PDO $pdo, string $code = ''): array {
+    return [
+        'valid'     => true,
+        'scope'     => 'all',
+        'zone_id'   => null,
+        'zone_name' => 'All Delivery Zones',
+        'zone_slug' => 'all'
+    ];
 }
 
 /**
