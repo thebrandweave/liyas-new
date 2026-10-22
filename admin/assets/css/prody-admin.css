@@ -168,7 +168,7 @@ body {
 
 .badge-count {
     background: var(--red);
-    color: white;
+    color: white !;
     min-width: 20px;
     height: 20px;
     border-radius: 50%;
