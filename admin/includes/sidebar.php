@@ -105,7 +105,7 @@ $more_badge_total = $ads_count + $reviews_pending_count + $social_count + $subs_
         font-weight: 700 !important;
     }
     .sidebar .nav-item.active span {
-        color: #ffffff !important;
+        color: #0284c7 !important;
         font-weight: 700 !important;
     }
     .sidebar .nav-item.active i {
