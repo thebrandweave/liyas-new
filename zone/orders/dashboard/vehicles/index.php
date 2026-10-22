@@ -1661,6 +1661,8 @@ if (!empty($searchQuery)) {
             .veh-card-footer { flex-direction: column; }
             .modal-btns-row { flex-direction: column; }
         }
+
+        
     </style>
 </head>
 <body>
@@ -1971,15 +1973,15 @@ if (!empty($searchQuery)) {
                         <label class="form-label" style="margin-bottom: 0;">
                             <i class='bx bx-package' style="color: #059669; font-size: 14px;"></i> Products to Load *
                         </label>
-                        <span style="font-size: 11px; color: #64748b;">Add one or multiple catalog products below</span>
+                        <!-- <span style="font-size: 11px; color: #64748b;">Add one or multiple catalog products below</span> -->
                     </div>
 
                     <div style="max-height: 280px; overflow-y: auto; overflow-x: auto; border: 1px solid #e2e8f0; border-radius: 10px; background: #ffffff;">
                         <table style="width: 100%; border-collapse: collapse; min-width: 580px;">
                             <thead>
                                 <tr style="border-bottom: 2px solid #e2e8f0; text-align: left; font-size: 11px; text-transform: uppercase; color: #64748b; font-weight: 700; background: #f8fafc;">
-                                    <th style="padding: 8px 10px;">Product (from Catalog)</th>
-                                    <th style="padding: 8px 10px; width: 120px;">Whse Stock</th>
+                                    <th style="padding: 8px 10px;">Product</th>
+                                    <!-- <th style="padding: 8px 10px; width: 120px;">Whse Stock</th> -->
                                     <th style="padding: 8px 10px; width: 95px;">Rate (₹)</th>
                                     <th style="padding: 8px 10px; width: 125px;">Cases *</th>
                                     <th style="padding: 8px 10px; width: 105px; text-align: right;">Subtotal</th>
@@ -2012,14 +2014,12 @@ if (!empty($searchQuery)) {
                             </div>
                         </div>
                         <div style="text-align: right;">
-                            <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #64748b;">Estimated Cargo Value</div>
+                            <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #64748b;">Estimated Value</div>
                             <div id="loadTotalValueSum" style="font-size: 18px; font-weight: 800; color: #059669; margin-top: 2px;">₹0.00</div>
                         </div>
                     </div>
 
-                    <div id="loadStockWarningNotice" style="display: none; margin-top: 8px; font-size: 12px; color: #dc2626; background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; padding: 6px 10px;">
-                        <i class='bx bx-error-circle'></i> <span id="loadStockWarningText">One or more products exceed warehouse available stock!</span>
-                    </div>
+                 
                     <div id="loadVehicleOverloadNotice" style="display: none; margin-top: 8px; font-size: 12px; color: #b45309; background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; padding: 6px 10px;">
                         <i class='bx bx-error'></i> <span id="loadVehicleOverloadText">Notice: Exceeds remaining vehicle capacity.</span>
                     </div>
@@ -2381,23 +2381,31 @@ if (!empty($searchQuery)) {
             tr.setAttribute('data-row-id', rowId);
             tr.style.borderBottom = '1px solid #f1f5f9';
             tr.innerHTML = `
-                <td style="padding: 6px 8px;">
+                <td style="padding: 6px 2px;width:10%; ">
                     <select name="items[${rowId}][product_id]" class="form-control load-prod-select" required onchange="handleLoadProdChange(this)" style="font-size: 13px; padding: 6px 8px;">
                         ${getLoadProductOptionsHtml(selectedPid)}
                     </select>
                 </td>
-                <td style="padding: 6px 8px; vertical-align: middle;">
-                    <span class="load-prod-stock-badge" style="font-size: 11px; font-weight: 700; color: #64748b; padding: 2px 6px; border-radius: 4px; background: #f1f5f9; display: inline-block;">--</span>
-                </td>
+          
                 <td style="padding: 6px 8px; vertical-align: middle;">
                     <span class="load-prod-rate" style="font-size: 12px; font-weight: 600; color: #334155;">₹0.00</span>
                 </td>
                 <td style="padding: 6px 8px; vertical-align: middle;">
                     <div style="display: flex; gap: 4px; align-items: center;">
-                        <input type="text" name="items[${rowId}][cases]" class="form-control load-prod-cases" min="1" placeholder="Cases" value="${defaultCases}" required oninput="calculateLoadTotals()" style="width: 72px; padding: 5px 6px; font-size: 13px; font-weight: 700;">
-                        <button type="button" class="btn-fill-max" onclick="fillRowMaxStock(this)" title="Fill available warehouse stock" style="display: none; background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; border-radius: 4px; padding: 3px 5px; font-size: 10px; font-weight: 700; cursor: pointer; white-space: nowrap;">
-                            Max
-                        </button>
+                        <input
+    type="text"
+    name="items[${rowId}][cases]"
+    class="form-control load-prod-cases"
+    inputmode="numeric"
+    maxlength="4"
+    pattern="[0-9]{1,4}"
+    placeholder="Add Count"
+    value="${defaultCases}"
+    required
+    oninput="this.value = this.value.replace(/[^0-9]/g, '').slice(0, 4); calculateLoadTotals()"
+    style="width: 102px; padding: 5px 4px; font-size: 11px; font-weight: 700;"
+>
+                       
                     </div>
                 </td>
                 <td style="padding: 6px 8px; text-align: right; vertical-align: middle; font-weight: 700; color: #0f172a; font-size: 13px;">
@@ -2566,7 +2574,7 @@ if (!empty($searchQuery)) {
 
             if (warnStockBox && warnStockText) {
                 if (stockOverageMsgs.length > 0) {
-                    warnStockText.innerHTML = `<strong>Warehouse Stock Warning:</strong> ${stockOverageMsgs.join('; ')} exceeds warehouse available stock!`;
+                    warnStockText.innerHTML = ``;
                     warnStockBox.style.display = 'block';
                 } else {
                     warnStockBox.style.display = 'none';
@@ -2581,7 +2589,7 @@ if (!empty($searchQuery)) {
                     const loaded = parseInt(opt.getAttribute('data-loaded') || '0', 10);
                     const rem = Math.max(0, cap - loaded);
                     if (grandCases > rem) {
-                        warnOverloadText.innerHTML = `<strong>Vehicle Overload Notice:</strong> Loading ${grandCases} cs exceeds remaining space (${rem} cs) by ${grandCases - rem} cs.`;
+                        warnOverloadText.innerHTML = `<strong>Stock Warning:</strong> No ${grandCases} cases Available, Remaining (${rem} cs) `;
                         warnOverloadBox.style.display = 'block';
                     } else {
                         warnOverloadBox.style.display = 'none';
