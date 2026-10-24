@@ -86,7 +86,7 @@ $asset_base = $is_subdirectory ? '../' : '';
 }
 
 .bottle img {
-  width: 20vh;
+  width: 8vh;
   display: block;
 }
 
