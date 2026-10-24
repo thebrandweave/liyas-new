@@ -1028,7 +1028,7 @@ foreach ($vehicle_products as $pid => $vp) {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            font-size: 14px;
+            font-size: 10px;
             padding: 4px 0;
         }
 
@@ -1044,7 +1044,7 @@ foreach ($vehicle_products as $pid => $vp) {
             border-top: 1px dashed var(--border-color);
             margin-top: 6px;
             padding-top: 10px;
-            font-size: 17px;
+            font-size: 14px;
             font-weight: 800;
             color: #dc2626;
         }
@@ -1457,6 +1457,7 @@ foreach ($vehicle_products as $pid => $vp) {
                 </div>
 
                 <!-- Payment Settlement -->
+                 <div>
                 <div style="font-size:14px; font-weight: 800; color: #383635; text-align:center; text-transform: uppercase; ">
                     <i class='bx bx-wallet' style="color: #d97706;"></i> <span style="margin-top: 8px; margin-bottom: 6px;">Payment Collection</span
                 </div>
