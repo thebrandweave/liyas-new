@@ -1,797 +1,394 @@
 <?php
-/**
- * Reward Code Redeem Page
- * QR code redirects to: liyasinternational.com/redeem
- * Flow: Customer Info → Reward Code → Success Message
- *
- * 🎨 Color Palette:
- * - Background: #FFFFFF (page), soft card border #F3F4F6
- * - Primary: #6366F1 (indigo) → #8B5CF6 (gradient accent)
- * - Success: #10B981 (emerald)
- * - Text: #111827 (heading), #6B7280 (muted)
- * - Borders: #E5E7EB
- *
- * 🎞️ Animation Techniques:
- * - card-enter: fade + slight upward motion on load (all steps)
- * - card-success: smooth scale + fade-in when success screen is shown
- * - pop-in: "pop" effect on success icon
- * - sweep-glow: subtle animated gradient glow behind success content
- */
-
+session_start();
 require_once __DIR__ . '/../config/config.php';
 
-$step = isset($_GET['step']) ? $_GET['step'] : 'info';
-$message = '';
-$message_type = '';
+// Check if user is logged in
+$isLoggedIn = isset($_SESSION['user_id']);
 
-// Handle customer info submission (Step 1)
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['step']) && $_POST['step'] === 'info') {
-    $name = trim($_POST['name'] ?? '');
-    $phone = trim($_POST['phone'] ?? '');
-    $email = trim($_POST['email'] ?? '');
-    $address = trim($_POST['address'] ?? '');
-    
-    // Validate required fields
-    if (empty($name) || empty($phone) || empty($address)) {
-        $message = 'Please fill in all required fields (Name, Phone, and Address)';
-        $message_type = 'error';
-        $step = 'info';
-    } else {
-        // Validate phone number: allow any country code prefix (with or without +), then exactly 10 digits
-        // Extract all digits first
-        $phone_cleaned = preg_replace('/[^0-9]/', '', $phone);
-        
-        // Determine if there's a country code
-        $has_country_code = false;
-        $phone_digits = $phone_cleaned;
-        
-        // If starts with +, definitely has country code
-        if (preg_match('/^\+/', $phone)) {
-            // Remove country code (1-4 digits after +)
-            $phone_normalized = preg_replace('/^\+\d{1,4}\s*/', '', $phone);
-            $phone_digits = preg_replace('/[^0-9]/', '', $phone_normalized);
-            $has_country_code = true;
-        } elseif (strlen($phone_cleaned) > 10) {
-            // More than 10 digits, assume first 1-4 are country code
-            // Try to match country code pattern (1-4 digits) followed by 10 digits
-            if (preg_match('/^(\d{1,4})(\d{10})$/', $phone_cleaned, $matches)) {
-                $phone_digits = $matches[2]; // Use the 10-digit phone number part
-                $has_country_code = true;
-            } else {
-                // Fallback: take last 10 digits as phone number
-                $phone_digits = substr($phone_cleaned, -10);
-                $has_country_code = true;
-            }
-        }
-        // If exactly 10 digits, treat as phone number only (no country code)
-        
-        if (strlen($phone_digits) !== 10) {
-            $message = 'Phone number must be exactly 10 digits (with or without country code)';
-            $message_type = 'error';
-            $step = 'info';
-        } elseif (!empty($email) && (strpos($email, '@') === false || !filter_var($email, FILTER_VALIDATE_EMAIL))) {
-            // Validate email: must contain @ symbol and be valid email format (if provided)
-            $message = 'Please enter a valid email address with @ symbol';
-            $message_type = 'error';
-            $step = 'info';
-        } else {
-            // Store in session to use in next step (use cleaned phone - 10 digits only)
-            $_SESSION['redeem_customer'] = [
-                'name' => $name,
-                'phone' => $phone_digits,
-                'email' => $email,
-                'address' => $address
-            ];
-            $step = 'code';
-        }
-    }
-}
+$db = getCampaignDB();
+$today = date('Y-m-d');
 
-// Handle reward code submission (Step 2)
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['step']) && $_POST['step'] === 'code') {
-    $reward_code = trim($_POST['reward_code'] ?? '');
-    
-    // Check if customer info exists in session
-    if (!isset($_SESSION['redeem_customer'])) {
-        $message = 'Please fill in your information first';
-        $message_type = 'error';
-        $step = 'info';
-    } elseif (empty($reward_code)) {
-        $message = 'Please enter a reward code';
-        $message_type = 'error';
-        $step = 'code';
-    } else {
-        try {
-            $pdo->beginTransaction();
-            
-            // Check if reward code exists and lock it
-            $stmt = $pdo->prepare("SELECT id, reward_code, is_used, used_at FROM codes WHERE reward_code = ? FOR UPDATE");
-            $stmt->execute([$reward_code]);
-            $code_data = $stmt->fetch();
-            
-            if (!$code_data) {
-                // Code doesn't exist
-                $message = 'Invalid code';
-                $message_type = 'error';
-                $step = 'code';
-                $pdo->rollBack();
-            } elseif ($code_data['is_used'] == 1) {
-                // Code already used
-                $message = 'Already redeemed';
-                $message_type = 'warning';
-                $step = 'code';
-                $pdo->rollBack();
-            } else {
-                // Code is valid and unused - mark as used and save customer data
-                $customer = $_SESSION['redeem_customer'];
-                $updateStmt = $pdo->prepare("
-                    UPDATE codes 
-                    SET is_used = 1, 
-                        used_at = NOW(),
-                        customer_name = ?,
-                        customer_phone = ?,
-                        customer_email = ?,
-                        customer_address = ?
-                    WHERE id = ? AND is_used = 0
-                ");
-                $updateStmt->execute([
-                    $customer['name'],
-                    $customer['phone'],
-                    $customer['email'] ?: null,
-                    $customer['address'],
-                    $code_data['id']
-                ]);
-                
-                if ($updateStmt->rowCount() > 0) {
-                    $pdo->commit();
-                    $step = 'success';
-                    // Clear session data
-                    unset($_SESSION['redeem_customer']);
-                } else {
-                    // Race condition - code was used between check and update
-                    $message = 'Already redeemed';
-                    $message_type = 'warning';
-                    $step = 'code';
-                    $pdo->rollBack();
-                }
-            }
-        } catch (PDOException $e) {
-            $pdo->rollBack();
-            $message = 'An error occurred. Please try again.';
-            $message_type = 'error';
-            $step = 'code';
-            error_log("Reward code redemption error: " . $e->getMessage());
-        }
-    }
-}
+$stmt = $db->prepare("
+    SELECT c.*, ca.file_path
+    FROM campaigns c
+    LEFT JOIN campaign_assets ca ON ca.campaign_id = c.id
+    WHERE c.status='active'
+      AND c.start_date <= ?
+      AND (c.end_date IS NULL OR c.end_date >= ?)
+    ORDER BY c.id DESC
+    LIMIT 1
+");
+$stmt->execute([$today, $today]);
+$campaign = $stmt->fetch(PDO::FETCH_ASSOC);
+if(!$campaign) die('No active campaign');
 
-// Get customer data from session if exists
-$customer = $_SESSION['redeem_customer'] ?? [];
-
-// Message style map for Tailwind
-$message_classes = [
-    'success' => 'bg-emerald-50 text-emerald-700 border border-emerald-200',
-    'error'   => 'bg-red-50 text-red-700 border border-red-200',
-    'warning' => 'bg-amber-50 text-amber-700 border border-amber-200',
-];
+$q = $db->prepare("SELECT * FROM campaign_questions WHERE campaign_id=? ORDER BY sort_order");
+$q->execute([$campaign['id']]);
+$questions = $q->fetchAll(PDO::FETCH_ASSOC);
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Redeem Your Reward - LIYAS International</title>
+<meta charset="UTF-8">
+<title><?= htmlspecialchars($campaign['title']) ?> | LIYAS</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
 
-    <!-- Favicon -->
-    <link rel="icon" type="image/jpeg" href="../assets/images/logo/logo-bg.jpg">
-    <link rel="shortcut icon" type="image/jpeg" href="../assets/images/logo/logo-bg.jpg">
-    <link rel="apple-touch-icon" href="../assets/images/logo/logo-bg.jpg">
-    <link rel="icon" type="image/jpeg" sizes="32x32" href="../assets/images/logo/logo-bg.jpg">
-    <link rel="icon" type="image/jpeg" sizes="16x16" href="../assets/images/logo/logo-bg.jpg">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800;900&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@200;300;400&display=swap" rel="stylesheet">
+<link href='https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css' rel='stylesheet'>
 
-    <!-- Tailwind CDN -->
-    <script src="https://cdn.tailwindcss.com"></script>
+<style>
+/* Keeping your original CSS exactly as it was */
+:root{
+    --aqua-1:#ecfbff;
+    --aqua-2:#d7f3ff;
+    --aqua-3:#bfe9ff;
+    --aqua-4:#8fd3f4;
+    --accent:#1fb6e9;
+    --navy:#0b1f3b;
+    --navy-soft:#123b6d;
+    --text-muted:#5f7d95;
+}
 
-    <!-- Google Font -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+*{margin:0;padding:0;box-sizing:border-box}
+body{
+    font-family:'Outfit',sans-serif;
+    background:linear-gradient(180deg,var(--aqua-1),#fff);
+    overflow-x:hidden;
+}
+.container{display:flex;min-height:100vh}
 
-    <!-- Icons -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css">
+/* ================= LEFT ================= */
+.left{
+    flex:1;
+    padding:34px;
+    background:
+        radial-gradient(circle at 20% 10%, rgba(255,255,255,.45), transparent 40%),
+        linear-gradient(180deg,var(--aqua-3),var(--aqua-4));
+    position:relative;
+    overflow:hidden;
+}
 
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    fontFamily: {
-                        sans: ['Open Sans', 'system-ui', 'sans-serif'],
-                    },
-                    colors: {
-                        brand: {
-                            purple: '#4ad2e2',
-                            deep: '#2cbac9',
-                            accent: '#222222',
-                        }
-                    }
-                }
-            }
-        }
-    </script>
+/* BUBBLES */
+.bubble-layer{position:absolute;inset:0;pointer-events:none;z-index:1}
+.bubble-layer span{
+    position:absolute;bottom:-120px;border-radius:50%;
+    background:radial-gradient(circle at 30% 30%,
+        rgba(255,255,255,.9),
+        rgba(255,255,255,.4),
+        rgba(255,255,255,.1)
+    );
+    opacity:.35;
+    animation:floatBubble linear infinite;
+}
+.bubble-layer span:nth-child(1){left:12%;width:22px;height:22px;animation-duration:18s}
+.bubble-layer span:nth-child(2){left:28%;width:36px;height:36px;animation-duration:24s}
+.bubble-layer span:nth-child(3){left:50%;width:18px;height:18px;animation-duration:16s}
+.bubble-layer span:nth-child(4){left:70%;width:28px;height:28px;animation-duration:22s}
+.bubble-layer span:nth-child(5){left:85%;width:20px;height:20px;animation-duration:19s}
 
-    <style>
-        body {
-            font-family: 'Open Sans', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-        }
+@keyframes floatBubble{
+    from{transform:translateY(0);opacity:0}
+    20%{opacity:.35}
+    to{transform:translateY(-120vh);opacity:0}
+}
 
-        /* Card entry animation (all states) */
-        .card-enter {
-            animation: cardEnter 0.45s ease-out;
-        }
+.logo{
+    position:absolute;top:30px;left:30px;width:75px;
+    filter:brightness(0);z-index:3
+}
 
-        @keyframes cardEnter {
-            0% {
-                opacity: 0;
-                transform: translateY(14px) scale(0.98);
-            }
-            100% {
-                opacity: 1;
-                transform: translateY(0) scale(1);
-            }
-        }
+.left-header{
+    text-align:center;
+    margin-top:40px;
+    z-index:3;
+    position:relative;
+}
 
-        /* Success state card animation */
-        .card-success-anim {
-            animation: cardSuccess 0.55s ease-out;
-        }
+.campaign-title span{
+    font-family:'Outfit',sans-serif;
+    font-size:3.1rem;
+    font-weight:600;
+    letter-spacing:1.6px;
+    color:var(--navy);
+    display:inline-block;
+    background:linear-gradient(90deg, var(--navy) 50%, rgba(11,31,59,0) 50%);
+    background-size:200% 100%;
+    background-position:100% 0;
+    -webkit-background-clip:text;
+    -webkit-text-fill-color:transparent;
+    animation:strokeReveal 2.3s ease forwards;
+}
 
-        @keyframes cardSuccess {
-            0% {
-                opacity: 0;
-                transform: scale(0.95);
-            }
-            60% {
-                opacity: 1;
-                transform: scale(1.02);
-            }
-            100% {
-                transform: scale(1);
-            }
-        }
+@keyframes strokeReveal{ to{background-position:0% 0} }
 
-        /* Pop-in for success icon */
-        .pop-in {
-            animation: popIn 0.5s cubic-bezier(0.18, 0.89, 0.32, 1.28);
-        }
+.left-header p{
+    max-width:420px;
+    margin:0 auto;
+    opacity:.85;
+    color:var(--navy);
+    font-weight:300;
+}
 
-        @keyframes popIn {
-            0% {
-                opacity: 0;
-                transform: scale(0.4);
-            }
-            60% {
-                opacity: 1;
-                transform: scale(1.15);
-            }
-            100% {
-                transform: scale(1);
-            }
-        }
+.product{
+    margin:46px auto 0;
+    width:238vh;
+    padding:10px;
+    border-radius:18px;
+    text-align:left;
+    backdrop-filter:blur(12px);
+    position:relative;
+    z-index:3;
+}
+.product img{width:100%; border-radius:18px;}
 
-        /* Animated glow behind success content */
-        .sweep-glow {
-            position: absolute;
-            inset: -40px;
-            background: radial-gradient(circle at 0% 0%, rgba(74, 210, 226, 0.15), transparent 55%),
-                        radial-gradient(circle at 100% 100%, rgba(44, 186, 201, 0.15), transparent 55%);
-            filter: blur(2px);
-            opacity: 0.9;
-            pointer-events: none;
-            animation: sweepGlow 6s ease-in-out infinite alternate;
-            z-index: -1;
-        }
+.product-slogan {
+    text-align: left;
+    font-size: 18px;
+    font-weight: 500;
+    color: #253a41;
+    text-shadow: 0 0 8px rgba(31, 182, 233, 0.3);
+    z-index: 3;
+    position: relative;
+    line-height: 1.6em;
+}
 
-        @keyframes sweepGlow {
-            0% {
-                transform: translateX(-10px) translateY(4px);
-            }
-            50% {
-                transform: translateX(10px) translateY(-4px);
-            }
-            100% {
-                transform: translateX(-4px) translateY(0);
-            }
-        }
-    </style>
+.waves{
+    position:absolute;bottom:0;left:0;width:100%;height:200px;z-index:2
+}
+.parallax>use{animation:move-forever 25s cubic-bezier(.55,.5,.45,.5) infinite}
+.parallax>use:nth-child(1){animation-delay:-2s;animation-duration:7s}
+.parallax>use:nth-child(2){animation-delay:-3s;animation-duration:10s}
+.parallax>use:nth-child(3){animation-delay:-4s;animation-duration:13s}
+.parallax>use:nth-child(4){animation-delay:-5s;animation-duration:20s}
+@keyframes move-forever{from{transform:translateX(-90px)}to{transform:translateX(85px)}}
+
+.right{
+    flex:1;padding:80px;
+    display:flex;align-items:center;justify-content:center;
+    background:
+        radial-gradient(circle at 100% 0%, rgba(143,211,244,.35), transparent 55%),
+        radial-gradient(circle at 0% 100%, rgba(191,233,255,.45), transparent 60%),
+        linear-gradient(180deg,var(--aqua-1),#fff);
+}
+
+.form{
+    max-width:500px;width:100%;
+    background:rgba(255,255,255,.65);
+    backdrop-filter:blur(18px);
+    border-radius:26px;
+    padding:24px 55px;
+    box-shadow:0 30px 70px rgba(0,80,120,.18);
+}
+
+.step{font-size:1.1rem;letter-spacing:3px;color:var(--accent);font-weight:700;margin-bottom:14px}
+.form h2{font-size:2.1rem;color:var(--navy);margin-bottom:42px}
+
+.input{margin-bottom:48px}
+.input input{
+    width:100%;border:none;
+    border-bottom:2px solid rgba(0,0,0,.08);
+    padding:16px 4px;font-size:1.1rem;background:transparent;
+}
+.input input:focus{outline:none;border-color:var(--accent)}
+
+.actions{display:flex;gap:18px}
+.btn{
+    padding:18px 54px;
+    background:linear-gradient(135deg,var(--navy),var(--navy-soft));
+    color:#fff;border:none;border-radius:18px;
+    font-weight:700;cursor:pointer;
+    box-shadow:0 18px 40px rgba(11,31,59,.35);
+}
+.back{background:none;border:none;color:var(--text-muted);font-weight:600;cursor:pointer}
+
+.step-card{display:none}
+.step-card.active{display:block;animation:fade .6s ease}
+@keyframes fade{from{opacity:0;transform:translateY(12px)}to{opacity:1}}
+
+.upload-box {
+    border: 2px dashed var(--aqua-4);
+    background: rgba(236, 251, 255, 0.5);
+    border-radius: 20px;
+    padding: 40px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+.join{ width: 100%; display: flex; align-items: center; justify-content: center; }
+
+/* NEW: Login Overlay styles to blend with your theme */
+.login-lockout {
+    position: fixed; inset: 0; background: rgba(11, 31, 59, 0.6);
+    backdrop-filter: blur(15px); z-index: 99999;
+    display: flex; align-items: center; justify-content: center; padding: 20px;
+}
+.login-box {
+    background: white; padding: 40px; border-radius: 26px; text-align: center;
+    max-width: 400px; box-shadow: 0 20px 50px rgba(0,0,0,0.3);
+}
+
+@media(max-width:1024px){
+    .container{flex-direction:column}
+    .left,.right{padding:40px}
+    .campaign-title span{font-size:2.3rem}
+}
+</style>
 </head>
-<body class="min-h-screen bg-white flex items-center justify-center px-4 py-10">
-    <div class="w-full max-w-xl">
-        <?php
-            $cardBaseClasses = 'relative bg-white border border-slate-100 shadow-[0_18px_45px_rgba(15,23,42,0.12)] rounded-3xl px-6 py-7 sm:px-10 sm:py-10 card-enter';
-            $cardClasses = $cardBaseClasses . ($step === 'success' ? ' card-success-anim' : '');
-        ?>
-        <div class="<?= $cardClasses ?>">
-            <!-- Extra subtle background decor (white theme safe) -->
-            <div class="pointer-events-none absolute -top-8 -right-6 h-20 w-20 rounded-full bg-brand-purple/5 blur-2xl"></div>
-            <div class="pointer-events-none absolute -bottom-10 -left-10 h-24 w-24 rounded-full bg-brand-deep/5 blur-3xl"></div>
+<body>
 
-            <!-- Logo + Heading -->
-            <div class="relative flex flex-col items-center gap-3 mb-6">
-                <div class="flex h-16 w-16 items-center justify-center rounded-full shadow-lg ring-4 ring-white/90 bg-white p-2">
-                    <img src="../assets/images/logo/logo.png" alt="LIYAS Logo" class="w-full h-full object-contain">
-                </div>
-                <h1 class="text-2xl sm:text-3xl font-semibold text-slate-900 flex items-center gap-2">
-                    <span class="text-lg"></span> Redeem Your Reward
-                </h1>
-                <p class="text-sm text-slate-500">
-                    LIYAS International &mdash; Thank you for choosing us!
-                </p>
-            </div>
+<?php if (!$isLoggedIn): ?>
+<div class="login-lockout">
+    <div class="login-box">
+        <i class='bx bxs-lock-alt' style="font-size:4rem; color:var(--accent); margin-bottom:20px;"></i>
+        <h2 style="color:var(--navy); margin-bottom:15px;">Sign Up Required</h2>
+        <p style="color:var(--text-muted); margin-bottom:30px;">To participate in this campaign, please sign in to your account first.</p>
+        <a href="../signup1/index.php" class="btn" style="text-decoration:none; display:block;">Sign Up Now</a>
+    </div>
+</div>
+<?php endif; ?>
 
-            <!-- Step Indicator -->
-            <div class="relative mb-6">
-                <div class="flex items-center justify-center gap-3">
-                    <?php
-                        $circleBase = 'flex h-9 w-9 items-center justify-center rounded-full text-sm font-semibold';
-                    ?>
-                    <div class="<?=
-                        $circleBase . ' ' .
-                        ($step === 'info'
-                            ? 'bg-brand-purple text-white shadow-md'
-                            : (($step === 'code' || $step === 'success')
-                                ? 'bg-emerald-500 text-white shadow-md'
-                                : 'bg-slate-200 text-slate-500'))
-                    ?>">1</div>
+<?php if (isset($_GET['success'])): ?>
+<div style="position:fixed; top:20px; right:20px; background:#10b981; color:white; padding:20px; border-radius:12px; z-index:9999; box-shadow:0 10px 30px rgba(0,0,0,0.2);">
+    <strong>Success!</strong> Your entry has been submitted.
+</div>
+<script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+    confetti({ particleCount: 200, spread: 120, origin: { y: 0.6 } });
+    setTimeout(() => { window.location.href = "index.php"; }, 4000);
+});
+</script>
+<?php endif; ?>
 
-                    <div class="h-0.5 w-8 bg-slate-200/80"></div>
+<div class="container">
+<div class="left">
+    <div class="bubble-layer"><span></span><span></span><span></span><span></span><span></span></div>
+    <img src="../assets/images/logo/logo.png" class="logo">
 
-                    <div class="<?=
-                        $circleBase . ' ' .
-                        ($step === 'code'
-                            ? 'bg-brand-purple text-white shadow-md'
-                            : ($step === 'success'
-                                ? 'bg-emerald-500 text-white shadow-md'
-                                : 'bg-slate-200 text-slate-500'))
-                    ?>">2</div>
+   <div class="join">
+     <div class="form">
+        <form method="POST" action="submit.php" enctype="multipart/form-data">
+        <input type="hidden" name="campaign_id" value="<?= $campaign['id'] ?>">
 
-                    <div class="h-0.5 w-8 bg-slate-200/80"></div>
+        <div class="step-card active">
+            <div class="step">STEP-01</div>
+            <h2>May we have your<br><span>full name?</span></h2>
+            <div class="input"><input type="text" name="full_name" required placeholder="Your Full Name"></div>
+        </div>
 
-                    <div class="<?=
-                        $circleBase . ' ' .
-                        ($step === 'success'
-                            ? 'bg-brand-purple text-white shadow-md'
-                            : 'bg-slate-200 text-slate-500')
-                    ?>">3</div>
-                </div>
-                <p class="mt-3 text-center text-xs uppercase tracking-[0.2em] text-slate-400">
-                    Step <?= $step === 'info' ? '1: Your Details' : ($step === 'code' ? '2: Enter Code' : '3: Completed') ?>
-                </p>
-            </div>
-
-            <!-- Message -->
-            <?php if ($message): ?>
-                <?php $cls = $message_classes[$message_type] ?? 'bg-slate-50 text-slate-700 border border-slate-200'; ?>
-                <div class="mb-5 rounded-2xl px-4 py-3 text-sm flex items-start gap-2 <?= $cls ?>">
-                    <?php if ($message_type === 'success'): ?>
-                        <i class="fa-solid fa-circle-check mt-0.5"></i>
-                    <?php elseif ($message_type === 'warning'): ?>
-                        <i class="fa-solid fa-triangle-exclamation mt-0.5"></i>
-                    <?php else: ?>
-                        <i class="fa-solid fa-circle-info mt-0.5"></i>
-                    <?php endif; ?>
-                    <span><?= htmlspecialchars($message) ?></span>
-                </div>
-            <?php endif; ?>
-
-            <!-- STEP 1: INFO -->
-            <?php if ($step === 'info'): ?>
-                <form method="POST" action="" id="infoForm" class="space-y-4">
-                    <input type="hidden" name="step" value="info">
-
-                    <!-- Name -->
-                    <div class="space-y-1.5">
-                        <label for="name" class="flex items-center gap-1.5 text-sm font-medium text-slate-800">
-                            <i class="fas fa-user text-xs text-brand-purple"></i>
-                            Full Name
-                            <span class="text-red-500">*</span>
-                        </label>
-                        <input
-                            type="text"
-                            name="name"
-                            id="name"
-                            placeholder="Enter your full name"
-                            required
-                            autofocus
-                            value="<?= htmlspecialchars($customer['name'] ?? '') ?>"
-                            class="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 shadow-sm outline-none ring-0 transition focus:border-brand-purple focus:ring-2 focus:ring-brand-purple/40"
-                        />
-                    </div>
-
-                    <!-- Phone -->
-                    <div class="space-y-1.5">
-                        <label for="phone" class="flex items-center gap-1.5 text-sm font-medium text-slate-800">
-                            <i class="fas fa-phone text-xs text-brand-purple"></i>
-                            Phone Number
-                            <span class="text-red-500">*</span>
-                        </label>
-                        <input
-                            type="tel"
-                            name="phone"
-                            id="phone"
-                            required
-                            maxlength="20"
-                            value="<?= htmlspecialchars($customer['phone'] ?? '') ?>"
-                            class="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 shadow-sm outline-none ring-0 transition focus:border-brand-purple focus:ring-2 focus:ring-brand-purple/40"
-                        />
-                    </div>
-
-                    <!-- Email -->
-                    <div class="space-y-1.5">
-                        <label for="email" class="flex items-center gap-1.5 text-sm font-medium text-slate-800">
-                            <i class="fas fa-envelope text-xs text-brand-purple"></i>
-                            Email Address
-                            <span class="text-xs font-normal text-slate-400">(Optional)</span>
-                        </label>
-                        <input
-                            type="email"
-                            name="email"
-                            id="email"
-                            placeholder="Enter your email address"
-                            value="<?= htmlspecialchars($customer['email'] ?? '') ?>"
-                            class="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 shadow-sm outline-none ring-0 transition focus:border-brand-purple focus:ring-2 focus:ring-brand-purple/40"
-                        />
-                    </div>
-
-                    <!-- Address -->
-                    <div class="space-y-1.5">
-                        <label for="address" class="flex items-center gap-1.5 text-sm font-medium text-slate-800">
-                            <i class="fas fa-map-marker-alt text-xs text-brand-purple"></i>
-                            Address
-                            <span class="text-red-500">*</span>
-                        </label>
-                        <textarea
-                            name="address"
-                            id="address"
-                            placeholder="Enter your complete address"
-                            required
-                            class="w-full min-h-[90px] rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 shadow-sm outline-none ring-0 transition focus:border-brand-purple focus:ring-2 focus:ring-brand-purple/40"
-                        ><?= htmlspecialchars($customer['address'] ?? '') ?></textarea>
-                    </div>
-
-                    <!-- Info note -->
-                    <div class="rounded-2xl bg-slate-50 px-4 py-3 text-xs text-slate-500 flex gap-2">
-                        <i class="fa-solid fa-shield-halved mt-0.5 text-slate-400"></i>
-                        <p>
-                            Your details will only be used to verify your reward and for contacting you regarding delivery or prize updates.
-                        </p>
-                    </div>
-
-                    <!-- Submit -->
-                    <button
-                        type="submit"
-                        class="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-brand-purple to-brand-deep px-4 py-2.5 text-sm font-semibold text-slate-900 shadow-lg shadow-brand-purple/30 transition hover:translate-y-[1px] hover:shadow-xl active:translate-y-[2px]"
-                        id="submitBtn"
-                    >
-                        Continue to Next Step
-                        <i class="fas fa-arrow-right text-xs"></i>
-                    </button>
-                </form>
-
-            <!-- STEP 2: CODE -->
-            <?php elseif ($step === 'code'): ?>
-                <form method="POST" action="" id="codeForm" class="space-y-5">
-                    <input type="hidden" name="step" value="code">
-
-                    <!-- Summary -->
-                    <div class="rounded-2xl bg-slate-50 px-4 py-3 text-xs text-slate-600 space-y-1.5">
-                        <p class="font-semibold text-slate-800 flex items-center gap-2">
-                            <i class="fa-solid fa-user-check text-brand-purple"></i>
-                            Your Information
-                        </p>
-                        <p><span class="font-medium">Name:</span> <?= htmlspecialchars($customer['name']) ?></p>
-                        <p><span class="font-medium">Phone:</span> <?= htmlspecialchars($customer['phone']) ?></p>
-                        <?php if (!empty($customer['email'])): ?>
-                            <p><span class="font-medium">Email:</span> <?= htmlspecialchars($customer['email']) ?></p>
-                        <?php endif; ?>
-                    </div>
-
-                    <!-- Reward code -->
-                    <div class="space-y-1.5">
-                        <label for="reward_code" class="flex items-center gap-1.5 text-sm font-medium text-slate-800">
-                            <i class="fas fa-ticket-alt text-xs text-brand-purple"></i>
-                            Enter Reward Code
-                            <span class="text-red-500">*</span>
-                        </label>
-                        <input
-                            type="text"
-                            name="reward_code"
-                            id="reward_code"
-                            autocomplete="off"
-                            required
-                            autofocus
-                            maxlength="50"
-                            class="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm tracking-[0.15em] uppercase text-slate-900 shadow-sm outline-none ring-0 transition focus:border-brand-purple focus:ring-2 focus:ring-brand-purple/40"
-                        />
-                        <p class="text-[11px] text-slate-400">
-                            You can find this code printed on the sticker. Please enter it exactly as shown.
-                        </p>
-                    </div>
-
-                    <!-- Buttons -->
-                    <div class="space-y-2">
-                        <button
-                            type="submit"
-                            class="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-emerald-500/30 transition hover:translate-y-[1px] hover:shadow-xl active:translate-y-[2px]"
-                            id="submitBtn"
-                        >
-                            <i class="fas fa-gift text-xs"></i>
-                            Redeem Code
-                        </button>
-
-                        <a
-                            href="?step=info"
-                            class="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50"
-                        >
-                            <i class="fas fa-arrow-left text-xs"></i>
-                            Back to Edit Information
-                        </a>
-                    </div>
-                </form>
-
-            <!-- STEP 3: SUCCESS -->
-            <?php elseif ($step === 'success'): ?>
-                <div class="relative space-y-5">
-                    <!-- Animated glow background -->
-                    <div class="sweep-glow rounded-3xl"></div>
-
-                    <div class="relative rounded-3xl bg-emerald-50 px-5 py-4 border border-emerald-100 text-center">
-                        <div class="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-emerald-500 text-white shadow-md pop-in">
-                            <i class="fa-solid fa-check text-xl"></i>
-                        </div>
-                        <h3 class="text-xl font-semibold text-emerald-800 mb-1">
-                            Reward Redeemed Successfully!
-                        </h3>
-                        <p class="text-sm text-emerald-700">
-                            Thank you for choosing LIYAS International. Your entry has been recorded.
-                        </p>
-                    </div>
-
-                    <div class="relative rounded-3xl bg-gradient-to-br from-[#f09433] via-[#dc2743] to-[#bc1888] px-5 py-5 text-white shadow-lg overflow-hidden">
-                        <div class="pointer-events-none absolute -right-6 -top-6 h-20 w-20 rounded-full bg-white/10 blur-xl"></div>
-                        <h3 class="mb-2 flex items-center gap-2 text-lg font-semibold justify-center sm:justify-center">
-                            <i class="fab fa-instagram"></i>
-                            Follow Us on Instagram
-                        </h3>
-                        <p class="mb-4 text-sm leading-relaxed text-center sm:text-left">
-                            Follow our Instagram page to stay updated with offers and reward draws.
-                            <span class="font-semibold">Only followers are eligible for the rewards draw!</span>
-                        </p>
-                        <div class="flex justify-center sm:justify-center">
-                            <a
-                                href="https://instagram.com/liyasinternational"
-                                target="_blank"
-                                class="inline-flex items-center gap-2 rounded-full bg-white px-5 py-2 text-sm font-semibold text-[#bc1888] shadow-md transition hover:translate-y-[1px] hover:shadow-lg"
-                            >
-                                <i class="fab fa-instagram"></i>
-                                Follow @liyasinternational
-                            </a>
-                        </div>
-                    </div>
-
-                    <div class="relative rounded-2xl bg-slate-50 px-4 py-3 text-xs text-slate-600 space-y-1.5">
-                        <p class="font-semibold text-slate-800">What's next?</p>
-                        <p>
-                            Keep an eye on our Instagram page for announcements about winners, exclusive updates,
-                            and upcoming promotions. Make sure you're following us so you don't miss anything!
-                        </p>
-                    </div>
-                </div>
-            <?php endif; ?>
-
-            <!-- Footer note -->
-            <div class="mt-7 border-t border-slate-200/70 pt-4">
-                <p class="text-center text-[11px] text-slate-400">
-                    One-time use only &bull; Each code can be redeemed once
-                </p>
+        <div class="step-card">
+            <div class="step">STEP-02</div>
+            <h2>How can we<br><span>contact you?</span></h2>
+            <div class="input">
+                <input type="email" name="email" required placeholder="Your Email Address">
+                <input type="tel" name="phone_number" required placeholder="Your Phone Number">
             </div>
         </div>
-    </div>
 
-    <script>
-        // Phone number validation: allow any country code prefix (with or without +), then exactly 10 digits
-        const phoneInput = document.getElementById('phone');
-        if (phoneInput) {
-            phoneInput.addEventListener('input', function(e) {
-                let value = e.target.value;
-                
-                // Check if starts with + (country code with +)
-                if (value.trim().startsWith('+')) {
-                    // Extract country code part (+, followed by 1-4 digits)
-                    const countryCodeMatch = value.match(/^(\+\d{1,4})/);
-                    if (countryCodeMatch) {
-                        const countryCode = countryCodeMatch[1];
-                        // Extract everything after country code
-                        let afterPrefix = value.substring(countryCode.length).replace(/[^0-9\s]/g, '');
-                        // Remove spaces
-                        afterPrefix = afterPrefix.replace(/\s/g, '');
-                        // Limit to 10 digits after country code
-                        if (afterPrefix.length > 10) {
-                            afterPrefix = afterPrefix.substring(0, 10);
-                        }
-                        // Format: country code followed by 10 digits (with optional space)
-                        value = countryCode + (afterPrefix.length > 0 ? ' ' + afterPrefix : '');
-                    } else {
-                        // Just + or + with invalid format, allow user to type
-                        if (value.match(/^\+\d*$/)) {
-                            // Valid format, allow it
-                        } else {
-                            // Remove invalid characters, keep + and digits
-                            value = value.replace(/[^+\d]/g, '');
-                            // Limit country code to max 4 digits after +
-                            const match = value.match(/^(\+\d{0,4})/);
-                            if (match) {
-                                value = match[1];
-                            }
-                        }
-                    }
-                } else {
-                    // No +, check if starts with country code (1-4 digits) or just phone number
-                    const allDigits = value.replace(/[^0-9]/g, '');
-                    
-                    // Check if first 1-4 digits could be a country code
-                    // If total digits > 10, assume first 1-4 are country code
-                    if (allDigits.length > 10) {
-                        // Has country code without +
-                        // Extract country code (1-4 digits) and phone (10 digits)
-                        const countryCodeMatch = allDigits.match(/^(\d{1,4})(\d{10})/);
-                        if (countryCodeMatch) {
-                            const countryCode = countryCodeMatch[1];
-                            const phoneDigits = countryCodeMatch[2];
-                            value = countryCode + ' ' + phoneDigits;
-                        } else {
-                            // More than 14 digits, limit to first 4 as country code + 10 as phone
-                            const countryCode = allDigits.substring(0, 4);
-                            const phoneDigits = allDigits.substring(4, 14);
-                            value = countryCode + ' ' + phoneDigits;
-                        }
-                    } else if (allDigits.length === 10) {
-                        // Exactly 10 digits, treat as phone number only
-                        value = allDigits;
-                    } else {
-                        // Less than 10 digits, allow user to continue typing
-                        value = allDigits;
-                    }
-                }
-                
-                e.target.value = value;
-                
-                // Validate: extract all digits and check for exactly 10 phone digits
-                let digitsOnly = value.replace(/[^0-9]/g, '');
-                
-                // Determine if there's a country code
-                if (value.trim().startsWith('+')) {
-                    // Country code with +, remove it (1-4 digits after +)
-                    const countryCodeDigits = value.match(/^\+(\d{1,4})/);
-                    if (countryCodeDigits) {
-                        const ccDigits = countryCodeDigits[1].length;
-                        digitsOnly = digitsOnly.substring(ccDigits);
-                    }
-                } else if (digitsOnly.length > 10) {
-                    // Country code without +, remove first 1-4 digits
-                    // Try to match country code pattern
-                    const match = digitsOnly.match(/^(\d{1,4})(\d{10})/);
-                    if (match) {
-                        digitsOnly = match[2]; // Phone number part
-                    } else {
-                        // Fallback: remove first 4 digits
-                        digitsOnly = digitsOnly.substring(4);
-                    }
-                }
-                
-                const isValid = digitsOnly.length === 10;
-                
-                // Visual feedback
-                if (isValid) {
-                    e.target.classList.remove('border-red-300');
-                    e.target.classList.add('border-emerald-300');
-                } else {
-                    e.target.classList.remove('border-emerald-300');
-                    if (digitsOnly.length > 0) {
-                        e.target.classList.add('border-red-300');
-                    } else {
-                        e.target.classList.remove('border-red-300');
-                    }
-                }
-            });
+        <?php foreach($questions as $i => $q): ?>
+        <div class="step-card">
+            <div class="step">STEP-<?= str_pad($i+3, 2, '0', STR_PAD_LEFT) ?></div>
+            <h2><?= htmlspecialchars($q['question_label']) ?></h2>
+            <div class="input">
+            <?php $type = $q['field_type']; ?>
+
+            <?php if ($type === 'text' || $type === 'number'): ?>
+                <input type="<?= $type ?>" name="answers[<?= $q['id'] ?>]" <?= $q['is_required'] ? 'required' : '' ?> placeholder="Your answer here...">
+
+            <?php elseif ($type === 'dropdown'): ?>
+                <select name="answers[<?= $q['id'] ?>]" <?= $q['is_required'] ? 'required' : '' ?> style="width:100%; border:none; border-bottom:2px solid #ddd; padding:15px 0;">
+                    <option value="">Select an option</option>
+                    <option value="Yes">Yes</option>
+                    <option value="No">No</option>
+                </select>
+
+            <?php elseif ($type === 'image_upload' || $type === 'video_upload'): ?>
+                <div class="upload-box" id="drop-zone-<?= $q['id'] ?>" onclick="document.getElementById('file-<?= $q['id'] ?>').click()">
+                    <div class="upload-content" id="content-<?= $q['id'] ?>">
+                        <i class='bx bx-cloud-upload' style="font-size:3.5rem;color:var(--accent);display:block;margin-bottom:10px;"></i>
+                        <p>Drag & Drop or <strong>Browse</strong></p>
+                    </div>
+                    <div class="preview-container" id="preview-<?= $q['id'] ?>" style="display:none;text-align:center;">
+                        <img id="img-prev-<?= $q['id'] ?>" style="display:none;max-height:250px;border-radius:12px;">
+                        <video id="vid-prev-<?= $q['id'] ?>" controls style="display:none;max-height:250px;border-radius:12px;"></video>
+                        <p class="change-file" style="color:var(--accent); font-size:0.8rem; font-weight:600; margin-top:10px;">Click to change file</p>
+                    </div>
+                    <input type="file" name="media[<?= $q['id'] ?>]" id="file-<?= $q['id'] ?>" accept="<?= $type === 'video_upload' ? 'video/*' : 'image/*' ?>" onchange="handlePreview(this,'<?= $q['id'] ?>')" <?= $q['is_required'] ? 'required' : '' ?> hidden>
+                </div>
+            <?php endif; ?>
+            </div>
+        </div>
+        <?php endforeach; ?>
+
+        <div class="actions">
+            <button type="button" class="btn" id="nextBtn" onclick="move(1)">Continue</button>
+            <button type="submit" class="btn" id="submitBtn" style="display:none">Submit</button>
+            <button type="button" class="back" id="prevBtn" onclick="move(-1)" style="visibility:hidden">Back</button>
+        </div>
+        </form>
+      </div>
+   </div>
+
+    <svg class="waves" viewBox="0 24 150 28" preserveAspectRatio="none">
+        <defs><path id="gentle-wave" d="M-160 44c30 0 58-18 88-18s58 18 88 18 58-18 88-18 58 18 88 18v44h-352z"/></defs>
+        <g class="parallax">
+            <use href="#gentle-wave" x="48" y="0" fill="rgba(255,255,255,.4)" />
+            <use href="#gentle-wave" x="48" y="3" fill="rgba(255,255,255,.3)" />
+            <use href="#gentle-wave" x="48" y="5" fill="rgba(255,255,255,.2)" />
+            <use href="#gentle-wave" x="48" y="7" fill="rgba(255,255,255,.15)" />
+        </g>
+    </svg>
+</div>
+</div>
+
+<script>
+let step=0;
+const cards=document.querySelectorAll('.step-card');
+const nextBtn=document.getElementById('nextBtn');
+const submitBtn=document.getElementById('submitBtn');
+const prevBtn=document.getElementById('prevBtn');
+
+function update(){
+    cards.forEach((c,i)=>c.classList.toggle('active',i===step));
+    prevBtn.style.visibility=step===0?'hidden':'visible';
+    nextBtn.style.display=step===cards.length-1?'none':'inline-block';
+    submitBtn.style.display=step===cards.length-1?'inline-block':'none';
+}
+function move(n){
+    if(n===1){
+        const inputs=cards[step].querySelectorAll('[required]');
+        for(const i of inputs){ if(!i.checkValidity()){ i.reportValidity(); return; } }
+    }
+    step=Math.max(0,Math.min(step+n,cards.length-1));
+    update();
+}
+update();
+
+function handlePreview(input, qId) {
+    const content = document.getElementById('content-' + qId);
+    const preview = document.getElementById('preview-' + qId);
+    const imgPrev = document.getElementById('img-prev-' + qId);
+    const vidPrev = document.getElementById('vid-prev-' + qId);
+
+    if (input.files && input.files[0]) {
+        const file = input.files[0];
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            content.style.display = 'none';
+            preview.style.display = 'block';
+            if (file.type.startsWith('image/')) {
+                imgPrev.src = e.target.result; imgPrev.style.display = 'block'; vidPrev.style.display = 'none';
+            } else {
+                vidPrev.src = e.target.result; vidPrev.style.display = 'block'; imgPrev.style.display = 'none';
+            }
         }
-
-        // Email validation: must contain @ symbol if provided
-        const emailInput = document.getElementById('email');
-        if (emailInput) {
-            emailInput.addEventListener('blur', function(e) {
-                const value = e.target.value.trim();
-                if (value && (value.indexOf('@') === -1 || !value.includes('@'))) {
-                    e.target.classList.add('border-red-300');
-                    e.target.classList.remove('border-emerald-300');
-                } else if (value && value.includes('@')) {
-                    e.target.classList.remove('border-red-300');
-                    e.target.classList.add('border-emerald-300');
-                } else {
-                    e.target.classList.remove('border-red-300', 'border-emerald-300');
-                }
-            });
-        }
-
-        // Form validation before submission
-        document.getElementById('infoForm')?.addEventListener('submit', function(e) {
-            let phone = phoneInput?.value.trim() || '';
-            let phoneDigits = phone.replace(/[^0-9]/g, '');
-            
-            // Determine if there's a country code
-            if (phone.trim().startsWith('+')) {
-                // Has +, remove country code (1-4 digits after +)
-                const match = phone.match(/^\+\d{1,4}\s*(.+)$/);
-                if (match) {
-                    phoneDigits = match[1].replace(/[^0-9]/g, '');
-                } else {
-                    // Just +, extract all digits and remove first 1-4
-                    if (phoneDigits.length > 10) {
-                        phoneDigits = phoneDigits.substring(phoneDigits.length - 10);
-                    }
-                }
-            } else if (phoneDigits.length > 10) {
-                // More than 10 digits without +, assume first 1-4 are country code
-                // Try to match: 1-4 digits (country code) + 10 digits (phone)
-                const match = phoneDigits.match(/^(\d{1,4})(\d{10})$/);
-                if (match) {
-                    phoneDigits = match[2]; // Use the 10-digit phone number part
-                } else {
-                    // Fallback: take last 10 digits
-                    phoneDigits = phoneDigits.substring(phoneDigits.length - 10);
-                }
-            }
-            // If exactly 10 digits, use as is (no country code)
-            
-            const email = emailInput?.value.trim();
-            
-            // Validate phone number: must have exactly 10 digits
-            if (phoneDigits.length !== 10) {
-                e.preventDefault();
-                alert('Phone number must be exactly 10 digits (with or without country code)');
-                phoneInput?.focus();
-                return false;
-            }
-            
-            // Validate email if provided
-            if (email && (email.indexOf('@') === -1 || !email.includes('@') || !email.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/))) {
-                e.preventDefault();
-                alert('Please enter a valid email address with @ symbol');
-                emailInput?.focus();
-                return false;
-            }
-            
-            // If validation passes, show loading state
-            const btn = document.getElementById('submitBtn');
-            if (btn) {
-                btn.disabled = true;
-                btn.innerHTML = '<i class="fas fa-spinner fa-spin text-xs"></i> Processing...';
-            }
-        });
-
-        // Auto-uppercase reward code input
-        document.getElementById('reward_code')?.addEventListener('input', function(e) {
-            e.target.value = e.target.value.toUpperCase();
-        });
-
-        // Handle code form submission loading state
-        document.getElementById('codeForm')?.addEventListener('submit', function() {
-            const btn = document.getElementById('submitBtn');
-            if (btn) {
-                btn.disabled = true;
-                btn.innerHTML = '<i class="fas fa-spinner fa-spin text-xs"></i> Processing...';
-            }
-        });
-    </script>
+        reader.readAsDataURL(file);
+    }
+}
+</script>
 </body>
 </html>
-
