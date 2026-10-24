@@ -75,8 +75,8 @@ $asset_base = $is_subdirectory ? '../' : '';
 /* MOVING TRACK */
 .bottle-track {
   display: flex;
-  width: max-content;
-  animation: scroll 20s linear infinite;
+  /* width: max-content; */
+  animation: scroll 5s linear infinite;
 }
 
 /* BOTTLES */
@@ -86,7 +86,7 @@ $asset_base = $is_subdirectory ? '../' : '';
 }
 
 .bottle img {
-  width: 7vh;
+  width: 20vh;
   display: block;
 }
 
