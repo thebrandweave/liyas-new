@@ -31,7 +31,7 @@ $asset_base = $is_subdirectory ? '../' : '';
 
 			<div class="image-column" data-aos="zoom-in" data-aos-delay="50">
 				<div class="image-wrapper">
-					<img src="<?php echo $asset_base; ?>../assets/images/liyas-bottle.png" alt="Liyas Mineral Water Bottle">
+					<img src="<?php echo $asset_base; ?>../assets/images/liyas-bottle1.png" alt="Liyas Mineral Water Bottle">
 				</div>
 			</div>
 

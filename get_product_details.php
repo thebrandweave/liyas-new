@@ -37,7 +37,7 @@ try {
         $product['image_url'] = BASE_URL . '/admin/uploads/products/' . $product['image'];
     } else {
         // You can replace this with a path to a standard placeholder image
-        $product['image_url'] = BASE_URL . '/assets/images/liyas-bottle.png';
+        $product['image_url'] = BASE_URL . '/assets/images/liyas-bottle1.png';
     }
 
 

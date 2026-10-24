@@ -39,7 +39,7 @@ $logout_link = $navBase . '/logout.php';
    class="my-orders-btn"
    title="My Orders">
     
-    <img src="https://liyasinternational.com/assets/images/liyas-bottle.png"
+    <img src="https://liyasinternational.com/assets/images/liyas-bottle1.png"
          alt="Bottle"
          class="order-bottle-icon">
 
@@ -83,7 +83,7 @@ $logout_link = $navBase . '/logout.php';
 
     <li>
     <a href="<?php echo $navBase; ?>/my-orders.php" class="nav-link">
-        <img src="assets/images/liyas-bottle.png"
+        <img src="assets/images/liyas-bottle1.png"
              alt="Bottle"
              style="width:10px;height:24px;margin-right:8px;">
         My Orders

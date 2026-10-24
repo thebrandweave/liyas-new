@@ -321,7 +321,7 @@ body {
 
     <div class="about-unique-right">
       <!--<div class="vertical-text">LIYAS</div>-->
-      <img src="<?php echo $asset_base; ?>../assets/images/liyas-bottle.png" alt="LIYAS Bottle">
+      <img src="<?php echo $asset_base; ?>../assets/images/liyas-bottle1.png" alt="LIYAS Bottle">
     </div>
 
   </div>

@@ -123,22 +123,22 @@ $asset_base = $is_subdirectory ? '../' : '';
     <div class="bottle-track">
 
       <!-- SET 1 -->
-      <div class="bottle"><img src="<?php echo $asset_base; ?>../assets/images/liyas-bottle.png"></div>
-      <div class="bottle"><img src="<?php echo $asset_base; ?>../assets/images/liyas-bottle.png"></div>
-      <div class="bottle"><img src="<?php echo $asset_base; ?>../assets/images/liyas-bottle.png"></div>
-      <div class="bottle"><img src="<?php echo $asset_base; ?>../assets/images/liyas-bottle.png"></div>
-      <div class="bottle"><img src="<?php echo $asset_base; ?>../assets/images/liyas-bottle.png"></div>
-      <div class="bottle"><img src="<?php echo $asset_base; ?>../assets/images/liyas-bottle.png"></div>
-      <div class="bottle"><img src="<?php echo $asset_base; ?>../assets/images/liyas-bottle.png"></div>
+      <div class="bottle"><img src="<?php echo $asset_base; ?>../assets/images/liyas-bottle1.png"></div>
+      <div class="bottle"><img src="<?php echo $asset_base; ?>../assets/images/liyas-bottle1.png"></div>
+      <div class="bottle"><img src="<?php echo $asset_base; ?>../assets/images/liyas-bottle1.png"></div>
+      <div class="bottle"><img src="<?php echo $asset_base; ?>../assets/images/liyas-bottle1.png"></div>
+      <div class="bottle"><img src="<?php echo $asset_base; ?>../assets/images/liyas-bottle1.png"></div>
+      <div class="bottle"><img src="<?php echo $asset_base; ?>../assets/images/liyas-bottle1.png"></div>
+      <div class="bottle"><img src="<?php echo $asset_base; ?>../assets/images/liyas-bottle1.png"></div>
 
       <!-- SET 2 (duplicate) -->
-      <div class="bottle"><img src="<?php echo $asset_base; ?>../assets/images/liyas-bottle.png"></div>
-      <div class="bottle"><img src="<?php echo $asset_base; ?>../assets/images/liyas-bottle.png"></div>
-      <div class="bottle"><img src="<?php echo $asset_base; ?>../assets/images/liyas-bottle.png"></div>
-      <div class="bottle"><img src="<?php echo $asset_base; ?>../assets/images/liyas-bottle.png"></div>
-      <div class="bottle"><img src="<?php echo $asset_base; ?>../assets/images/liyas-bottle.png"></div>
-      <div class="bottle"><img src="<?php echo $asset_base; ?>../assets/images/liyas-bottle.png"></div>
-      <div class="bottle"><img src="<?php echo $asset_base; ?>../assets/images/liyas-bottle.png"></div>
+      <div class="bottle"><img src="<?php echo $asset_base; ?>../assets/images/liyas-bottle1.png"></div>
+      <div class="bottle"><img src="<?php echo $asset_base; ?>../assets/images/liyas-bottle1.png"></div>
+      <div class="bottle"><img src="<?php echo $asset_base; ?>../assets/images/liyas-bottle1.png"></div>
+      <div class="bottle"><img src="<?php echo $asset_base; ?>../assets/images/liyas-bottle1.png"></div>
+      <div class="bottle"><img src="<?php echo $asset_base; ?>../assets/images/liyas-bottle1.png"></div>
+      <div class="bottle"><img src="<?php echo $asset_base; ?>../assets/images/liyas-bottle1.png"></div>
+      <div class="bottle"><img src="<?php echo $asset_base; ?>../assets/images/liyas-bottle1.png"></div>
 
     </div>
   </div>
