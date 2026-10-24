@@ -57,14 +57,14 @@ $asset_base = $is_subdirectory ? '../' : '';
 			--why-bg: #f6fbff;
 		}
 
-		/* .why-choose-section {
+		.why-choose-section {
 			position: relative;
 			padding: 80px 0;
 			background: #2ca0a8;
 			border-radius: 20px;
-		} */
+		}
 
-.why-choose-section {
+/* .why-choose-section {
     position: relative;
     padding: 40px 0;
     border-radius: 20px;
@@ -82,7 +82,7 @@ $asset_base = $is_subdirectory ? '../' : '';
     background-repeat: no-repeat;
     opacity: 0.7; /* Background image opacity */
     z-index: -1;
-}
+} */
 
 		.why-title { text-align: center; margin-bottom: 30px; }
 		.why-subtitle { color: var(--why-accent); font-weight: 600; letter-spacing: 1px; }
