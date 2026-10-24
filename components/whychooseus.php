@@ -87,7 +87,7 @@ $asset_base = $is_subdirectory ? '../' : '';
 		.why-title { text-align: center; margin-bottom: 30px; }
 		.why-subtitle { color: var(--why-accent); font-weight: 600; letter-spacing: 1px;text-align:center; }
 		.why-heading { font-weight: 700; color: var(--why-text-primary); text-align:center;}
-		.why-intro { color: #ffffff; max-width: 720px; margin: 0 auto; }
+		.why-intro { color: #ffffff; max-width: 720px; margin: 0 auto; text-align:center; }
 
 		.features-grid { display: grid; gap: 2rem; align-items: center; grid-template-columns: 1fr; }
 		.features-column { display: flex; flex-direction: column; gap: 2rem; }
