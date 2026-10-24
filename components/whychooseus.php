@@ -85,8 +85,8 @@ $asset_base = $is_subdirectory ? '../' : '';
 } */
 
 		.why-title { text-align: center; margin-bottom: 30px; }
-		.why-subtitle { color: var(--why-accent); font-weight: 600; letter-spacing: 1px; }
-		.why-heading { font-weight: 700; color: var(--why-text-primary); }
+		.why-subtitle { color: var(--why-accent); font-weight: 600; letter-spacing: 1px;text-align:center; }
+		.why-heading { font-weight: 700; color: var(--why-text-primary); text-align:center;}
 		.why-intro { color: #061a1b; max-width: 720px; margin: 0 auto; }
 
 		.features-grid { display: grid; gap: 2rem; align-items: center; grid-template-columns: 1fr; }
