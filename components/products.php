@@ -95,7 +95,7 @@ $products = $products_stmt->fetchAll(PDO::FETCH_ASSOC);
 .product-info .category {
   font-size: 0.75rem;
   text-transform: uppercase;
-  color: #4ad2e2;
+  color: #3b8ebf;
   font-weight: 600;
 }
 
@@ -134,7 +134,7 @@ $products = $products_stmt->fetchAll(PDO::FETCH_ASSOC);
 }
 
 .add-btn {
-  background: #4ad2e2;
+  background: #3b8ebf;
   color: #fff;
   border: none;
   padding: 11px 28px;

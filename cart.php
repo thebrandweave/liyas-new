@@ -60,7 +60,7 @@ require_once __DIR__ . '/config/config.php';
             display: block;
             width: 100%;
             text-align: center;
-            background: #4ad2e2;
+            background: #3b8ebf;
             color: #fff;
             padding: 14px;
             border-radius: 30px;
@@ -105,7 +105,7 @@ require_once __DIR__ . '/config/config.php';
 
                     <div class="summary-row" style="border-top: 1px dashed #e2e8f0; padding-top: 1rem; margin-top: 1rem;">
                         <span style="color: #0b2e4e; font-weight: 700; font-size: 1.1rem;">Estimated Total</span>
-                        <span style="color: #4ad2e2; font-weight: 800; font-size: 1.3rem;" class="total-mirror-price">
+                        <span style="color: #3b8ebf; font-weight: 800; font-size: 1.3rem;" class="total-mirror-price">
                             <script>
                                 // Automatically sync total-mirror-price content with the core layout total element
                                 document.addEventListener('DOMContentLoaded', () => {

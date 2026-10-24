@@ -86,7 +86,7 @@ body{
     width:100%;
     padding:14px;
     border-radius:30px;
-    background:#4ad2e2;
+    background:#3b8ebf;
     color:#fff;
     border:none;
     font-weight:600;
@@ -101,7 +101,7 @@ body{
     text-align:center;
 }
 .auth-footer{text-align:center;margin-top:1.5rem}
-.auth-footer a{color:#4ad2e2;font-weight:600;text-decoration:none}
+.auth-footer a{color:#3b8ebf;font-weight:600;text-decoration:none}
 </style>
 </head>
 

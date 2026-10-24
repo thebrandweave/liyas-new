@@ -146,7 +146,7 @@ $social_links = $social_links_stmt->fetchAll(PDO::FETCH_ASSOC);
   }
 
   .footer-about h3 {
-    color: #4ad2e2;
+    color: #3b8ebf;
     font-weight: 700;
     margin: 0 0 12px;
   }
@@ -171,7 +171,7 @@ $social_links = $social_links_stmt->fetchAll(PDO::FETCH_ASSOC);
     margin: 0 6px 12px 0;
     border-radius: 50%;
     background: #fff;
-    color: #4ad2e2;
+    color: #3b8ebf;
     font-size: 18px;
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
     transition: 0.18s;
@@ -179,7 +179,7 @@ $social_links = $social_links_stmt->fetchAll(PDO::FETCH_ASSOC);
   }
 
   .social-links a:hover {
-    background: #4ad2e2;
+    background: #3b8ebf;
     color: #fff;
   }
 
@@ -194,7 +194,7 @@ $social_links = $social_links_stmt->fetchAll(PDO::FETCH_ASSOC);
 
   .newsletter h2 {
     font-size: 22px;
-    color: #4ad2e2;
+    color: #3b8ebf;
     margin: 0 0 8px;
   }
 
@@ -212,7 +212,7 @@ $social_links = $social_links_stmt->fetchAll(PDO::FETCH_ASSOC);
   .newsletter-form input {
     flex: 1;
     padding: 12px 16px;
-    border: 2px solid #4ad2e2;
+    border: 2px solid #3b8ebf;
     border-radius: 28px;
     outline: none;
     font-size: 15px;
@@ -222,7 +222,7 @@ $social_links = $social_links_stmt->fetchAll(PDO::FETCH_ASSOC);
     padding: 10px 20px;
     border-radius: 28px;
     border: none;
-    background: #4ad2e2;
+    background: #3b8ebf;
     color: #fff;
     font-weight: 600;
     cursor: pointer;

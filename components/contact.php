@@ -159,7 +159,7 @@
             content: "";
             position: absolute;
             inset: 0;
-            background: linear-gradient(135deg, rgba(240,249,255,.95), rgba(255,255,255,.9));
+            background: linear-gradient(135deg, rgba(201, 231, 251, 0.95), rgba(255,255,255,.9));
         }
 
         .contact-form-wrapper {
@@ -200,7 +200,7 @@
         .contact-textarea { resize: none; }
 
         .contact-submit {
-            background: linear-gradient(135deg, #3bb6c4, #4ad2e2);
+            background: linear-gradient(135deg, #3bb6c4, #3b8ebf);
             color: #fff;
             border-radius: 50px;
             padding: 14px 44px;

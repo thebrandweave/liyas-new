@@ -150,7 +150,7 @@ $logout_link = $navBase . '/logout.php';
 }
 
 .my-orders-btn:hover {
-    color: #4ad2e2;
+    color: #3b8ebf;
 }
 
 .order-bottle-icon {
@@ -165,7 +165,7 @@ $logout_link = $navBase . '/logout.php';
     }
 }
   .cart-icon-1:hover {
-      color: #4ad2e2;
+      color: #3b8ebf;
   }
 
   .cart-icon-1 svg {

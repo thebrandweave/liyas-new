@@ -65,7 +65,7 @@ body {
 }
 
 .brand-subtitle span {
-  color: #4ad2e2;
+  color: #3b8ebf;
 }
 
 .about-hero-left p {
@@ -86,7 +86,7 @@ body {
 }
 
 .btn-primary {
-  background: #4ad2e2;
+  background: #3b8ebf;
   color: #fff;
 }
 
@@ -95,12 +95,12 @@ body {
 }
 
 .btn-outline {
-  border: 2px solid #4ad2e2;
-  color: #4ad2e2;
+  border: 2px solid #3b8ebf;
+  color: #3b8ebf;
 }
 
 .btn-outline:hover {
-  background: #4ad2e2;
+  background: #3b8ebf;
   color: #fff;
 }
 
@@ -141,7 +141,7 @@ body {
 
 .about-eyebrow {
   font-size: 0.85rem;
-  color: #4ad2e2;
+  color: #3b8ebf;
   font-weight: 600;
   letter-spacing: 1px;
   text-transform: uppercase;

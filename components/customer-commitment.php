@@ -22,7 +22,7 @@
 
 <style>
     :root {
-        --commitment-primary: #4ad2e2;
+        --commitment-primary: #3b8ebf;
         --commitment-secondary: #0b2e4e;
         --commitment-text: #5a6b7b;
         --commitment-bg: #f6fbff;

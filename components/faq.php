@@ -373,7 +373,7 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            color: #4ad2e2;
+            color: #3b8ebf;
             font-size: 14px;
             transition: transform 0.3s ease, color 0.3s ease;
             flex-shrink: 0;
@@ -383,7 +383,7 @@
 
         .faq-item.active .faq-icon {
             transform: rotate(180deg);
-            background: #4ad2e2;
+            background: #3b8ebf;
             color: white;
         }
 

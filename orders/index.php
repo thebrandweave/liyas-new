@@ -49,7 +49,7 @@ $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
         .order-price{ font-size:24px; font-weight:700; color:#111827; }
         .status-line{ display:flex; align-items:center; gap:10px; margin-bottom:5px; }
         .status-dot{ width:10px; height:10px; border-radius:50%; }
-        .view-btn{ background:#4ad2e2; border:none; padding:10px 20px; border-radius:10px; font-weight:600; color:#fff; text-decoration:none; }
+        .view-btn{ background:#3b8ebf; border:none; padding:10px 20px; border-radius:10px; font-weight:600; color:#fff; text-decoration:none; }
         .view-btn:hover{ background:#2dc4d5; color:#fff; }
         .empty-orders{ text-align:center; padding:80px 20px; }
         
@@ -220,7 +220,7 @@ $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
 }
 
  .contact-submit {
-            background: linear-gradient(135deg, #3bb6c4, #4ad2e2);
+            background: linear-gradient(135deg, #3bb6c4, #3b8ebf);
             color: #fff;
             border-radius: 50px;
             padding: 14px 44px;
@@ -330,7 +330,7 @@ $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
     <?php include '../components/navbar.php'; ?>
 
     <div class="container py-5">
-        <h2 class="page-title mb-4" >My <span  style="color:#4ad2e2;font-size:2.5rem; font-weight:800;">Orders</span></h2>
+        <h2 class="page-title mb-4" >My <span  style="color:#3b8ebf;font-size:2.5rem; font-weight:800;">Orders</span></h2>
 
 
 

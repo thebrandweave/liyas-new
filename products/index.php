@@ -40,7 +40,7 @@ $social_links = $social_links_stmt->fetchAll(PDO::FETCH_ASSOC);
     
     <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
     
-    <meta name="theme-color" content="#4ad2e2">
+    <meta name="theme-color" content="#3b8ebf">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -118,7 +118,7 @@ $social_links = $social_links_stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
     #productDetailModal .modal-body .price {
-        color: #4ad2e2;
+        color: #3b8ebf;
         font-size: 2rem;
         font-weight: 700;
         margin-bottom: 1rem;
@@ -167,12 +167,12 @@ $social_links = $social_links_stmt->fetchAll(PDO::FETCH_ASSOC);
     }
     #productDetailModal #reviewForm .form-control:focus,
     #productDetailModal #reviewForm .form-select:focus {
-        border-color: #4ad2e2;
+        border-color: #3b8ebf;
         box-shadow: 0 0 0 3px rgba(74, 210, 226, 0.2);
         background-color: #fff;
     }
     #productDetailModal #reviewForm .btn-primary {
-      background: #4ad2e2;
+      background: #3b8ebf;
       color: #fff;
       border: none;
       padding: 12px 28px;
@@ -342,7 +342,7 @@ $social_links = $social_links_stmt->fetchAll(PDO::FETCH_ASSOC);
         }
 
         .page-breadcrumb a {
-            color: #4ad2e2;
+            color: #3b8ebf;
             text-decoration: none;
             transition: color 0.3s ease;
         }
@@ -364,7 +364,7 @@ $social_links = $social_links_stmt->fetchAll(PDO::FETCH_ASSOC);
         }
 
         .page-title .text-primary {
-            color: #4ad2e2 !important;
+            color: #3b8ebf !important;
         }
 
 

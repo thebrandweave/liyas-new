@@ -24,7 +24,7 @@ if (session_status() === PHP_SESSION_NONE) {
 <style>
 /* 🌊 LIYAS SEA BLUE THEME */
 :root {
-    --liyas-blue: #4ad2e2;
+    --liyas-blue: #3b8ebf;
     --liyas-blue-dark: #27b6c7;
     --bg-soft: #f5feff;
     --border-soft: #e0f4f7;

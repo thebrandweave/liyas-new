@@ -80,7 +80,7 @@
 
         font-weight: 600;
 
-        color: #4ad2e2;
+        color: #3b8ebf;
 
         margin: 0 auto;
 
@@ -96,7 +96,7 @@
 
         display: inline-block;
 
-        color: #4ad2e2;
+        color: #3b8ebf;
 
         transition: color 0.4s ease, transform 0.3s ease, text-shadow 0.4s ease;
 
@@ -152,7 +152,7 @@
 
     .scroll-text span.show-up {
 
-        color: #4ad2e2; /* back to cyan */
+        color: #3b8ebf; /* back to cyan */
 
         transform: translateY(0);
 

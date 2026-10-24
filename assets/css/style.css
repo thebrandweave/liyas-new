@@ -60,7 +60,7 @@ body {
     --text-8xl: 6rem;     /* 96px */
     
     /* Colors */
-    --primary: #4ad2e2;
+    --primary: #3b8ebf;
     --primary-dark: #2cbac9;
     --primary-light: #e0f9fc;
     --secondary: #64748b;
@@ -580,7 +580,7 @@ img {
         }
 
         .hero-subtitle {
-            color: #4ad2e2;
+            color: #3b8ebf;
             font-size: 16px;
             font-weight: 700;
             margin-bottom: 20px;
@@ -599,7 +599,7 @@ img {
             transform: translateY(-50%);
             width: 50px;
             height: 2px;
-            background: #4ad2e2;
+            background: #3b8ebf;
         }
 
         .hero h1 {
@@ -611,7 +611,7 @@ img {
         }
 
         .hero h1 span {
-            color: #4ad2e2;
+            color: #3b8ebf;
         }
 
         .hero p {
@@ -630,7 +630,7 @@ img {
         .btn-primary {
             display: inline-block;
             padding: 18px 45px;
-            background: #4ad2e2;
+            background: #3b8ebf;
             color: white;
             text-decoration: none;
             border-radius: 50px;
@@ -681,8 +681,8 @@ img {
         }
 
         .btn-secondary:hover {
-            border-color: #4ad2e2;
-            color: #4ad2e2;
+            border-color: #3b8ebf;
+            color: #3b8ebf;
             transform: translateY(-3px);
         }
 
@@ -2716,7 +2716,7 @@ footer::before {
             left: 10%;
             right: 10%;
             height: 2px;
-            background: linear-gradient(90deg, #4ad2e2 0%, #4ad2e2 75%, transparent 75%);
+            background: linear-gradient(90deg, #3b8ebf 0%, #3b8ebf 75%, transparent 75%);
             z-index: 0;
         }
 
@@ -2736,7 +2736,7 @@ footer::before {
         .step-number {
             width: 90px;
             height: 90px;
-            background: linear-gradient(135deg, #4ad2e2, #2cbac9);
+            background: linear-gradient(135deg, #3b8ebf, #2cbac9);
             color: white;
             border-radius: 50%;
             display: flex;
@@ -2770,7 +2770,7 @@ footer::before {
         /* Stats Section */
         .stats-section {
             padding: 100px 80px;
-            background: linear-gradient(135deg, #4ad2e2 0%, #2cbac9 100%);
+            background: linear-gradient(135deg, #3b8ebf 0%, #2cbac9 100%);
             color: white;
             position: relative;
             overflow: hidden;
@@ -2916,13 +2916,13 @@ footer::before {
             display: flex;
             align-items: center;
             justify-content: center;
-            color: #4ad2e2;
+            color: #3b8ebf;
             text-decoration: none;
             transition: all 0.3s;
         }
 
         .member-social a:hover {
-            background: #4ad2e2;
+            background: #3b8ebf;
             color: white;
         }
 
@@ -3001,7 +3001,7 @@ footer::before {
             position: absolute;
             top: 20px;
             left: 20px;
-            background: #4ad2e2;
+            background: #3b8ebf;
             color: white;
             padding: 8px 20px;
             border-radius: 20px;
@@ -3045,7 +3045,7 @@ footer::before {
         }
 
         .blog-link {
-            color: #4ad2e2;
+            color: #3b8ebf;
             text-decoration: none;
             font-weight: 600;
             display: inline-flex;
@@ -3098,13 +3098,13 @@ footer::before {
         }
 
         .newsletter-input:focus {
-            border-color: #4ad2e2;
+            border-color: #3b8ebf;
             box-shadow: 0 0 0 4px rgba(74, 210, 226, 0.1);
         }
 
         .newsletter-btn {
             padding: 18px 45px;
-            background: #4ad2e2;
+            background: #3b8ebf;
             color: white;
             border: none;
             border-radius: 50px;
@@ -3303,7 +3303,7 @@ footer::before {
 
         .play-button:hover {
             transform: scale(1.1);
-            background: #4ad2e2;
+            background: #3b8ebf;
         }
 
         .play-button::before {
@@ -3312,7 +3312,7 @@ footer::before {
             height: 0;
             border-top: 20px solid transparent;
             border-bottom: 20px solid transparent;
-            border-left: 30px solid #4ad2e2;
+            border-left: 30px solid #3b8ebf;
             margin-left: 5px;
             transition: all 0.3s;
         }
@@ -3381,7 +3381,7 @@ footer::before {
         .content-number {
             font-size: 80px;
             font-weight: 800;
-            color: #4ad2e2;
+            color: #3b8ebf;
             opacity: 0.2;
             line-height: 1;
             margin-bottom: 20px;
@@ -3425,7 +3425,7 @@ footer::before {
         .pricing-card:nth-child(2) { 
             animation-delay: 0.2s;
             transform: scale(1.05);
-            border-color: #4ad2e2;
+            border-color: #3b8ebf;
             box-shadow: 0 20px 60px rgba(74, 210, 226, 0.2);
         }
         .pricing-card:nth-child(3) { animation-delay: 0.3s; }
@@ -3433,7 +3433,7 @@ footer::before {
         .pricing-card:hover {
             transform: translateY(-10px) scale(1.02);
             box-shadow: 0 20px 60px rgba(74, 210, 226, 0.15);
-            border-color: #4ad2e2;
+            border-color: #3b8ebf;
         }
 
         .pricing-badge {
@@ -3441,7 +3441,7 @@ footer::before {
             top: -15px;
             left: 50%;
             transform: translateX(-50%);
-            background: linear-gradient(135deg, #4ad2e2, #2cbac9);
+            background: linear-gradient(135deg, #3b8ebf, #2cbac9);
             color: white;
             padding: 8px 25px;
             border-radius: 20px;
@@ -3461,7 +3461,7 @@ footer::before {
         .pricing-card .price {
             font-size: 56px;
             font-weight: 800;
-            color: #4ad2e2;
+            color: #3b8ebf;
             margin-bottom: 10px;
         }
 
@@ -3495,7 +3495,7 @@ footer::before {
 
         .pricing-features li::before {
             content: '✓';
-            color: #4ad2e2;
+            color: #3b8ebf;
             font-weight: bold;
             margin-right: 10px;
         }
@@ -4359,7 +4359,7 @@ footer::before {
         .btn-secondary:focus,
         .btn-white:focus,
         .quantity-btn:focus {
-            outline: 2px solid #4ad2e2;
+            outline: 2px solid #3b8ebf;
             outline-offset: 2px;
         }
 

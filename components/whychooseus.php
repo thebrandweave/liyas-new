@@ -52,7 +52,7 @@ $asset_base = $is_subdirectory ? '../' : '';
 		:root {
 			--why-text-primary: #0b2e4e;
 			--why-text-secondary: #5a6b7b;
-			--why-accent: #4ad2e2; /* Site cyan */
+			--why-accent: #3b8ebf; /* Site cyan */
 			--why-white: #ffffff;
 			--why-bg: #f6fbff;
 		}
