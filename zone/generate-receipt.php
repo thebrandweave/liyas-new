@@ -1036,7 +1036,7 @@ foreach ($vehicle_products as $pid => $vp) {
             border-top: 2px solid var(--border-color);
             margin-top: 8px;
             padding-top: 10px;
-            font-size: 16px;
+            font-size: 14px;
             font-weight: 800;
         }
 
