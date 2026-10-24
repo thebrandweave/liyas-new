@@ -113,6 +113,11 @@ $logout_link = $navBase . '/logout.php';
     padding-top: 90px;
   }
 
+  body:has(.hero),
+  body.has-hero {
+    padding-top: 0 !important;
+  }
+
   .cart-icon-wrap,
   [data-cart-trigger] {
       position: relative;
@@ -183,17 +188,23 @@ $logout_link = $navBase . '/logout.php';
   }
   .liyas-navbar {
      width: 100%;
-     background: white;
+     background: transparent !important;
+     background-color: transparent !important;
+     box-shadow: none !important;
      padding: 0.7rem 2rem;
      z-index: 1100;
-     transition: background 0.3s ease, box-shadow 0.3s ease, padding 0.3s ease;
+     transition: background 0.3s ease, background-color 0.3s ease, box-shadow 0.3s ease, padding 0.3s ease;
      top: 0;
      left: 0;
-     position:fixed;
+     position: fixed;
   }
 
   .liyas-navbar.scrolled {
-     backdrop-filter:blur(10px);
+     background: rgba(255, 255, 255, 0.92) !important;
+     background-color: rgba(255, 255, 255, 0.92) !important;
+     backdrop-filter: blur(10px);
+     -webkit-backdrop-filter: blur(10px);
+     box-shadow: 0 4px 20px rgba(15, 23, 42, 0.08) !important;
   }
 
   .nav-items-placeholder {

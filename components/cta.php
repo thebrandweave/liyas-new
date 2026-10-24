@@ -24,14 +24,17 @@
     </div>
 
     <style>
-        .cta-section {
-            background: linear-gradient(135deg, #10383a 0%, #10383a 100%);
-            color: var(--white);
-            padding: var(--space-xxxl) 0;
-            text-align: center;
-            position: relative;
-            overflow: hidden;
-        }
+      .cta-section {
+    background-image: url('assets/images/cta1.png');
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    color: var(--white);
+    padding: var(--space-xxxl) 0;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+}
 
         .cta-content {
             max-width: 800px;

@@ -28,7 +28,7 @@
 
     <style>
         .jumbotron{
-  background-image: url('assets/images/bg1.jpeg');
+  background-image: url('assets/images/bg3.png');
   background-repeat: no-repeat;
   background-size: cover;
   border-radius: 0 !important;

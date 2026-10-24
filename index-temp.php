@@ -200,56 +200,55 @@ $social_links = $social_links_stmt->fetchAll(PDO::FETCH_ASSOC);
             to { opacity: 0; visibility: hidden; transform: scale(1.05); }
         }
 
-        /* Hero layout padding to avoid overlap with scroll control */
-        .hero { 
-            position: relative; 
-            /* padding-bottom: 120px; space reserved for scroll control */
+        body {
+            padding-top: 0 !important;
         }
 
-        @media (min-width: 768px) {
-            .hero {
-                 /* padding-bottom: 140px;  */
-                }
+        /* Hero layout and wave styling */
+        .hero { 
+            position: relative; 
         }
 
         .wave-svg {
             position: absolute;
-            bottom: 0;
+            bottom: -260px;
             left: 0;
             width: 100%;
-            height: auto;
+            height: clamp(55px, 7vw, 95px);
             pointer-events: none;
+            z-index: 2;
         }
 
         @media (max-width: 767px) {
             .wave-svg {
-                top: 790px; /* keep wave touching the next section */
+                height: 48px;
+                bottom: -14px;
             }
         }
 
         /* Hero Scroll Down Button - Circular Text Design */
         .hero-scroll-down {
             position: absolute;
-            bottom: 20%;
+            bottom: 20px;
             left: 50%;
             transform: translateX(-50%);
-            z-index: 100;
+            z-index: 10;
             cursor: pointer;
-            width: 150px;
-            height: 150px;
+            width: 110px;
+            height: 110px;
             display: flex;
             align-items: center;
             justify-content: center;
         }
 
         .hero-scroll-down svg {
-            width: 150px;
-            height: 150px;
+            width: 110px;
+            height: 110px;
             transition: transform 1s cubic-bezier(0.65, 0, 0.35, 1);
         }
 
         .hero-scroll-down:hover svg .textcircle {
-            transform: scale(1.2) rotate(90deg);
+            transform: scale(1.15) rotate(90deg);
         }
 
         .hero-scroll-down .textcircle {
@@ -270,6 +269,7 @@ $social_links = $social_links_stmt->fetchAll(PDO::FETCH_ASSOC);
         .hero-scroll-down .center-arrow {
             transform-origin: 250px 250px;
             transition: transform 0.3s ease;
+            animation: bounce 2s infinite;
         }
 
         .hero-scroll-down:hover .center-arrow {
@@ -294,20 +294,16 @@ $social_links = $social_links_stmt->fetchAll(PDO::FETCH_ASSOC);
             }
         }
 
-        .hero-scroll-down .center-arrow {
-            animation: bounce 2s infinite;
-        }
-
         @media (max-width: 767px) {
             .hero-scroll-down {
-                bottom: 12px; /* a bit lower on small screens */
-                width: 120px;
-                height: 120px;
+                bottom: 12px;
+                width: 80px;
+                height: 80px;
             }
             
             .hero-scroll-down svg {
-                width: 120px;
-                height: 120px;
+                width: 80px;
+                height: 80px;
             }
 
             .hero-scroll-down text {
@@ -315,12 +311,9 @@ $social_links = $social_links_stmt->fetchAll(PDO::FETCH_ASSOC);
             }
         }
 
-
-
         .about-images {
             position: relative;
         }
-
 
         /* Hero image placement rules */
         .hero-image-mobile {
@@ -330,24 +323,23 @@ $social_links = $social_links_stmt->fetchAll(PDO::FETCH_ASSOC);
         }
 
         .hero-image-desktop {
-            display: block;
+            display: flex;
+            justify-content: center;
+            align-items: center;
         }
 
         @media (max-width: 767px) {
             .hero-image-mobile { display: block; }
             .hero-image-desktop { display: none; }
-        }
-
-        @media (min-width: 768px) {
-            .hero-image-mobile { display: none; }
-            .hero-image-desktop { display: block; }
-        }
-
-        @media (max-width: 767px) {
             .hero-image-mobile img {
                 max-width: clamp(180px, 62vw, 260px);
                 margin-inline: auto;
             }
+        }
+
+        @media (min-width: 768px) {
+            .hero-image-mobile { display: none; }
+            .hero-image-desktop { display: flex; }
         }
 
         /* Social Sidebar - match circular white buttons look */
@@ -610,10 +602,10 @@ $social_links = $social_links_stmt->fetchAll(PDO::FETCH_ASSOC);
                         <h1><span class="text-primary">REFRESH</span> <span class="text-primary">YOUR SOUL</span></h1>
                         <div class="hero-image-mobile" aria-hidden="false">
                             <div class="hero-bottle-container">
-                                <img src="assets/images/b1.png" alt="Liyas Mineral Water Bottle" class="img-fluid h animated-image">
+                                <img src="assets/images/b1.png" alt="Liyas Mineral Water Bottle" class="img-fluid animated-image">
                             </div>
                         </div>
-                        <p style="color:#cecece;">
+                        <p class="hero-description">
                         Meet Liyas — hydration redefined for today's lifestyle.
 Crafted for clarity, freshness, and a touch of fun.
 Because great water isn't just a choice — it's a vibe.
@@ -661,33 +653,7 @@ Because great water isn't just a choice — it's a vibe.
             </svg>
         </div>
         
-        <svg class="wave-svg" width="100%" height="100%"  id="svg" viewBox="0 0 1440 390" xmlns="http://www.w3.org/2000/svg" class="transition duration-300 ease-in-out delay-150">
-            <style>
-                .path-0{
-                    animation:pathAnim-0 4s;
-                    animation-timing-function: linear;
-                    animation-iteration-count: infinite;
-                }
-                @keyframes pathAnim-0{
-                    0%{
-                        d: path("M 0,400 L 0,150 C 94.73076923076925,117.93589743589743 189.4615384615385,85.87179487179488 277,76 C 364.5384615384615,66.12820512820512 444.88461538461536,78.44871794871794 507,92 C 569.1153846153846,105.55128205128206 613.0000000000001,120.33333333333333 694,122 C 774.9999999999999,123.66666666666667 893.1153846153843,112.21794871794873 986,128 C 1078.8846153846157,143.78205128205127 1146.5384615384617,186.7948717948718 1218,195 C 1289.4615384615383,203.2051282051282 1364.730769230769,176.6025641025641 1440,150 L 1440,400 L 0,400 Z");
-                    }
-                    25%{
-                        d: path("M 0,400 L 0,150 C 75.4897435897436,175.26666666666665 150.9794871794872,200.53333333333333 243,182 C 335.0205128205128,163.46666666666667 443.57179487179485,101.13333333333334 521,90 C 598.4282051282051,78.86666666666666 644.7333333333333,118.93333333333334 714,139 C 783.2666666666667,159.06666666666666 875.4948717948719,159.13333333333333 955,153 C 1034.5051282051281,146.86666666666667 1101.2871794871794,134.53333333333333 1180,133 C 1258.7128205128206,131.46666666666667 1349.3564102564103,140.73333333333335 1440,150 L 1440,400 L 0,400 Z");
-                    }
-                    50%{
-                        d: path("M 0,400 L 0,150 C 62.51794871794871,169.57179487179485 125.03589743589743,189.14358974358973 204,184 C 282.9641025641026,178.85641025641027 378.374358974359,148.99743589743588 461,152 C 543.625641025641,155.00256410256412 613.4666666666667,190.8666666666667 695,172 C 776.5333333333333,153.1333333333333 869.7589743589742,79.53589743589743 947,78 C 1024.2410256410258,76.46410256410257 1085.497435897436,146.9897435897436 1165,171 C 1244.502564102564,195.0102564102564 1342.251282051282,172.5051282051282 1440,150 L 1440,400 L 0,400 Z");
-                    }
-                    75%{
-                        d: path("M 0,400 L 0,150 C 65.39743589743588,127.30000000000001 130.79487179487177,104.60000000000001 219,110 C 307.20512820512823,115.39999999999999 418.2179487179486,148.9 502,166 C 585.7820512820514,183.1 642.3333333333335,183.79999999999998 725,186 C 807.6666666666665,188.20000000000002 916.448717948718,191.9 991,199 C 1065.551282051282,206.1 1105.871794871795,216.6 1175,209 C 1244.128205128205,201.4 1342.0641025641025,175.7 1440,150 L 1440,400 L 0,400 Z");
-                    }
-                    100%{
-                        d: path("M 0,400 L 0,150 C 94.73076923076925,117.93589743589743 189.4615384615385,85.87179487179488 277,76 C 364.5384615384615,66.12820512820512 444.88461538461536,78.44871794871794 507,92 C 569.1153846153846,105.55128205128206 613.0000000000001,120.33333333333333 694,122 C 774.9999999999999,123.66666666666667 893.1153846153843,112.21794871794873 986,128 C 1078.8846153846157,143.78205128205127 1146.5384615384617,186.7948717948718 1218,195 C 1289.4615384615383,203.2051282051282 1364.730769230769,176.6025641025641 1440,150 L 1440,400 L 0,400 Z");
-                    }
-                }
-            </style>
-            <path d="M 0,400 L 0,150 C 94.73076923076925,117.93589743589743 189.4615384615385,85.87179487179488 277,76 C 364.5384615384615,66.12820512820512 444.88461538461536,78.44871794871794 507,92 C 569.1153846153846,105.55128205128206 613.0000000000001,120.33333333333333 694,122 C 774.9999999999999,123.66666666666667 893.1153846153843,112.21794871794873 986,128 C 1078.8846153846157,143.78205128205127 1146.5384615384617,186.7948717948718 1218,195 C 1289.4615384615383,203.2051282051282 1364.730769230769,176.6025641025641 1440,150 L 1440,400 L 0,400 Z" stroke="none" stroke-width="0" fill="#ffffff" fill-opacity="1" class="transition-all duration-300 ease-in-out delay-150 path-0"></path>
-        </svg>
+    
     </section>
 
 
