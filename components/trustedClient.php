@@ -57,7 +57,7 @@ $asset_base = $is_subdirectory ? '../' : '';
   display: grid;
   grid-template-columns: 1fr 70% 1fr; /* ← your drawn boundaries */
   align-items: center;
-  background: linear-gradient(180deg, #ffffff 0%, #f3fdff 100%);
+  background: #f8fafc;
   padding: 4rem 0;
 }
 
