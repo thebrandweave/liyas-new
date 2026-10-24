@@ -610,7 +610,7 @@ $social_links = $social_links_stmt->fetchAll(PDO::FETCH_ASSOC);
                         <h1><span class="text-primary">REFRESH</span> <span class="text-primary">YOUR SOUL</span></h1>
                         <div class="hero-image-mobile" aria-hidden="false">
                             <div class="hero-bottle-container">
-                                <img src="assets/images/b.png" alt="Liyas Mineral Water Bottle" class="img-fluid h animated-image">
+                                <img src="assets/images/b1.png" alt="Liyas Mineral Water Bottle" class="img-fluid h animated-image">
                             </div>
                         </div>
                         <p style="color:#cecece;">
@@ -627,7 +627,7 @@ Because great water isn't just a choice — it's a vibe.
                 <div class="col-lg-6">
                     <div class="hero-image hero-image-desktop" data-aos="fade-left" data-aos-delay="100">
                         <div class="hero-bottle-container">
-                            <img src="assets/images/b.png" alt="Liyas Mineral Water Bottle" class="img-fluid animated-image">
+                            <img src="assets/images/b1.png" alt="Liyas Mineral Water Bottle" class="img-fluid animated-image">
                         </div>
                     </div>
                 </div>

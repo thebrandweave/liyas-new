@@ -880,14 +880,14 @@ img {
 }
 
 .hero-image img {
-    max-width: 610px;
+    max-width: 380px;
     height: auto;
     max-height: 1000px !important;
     width: auto;
     object-fit: contain;
     transform: scale(1.1);
     rotate: -4deg;
-    /*bottom:99px;*/
+    opacity: 0.8; /* 70% visible */
 }
 
 /* Hero Bottle Container */
