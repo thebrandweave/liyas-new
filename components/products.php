@@ -162,7 +162,7 @@ $products = $products_stmt->fetchAll(PDO::FETCH_ASSOC);
 <section class="products-list">
   <div class="container">
 
-    <!-- SEARCH & FILTER -->
+    <!-- SEARCH & FILTER
     <div class="product-filters">
       <input type="text" id="searchInput" placeholder="Search bottle..." />
 
@@ -179,7 +179,7 @@ $products = $products_stmt->fetchAll(PDO::FETCH_ASSOC);
             <option value="<?= strtolower(htmlspecialchars($category['name'])) ?>"><?= htmlspecialchars($category['name']) ?></option>
         <?php endforeach; ?>
       </select>
-    </div>
+    </div> -->
 
     <!-- PRODUCT GRID -->
     <div class="product-grid">
