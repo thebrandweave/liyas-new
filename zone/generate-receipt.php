@@ -851,6 +851,7 @@ foreach ($vehicle_products as $pid => $vp) {
             display: flex;
             align-items: center;
             gap: 6px;
+            justify-content: center;
         }
 
         .form-group {
@@ -949,6 +950,7 @@ foreach ($vehicle_products as $pid => $vp) {
             grid-template-columns: repeat(3, 1fr);
             gap: 8px;
             margin-bottom: 12px;
+            margin-top: 12px;
         }
 
         .btn-fast-pay {
@@ -1276,7 +1278,7 @@ foreach ($vehicle_products as $pid => $vp) {
                         <div style="display: flex; align-items: center; gap: 6px;">
                             <input type="number" id="addQtyInput" min="1" value="1" class="form-control" style="width: 70px; text-align: center; font-weight: 700; padding: 10px 4px;" placeholder="Qty" title="Number of cases to add">
                             <button type="button" id="btnAddProductFromVehicle" onclick="addProductFromDropdown()" <?= empty($dropdown_vehicle_products) ? 'disabled' : '' ?> style="background: #2563eb; color: #ffffff; border: none; padding: 11px 16px; border-radius: 10px; font-size: 13px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; box-shadow: 0 2px 4px rgba(37,99,235,0.25);">
-                                <i class='bx bx-plus-circle' style="font-size: 17px;"></i> + Add Product
+                                <i class='bx bx-plus-circle' style="font-size: 17px;"></i> Add Product
                             </button>
                         </div>
                     </div>
@@ -1455,8 +1457,8 @@ foreach ($vehicle_products as $pid => $vp) {
                 </div>
 
                 <!-- Payment Settlement -->
-                <div class="section-hdr">
-                    <i class='bx bx-wallet' style="color: #d97706;"></i> Payment Collection
+                <div style="font-size:14px; font-weight: 800; color: #383635; text-align:center; text-transform: uppercase; ">
+                    <i class='bx bx-wallet' style="color: #d97706;"></i> <span style="margin-top: 8px; margin-bottom: 6px;">Payment Collection</span
                 </div>
 
                 <!-- 1-Tap Fast Settlement Shortcuts -->
