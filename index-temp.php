@@ -229,8 +229,8 @@ $social_links = $social_links_stmt->fetchAll(PDO::FETCH_ASSOC);
         /* Hero Scroll Down Button - Circular Text Design */
         .hero-scroll-down {
             position: absolute;
-            bottom: 20px;
-            left: 50%;
+            bottom: -9px;
+            left: 49%;
             transform: translateX(-50%);
             z-index: 10;
             cursor: pointer;

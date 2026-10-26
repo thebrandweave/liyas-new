@@ -412,7 +412,7 @@
             display: block; 
             width: 100%;
             transform: scaleX(-1);
-            margin-top: -6em;
+            margin-top: -25em;
             bottom: 0;
         }
 

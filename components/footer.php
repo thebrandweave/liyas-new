@@ -105,7 +105,7 @@ $social_links = $social_links_stmt->fetchAll(PDO::FETCH_ASSOC);
   footer {
     position: relative;
     overflow: visible;
-    padding: 60px 0 0;
+    padding: 113px 0 0;
     font-family: 'Poppins', sans-serif;
     background: none; /* ✅ remove background from footer */
   }

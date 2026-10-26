@@ -668,7 +668,7 @@ $social_links = $social_links_stmt->fetchAll(PDO::FETCH_ASSOC);
 
     <?php include '../components/about.php'; ?>
 
-    <!-- <?php include '../components/whychooseus.php'; ?> -->
+  
      <section class="why-choose-section" id="why-choose" data-aos="fade-up">
 	<div class="container">
 		<div class="why-title" data-aos="fade-up">
@@ -720,7 +720,7 @@ $social_links = $social_links_stmt->fetchAll(PDO::FETCH_ASSOC);
 		.why-choose-section {
 			position: relative;
 			padding: 60px 0;
-			border-radius: 20px;
+			border-radius: 0px;
 			overflow: hidden;
 			isolation: isolate;
 			width: 100%;
@@ -730,7 +730,7 @@ $social_links = $social_links_stmt->fetchAll(PDO::FETCH_ASSOC);
 			content: "";
 			position: absolute;
 			inset: 0;
-			background-image: url('./assets/images/w1.png');
+			background-image: url('../assets/images/w1.png');
 			background-size: cover;
 			background-position: center;
 			background-repeat: no-repeat;
@@ -785,7 +785,8 @@ $social_links = $social_links_stmt->fetchAll(PDO::FETCH_ASSOC);
 	</style>
 </section>
 
-    <?php include '../components/cta.php'; ?>
+
+    
 
     <?php include '../components/faq.php'; ?>
 
