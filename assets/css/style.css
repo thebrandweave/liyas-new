@@ -471,7 +471,7 @@ img {
 
 #backToTop:hover {
     transform: translateY(-5px);
-    background-color: #059669;
+    background-color: #3bb6c4;;
 }
 
 @media (min-width: 768px) {

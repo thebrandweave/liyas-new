@@ -471,8 +471,8 @@ $social_links = $social_links_stmt->fetchAll(PDO::FETCH_ASSOC);
   width: 98px;
   height: 45px;
   border-radius: 7%;
-  background: rgba(255, 255, 255, 0.95);
-  color: #000000;
+  background: #3b8ebf;
+  color: #ffffff;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -496,7 +496,7 @@ $social_links = $social_links_stmt->fetchAll(PDO::FETCH_ASSOC);
 .top-login-btn:hover {
   transform: translateY(-3px) scale(1.05);
   box-shadow: 0 6px 20px rgba(74, 210, 226, 0.25);
-  background: rgba(255, 255, 255, 1);
+  background: #3bb6c4;
   border-color: rgba(74, 210, 226, 0.2);
 }
 
