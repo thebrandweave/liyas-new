@@ -19,97 +19,103 @@ $asset_base = $is_subdirectory ? '../' : '';
     line-height: 1.6;
   }
 
-  /* VIEWPORT */
-  /* OUTER WRAPPER – CREATES LEFT & RIGHT GAP */
-.carousel-center-wrapper {
-  width: 100%;
-  display: flex;
-  justify-content: center;
-}
-
-/* CENTER MOVING ZONE */
-.badge-row {
-  width: 70%;              /* 👈 controls center width */
-  overflow: hidden;
-  padding: 3rem 0;
-  background: #f8fafc;
-}
-
-/* TRACK */
-.badge-track {
-  display: flex;
-  width: max-content;
-  animation: scroll 20s linear infinite;
-}
-
-/* BOTTLES */
-.badge {
-  flex: 0 0 auto;
-  margin: 0 40px;
-}
-
-.badge img {
-  width: 110px;
-  display: block;
-}
-/* FULL WIDTH BACKGROUND */
-.bottle-section {
-  display: grid;
-  grid-template-columns: 1fr 70% 1fr; /* ← your drawn boundaries */
-  align-items: center;
-  background: #f8fafc;
-  padding: 4rem 0;
-}
-
-/* BLOCKED SIDES */
-.side-block {
-  height: 100%;
-}
-
-/* CENTER WINDOW = HARD MASK */
-.center-window {
-  overflow: hidden;          /* ← THIS creates the vertical walls */
-  position: relative;
-}
-
-/* MOVING TRACK */
-.bottle-track {
-  display: flex;
-  /* width: max-content; */
-  animation: scroll 5s linear infinite;
-}
-
-/* BOTTLES */
-.bottle {
-  flex: 0 0 auto;
-  margin: 0 80px;
-}
-
-.bottle img {
-  width: 8vh;
-  display: block;
-}
-
-/* INFINITE LOOP */
-@keyframes scroll {
-  from {
-    transform: translateX(0);
+  /* FULL WIDTH BACKGROUND */
+  .bottle-section {
+    display: grid;
+    grid-template-columns: 1fr 70% 1fr;
+    align-items: center;
+    background: #f8fafc;
+    padding: 4rem 0;
+    overflow: hidden;
+    width: 100%;
   }
-  to {
-    transform: translateX(-50%);
-  }
-}
 
-/* INFINITE */
-@keyframes scroll {
-  from {
-    transform: translateX(0);
+  /* BLOCKED SIDES */
+  .side-block {
+    height: 100%;
   }
-  to {
-    transform: translateX(-50%);
-  }
-}
 
+  /* CENTER WINDOW = HARD MASK */
+  .center-window {
+    overflow: hidden;
+    position: relative;
+    width: 100%;
+  }
+
+  /* MOVING TRACK */
+  .bottle-track {
+    display: flex;
+    width: max-content;
+    animation: bottleScroll 12s linear infinite;
+  }
+
+  /* BOTTLES */
+  .bottle {
+    flex: 0 0 auto;
+    margin: 0 60px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .bottle img {
+    height: clamp(70px, 12vh, 100px);
+    width: auto;
+    max-width: 100%;
+    display: block;
+    object-fit: contain;
+  }
+
+  /* INFINITE LOOP */
+  @keyframes bottleScroll {
+    from {
+      transform: translateX(0);
+    }
+    to {
+      transform: translateX(-50%);
+    }
+  }
+
+  /* Mobile responsiveness */
+  @media (max-width: 900px) {
+    .bottle-section {
+      grid-template-columns: 5% 90% 5%;
+      padding: 3rem 0;
+    }
+    .bottle {
+      margin: 0 40px;
+    }
+  }
+
+  @media (max-width: 768px) {
+    .bottle-section {
+      display: block;
+      padding: 2.25rem 0;
+      position: relative;
+    }
+
+    .side-block {
+      display: none;
+    }
+
+    .center-window {
+      width: 100%;
+      mask-image: linear-gradient(90deg, transparent 0%, #000 10%, #000 90%, transparent 100%);
+      -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 10%, #000 90%, transparent 100%);
+    }
+
+    .bottle {
+      margin: 0 24px;
+    }
+
+    .bottle img {
+      height: clamp(55px, 10vh, 75px);
+    }
+
+    .bottle-track {
+      animation-duration: 8s;
+    }
+  }
 </style>
 
 <!-- INFINITE BOTTLE CAROUSEL -->
@@ -123,22 +129,22 @@ $asset_base = $is_subdirectory ? '../' : '';
     <div class="bottle-track">
 
       <!-- SET 1 -->
-      <div class="bottle"><img src="<?php echo $asset_base; ?>../assets/images/liyas-bottle1.png"></div>
-      <div class="bottle"><img src="<?php echo $asset_base; ?>../assets/images/liyas-bottle1.png"></div>
-      <div class="bottle"><img src="<?php echo $asset_base; ?>../assets/images/liyas-bottle1.png"></div>
-      <div class="bottle"><img src="<?php echo $asset_base; ?>../assets/images/liyas-bottle1.png"></div>
-      <div class="bottle"><img src="<?php echo $asset_base; ?>../assets/images/liyas-bottle1.png"></div>
-      <div class="bottle"><img src="<?php echo $asset_base; ?>../assets/images/liyas-bottle1.png"></div>
-      <div class="bottle"><img src="<?php echo $asset_base; ?>../assets/images/liyas-bottle1.png"></div>
+      <div class="bottle"><img src="<?php echo $asset_base; ?>../assets/images/liyas-bottle1.png" alt="LIYAS Bottle"></div>
+      <div class="bottle"><img src="<?php echo $asset_base; ?>../assets/images/liyas-bottle1.png" alt="LIYAS Bottle"></div>
+      <div class="bottle"><img src="<?php echo $asset_base; ?>../assets/images/liyas-bottle1.png" alt="LIYAS Bottle"></div>
+      <div class="bottle"><img src="<?php echo $asset_base; ?>../assets/images/liyas-bottle1.png" alt="LIYAS Bottle"></div>
+      <div class="bottle"><img src="<?php echo $asset_base; ?>../assets/images/liyas-bottle1.png" alt="LIYAS Bottle"></div>
+      <div class="bottle"><img src="<?php echo $asset_base; ?>../assets/images/liyas-bottle1.png" alt="LIYAS Bottle"></div>
+      <div class="bottle"><img src="<?php echo $asset_base; ?>../assets/images/liyas-bottle1.png" alt="LIYAS Bottle"></div>
 
-      <!-- SET 2 (duplicate) -->
-      <div class="bottle"><img src="<?php echo $asset_base; ?>../assets/images/liyas-bottle1.png"></div>
-      <div class="bottle"><img src="<?php echo $asset_base; ?>../assets/images/liyas-bottle1.png"></div>
-      <div class="bottle"><img src="<?php echo $asset_base; ?>../assets/images/liyas-bottle1.png"></div>
-      <div class="bottle"><img src="<?php echo $asset_base; ?>../assets/images/liyas-bottle1.png"></div>
-      <div class="bottle"><img src="<?php echo $asset_base; ?>../assets/images/liyas-bottle1.png"></div>
-      <div class="bottle"><img src="<?php echo $asset_base; ?>../assets/images/liyas-bottle1.png"></div>
-      <div class="bottle"><img src="<?php echo $asset_base; ?>../assets/images/liyas-bottle1.png"></div>
+      <!-- SET 2 (duplicate for seamless loop) -->
+      <div class="bottle"><img src="<?php echo $asset_base; ?>../assets/images/liyas-bottle1.png" alt="LIYAS Bottle"></div>
+      <div class="bottle"><img src="<?php echo $asset_base; ?>../assets/images/liyas-bottle1.png" alt="LIYAS Bottle"></div>
+      <div class="bottle"><img src="<?php echo $asset_base; ?>../assets/images/liyas-bottle1.png" alt="LIYAS Bottle"></div>
+      <div class="bottle"><img src="<?php echo $asset_base; ?>../assets/images/liyas-bottle1.png" alt="LIYAS Bottle"></div>
+      <div class="bottle"><img src="<?php echo $asset_base; ?>../assets/images/liyas-bottle1.png" alt="LIYAS Bottle"></div>
+      <div class="bottle"><img src="<?php echo $asset_base; ?>../assets/images/liyas-bottle1.png" alt="LIYAS Bottle"></div>
+      <div class="bottle"><img src="<?php echo $asset_base; ?>../assets/images/liyas-bottle1.png" alt="LIYAS Bottle"></div>
 
     </div>
   </div>
@@ -147,4 +153,3 @@ $asset_base = $is_subdirectory ? '../' : '';
   <div class="side-block"></div>
 
 </section>
-

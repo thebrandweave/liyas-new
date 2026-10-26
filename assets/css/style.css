@@ -12,10 +12,15 @@
 html {
     scroll-behavior: smooth;
     font-size: 16px; /* Base font size for rem calculations */
+    overflow-x: hidden;
+    max-width: 100%;
+    -webkit-text-size-adjust: 100%;
 }
 
 body {
     overflow-x: hidden;
+    width: 100%;
+    max-width: 100%;
     background: #fff;
     line-height: 1.6;
     font-family: 'Poppins', sans-serif;
@@ -4388,3 +4393,57 @@ footer::before {
                 color: #000 !important;
             }
         }
+
+
+/* ===========================================
+   GLOBAL MOBILE RESPONSIVENESS ENHANCEMENTS
+   =========================================== */
+@media (max-width: 768px) {
+    /* Prevent accidental horizontal overflow */
+    html, body {
+        overflow-x: hidden !important;
+        position: relative;
+        width: 100%;
+    }
+
+    /* Input font-size to prevent iOS Safari auto-zoom */
+    input[type="text"],
+    input[type="email"],
+    input[type="tel"],
+    input[type="password"],
+    input[type="number"],
+    input[type="search"],
+    select,
+    textarea {
+        font-size: 16px !important;
+    }
+
+    /* Container safety */
+    .container, .container-fluid {
+        padding-left: 15px;
+        padding-right: 15px;
+        max-width: 100%;
+        overflow-x: hidden;
+    }
+
+    /* Bootstrap modal responsiveness */
+    .modal-dialog {
+        margin: 0.75rem auto;
+        max-width: calc(100% - 1.5rem);
+    }
+
+    /* Back to top button on mobile */
+    #backToTop {
+        bottom: 20px !important;
+        right: 16px !important;
+        width: 44px !important;
+        height: 44px !important;
+        z-index: 1050;
+    }
+
+    /* Wave svgs on mobile */
+    .wave-svg {
+        max-width: 100%;
+        overflow: hidden;
+    }
+}

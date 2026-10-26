@@ -44,23 +44,33 @@ $products = $products_stmt->fetchAll(PDO::FETCH_ASSOC);
 /* ================= PRODUCTS ================= */
 .products-list {
   padding: 4rem 0;
+  width: 100%;
 }
 
 .product-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 260px));
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
   gap: 2.5rem;
   justify-content: center;
+  max-width: 1200px;
+  margin: 0 auto;
 }
 
 /* CARD */
 .product-card {
   background: #fff;
   border-radius: 20px;
-  padding: 0.6rem 3.1rem 1rem;
+  padding: 1.5rem 1.5rem 1.25rem;
   text-align: center;
-  box-shadow: 0 15px 35px rgba(145, 140, 140, 0.06);
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
   position: relative;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  width: 100%;
+}
+
+.product-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 15px 35px rgba(59, 142, 191, 0.15);
 }
 
 /* SIZE BADGE */
@@ -88,6 +98,7 @@ $products = $products_stmt->fetchAll(PDO::FETCH_ASSOC);
 .product-image-wrap img {
   height: 160px;
   width: auto;
+  max-width: 100%;
   object-fit: contain;
 }
 
@@ -102,6 +113,7 @@ $products = $products_stmt->fetchAll(PDO::FETCH_ASSOC);
 .product-info h4 {
   font-size: 1rem;
   margin: 0.5rem 0;
+  color: #0f172a;
 }
 
 .rating {
@@ -125,12 +137,15 @@ $products = $products_stmt->fetchAll(PDO::FETCH_ASSOC);
 .new-price {
   font-weight: 700;
   color: #0b2e4e;
+  font-size: 1.15rem;
+  margin: 0;
 }
 
 .old-price {
   font-size: 0.85rem;
   text-decoration: line-through;
   color: #94a3b8;
+  margin: 0;
 }
 
 .add-btn {
@@ -141,21 +156,57 @@ $products = $products_stmt->fetchAll(PDO::FETCH_ASSOC);
   border-radius: 30px;
   cursor: pointer;
   font-weight: 600;
-  transition: background 0.2s ease;
+  transition: all 0.25s ease;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 120px;
+}
+
+.add-btn:hover {
+  background: #3bb6c4;
+  transform: translateY(-2px);
 }
 
 /* Visual distinction for the login alternative */
 .login-req-btn {
-  background: #64748b; 
+  background: #3b8ebf;
   font-size: 0.85rem;
   padding: 11px 18px;
 }
 .login-req-btn:hover {
-  background: #0b2e4e;
+  background: #3bb6c4;
 }
 
 .prod-page{
-    text-decoration: none;
+  text-decoration: none;
+  display: block;
+}
+
+@media (max-width: 768px) {
+  .products-list {
+    padding: 3rem 0;
+  }
+  .product-grid {
+    gap: 1.5rem;
+  }
+}
+
+@media (max-width: 575px) {
+  .products-list {
+    padding: 2.25rem 0;
+  }
+  .product-grid {
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+    padding: 0 10px;
+  }
+  .product-card {
+    max-width: 320px;
+    margin: 0 auto;
+    padding: 1.5rem 1.25rem 1.25rem;
+  }
 }
 </style>
 
@@ -185,7 +236,7 @@ $products = $products_stmt->fetchAll(PDO::FETCH_ASSOC);
     <div class="product-grid">
 
       <?php if (empty($products)): ?>
-        <p>No products found.</p>
+        <p class="text-center">No products found.</p>
       <?php else: ?>
         <?php foreach ($products as $product): ?>
         <a class="prod-page" href="/products/<?= $product['product_id'] ?>/">  
@@ -197,8 +248,6 @@ $products = $products_stmt->fetchAll(PDO::FETCH_ASSOC);
                data-litre="<?= htmlspecialchars($product['litre']) ?>"
                data-category="<?= strtolower(htmlspecialchars($product['category_name'])) ?>">
 
-          
-
             <div class="product-image-wrap">
               <img src="<?= BASE_URL ?>/admin/uploads/products/<?= htmlspecialchars($product['image']) ?>" alt="<?= htmlspecialchars($product['name']) ?>">
             </div>
@@ -206,7 +255,6 @@ $products = $products_stmt->fetchAll(PDO::FETCH_ASSOC);
             <div class="product-info">
               <p class="category"><?= htmlspecialchars($product['category_name']) ?></p>
               <h4><?= htmlspecialchars($product['name']) ?></h4>
-              <div class="rating">⭐⭐⭐⭐☆ <span>(4.0)</span></div>
               <p class="by">By <span>Liyas</span></p>
               
               <div class="price-section">
@@ -254,17 +302,17 @@ const searchInput = document.getElementById("searchInput");
 const litreFilter = document.getElementById("litreFilter");
 const categoryFilter = document.getElementById("categoryFilter");
 
-const products = document.querySelectorAll(".product-card");
+const productCards = document.querySelectorAll(".product-card");
 
 function filterProducts() {
-  const searchValue = searchInput.value.toLowerCase();
-  const litreValue = litreFilter.value;
-  const categoryValue = categoryFilter.value;
+  const searchValue = searchInput ? searchInput.value.toLowerCase() : '';
+  const litreValue = litreFilter ? litreFilter.value : '';
+  const categoryValue = categoryFilter ? categoryFilter.value : '';
 
-  products.forEach(product => {
-    const name = product.dataset.name;
-    const litre = product.dataset.litre;
-    const category = product.dataset.category;
+  productCards.forEach(product => {
+    const name = product.dataset.name || '';
+    const litre = product.dataset.litre || '';
+    const category = product.dataset.category || '';
 
     const match =
       name.includes(searchValue) &&
@@ -272,12 +320,14 @@ function filterProducts() {
       (!categoryValue || category === categoryValue);
 
     const wrapper = product.closest(".prod-page");
-    wrapper.style.display = match ? "block" : "none";
+    if (wrapper) {
+      wrapper.style.display = match ? "block" : "none";
+    }
   });
 }
 
-// Events
-searchInput.addEventListener("input", filterProducts);
-litreFilter.addEventListener("change", filterProducts);
-categoryFilter.addEventListener("change", filterProducts);
+// Events (safely attached if elements exist)
+if (searchInput) searchInput.addEventListener("input", filterProducts);
+if (litreFilter) litreFilter.addEventListener("change", filterProducts);
+if (categoryFilter) categoryFilter.addEventListener("change", filterProducts);
 </script>

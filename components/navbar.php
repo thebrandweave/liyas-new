@@ -26,41 +26,42 @@ $logout_link = $navBase . '/logout.php';
       <li class="nav-item"><a href="<?php echo $contact_link; ?>" class="nav-link">Contact</a></li>
     </ul>
 
-    <a href="javascript:void(0)"
-       class="cart-icon-1 cart-icon-wrap"
-       data-cart-trigger
-       title="<?php echo isset($_SESSION['user_id']) ? 'View Cart' : 'Login Required'; ?>">
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 3h1.386c.51 0 .955.343 1.087.835l.383 1.437M7.5 14.25a3 3 0 00-3 3h15.75m-12.75-3h11.218c.51 0 .962-.343 1.087-.835l1.823-6.423a.75.75 0 00-.67-1.03H6.088l-.523-1.974M16.5 21a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM8.25 21a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0z" />
-        </svg>
-        <span id="cart-count-badge" class="cart-count-badge">0</span>
-    </a>
-    <a href="<?php echo $navBase; ?>/orders/index.php"
-   class="my-orders-btn"
-   title="My Orders">
-    
-    <img src="https://liyasinternational.com/assets/images/liyas-bottle1.png"
-         alt="Bottle"
-         class="order-bottle-icon">
+    <div class="d-flex align-items-center gap-2 gap-md-3">
+        <a href="javascript:void(0)"
+           class="cart-icon-1 cart-icon-wrap"
+           data-cart-trigger
+           title="<?php echo isset($_SESSION['user_id']) ? 'View Cart' : 'Login Required'; ?>">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 3h1.386c.51 0 .955.343 1.087.835l.383 1.437M7.5 14.25a3 3 0 00-3 3h15.75m-12.75-3h11.218c.51 0 .962-.343 1.087-.835l1.823-6.423a.75.75 0 00-.67-1.03H6.088l-.523-1.974M16.5 21a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM8.25 21a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0z" />
+            </svg>
+            <span id="cart-count-badge" class="cart-count-badge">0</span>
+        </a>
 
-    <span class="my-orders">My Orders</span>
-</a>
-    
-    <div>
-        <?php if (isset($_SESSION['user_id'])): ?>
-            <a href="<?php echo htmlspecialchars($logout_link); ?>" class="top-login-btn" title="Logout">
-                <span style="font-size:15px;">Logout</span>
-            </a>
-        <?php else: ?>
-            <a href="<?php echo htmlspecialchars($login_link); ?>" class="top-login-btn" title="Login">
-                 <span style="font-size:15px;">Login</span>
-            </a>
-        <?php endif; ?>
+        <a href="<?php echo $navBase; ?>/orders/index.php"
+           class="my-orders-btn d-none d-md-flex"
+           title="My Orders">
+            <img src="https://liyasinternational.com/assets/images/liyas-bottle1.png"
+                 alt="Bottle"
+                 class="order-bottle-icon">
+            <span class="my-orders">My Orders</span>
+        </a>
+        
+        <div class="d-none d-md-block">
+            <?php if (isset($_SESSION['user_id'])): ?>
+                <a href="<?php echo htmlspecialchars($logout_link); ?>" class="top-login-btn" title="Logout">
+                    <span style="font-size:15px;">Logout</span>
+                </a>
+            <?php else: ?>
+                <a href="<?php echo htmlspecialchars($login_link); ?>" class="top-login-btn" title="Login">
+                     <span style="font-size:15px;">Login</span>
+                </a>
+            <?php endif; ?>
+        </div>
+
+        <button class="navbar-toggler d-md-none" type="button" id="mobileMenuBtn" aria-label="Toggle navigation">
+          <span class="hamburger-icon"></span>
+        </button>
     </div>
-
-    <button class="navbar-toggler d-md-none" type="button" id="mobileMenuBtn" aria-label="Toggle navigation">
-      <span class="hamburger-icon"></span>
-    </button>
 
   </div>
 
@@ -82,10 +83,10 @@ $logout_link = $navBase . '/logout.php';
     </li>
 
     <li>
-    <a href="<?php echo $navBase; ?>/my-orders.php" class="nav-link">
-        <img src="assets/images/liyas-bottle1.png"
+    <a href="<?php echo $navBase; ?>/orders/index.php" class="nav-link">
+        <img src="https://liyasinternational.com/assets/images/liyas-bottle1.png"
              alt="Bottle"
-             style="width:10px;height:24px;margin-right:8px;">
+             style="width:14px;height:24px;margin-right:8px;object-fit:contain;">
         My Orders
     </a>
 </li>
@@ -439,8 +440,24 @@ $logout_link = $navBase . '/logout.php';
 
   body.no-scroll {
      overflow: hidden;
-     position: fixed;
-     width: 100%;
+     touch-action: none;
+  }
+
+  .mobile-menu ul .top-login-btn-1 {
+     background: linear-gradient(135deg, #3bb6c4, #3b8ebf);
+     color: #ffffff !important;
+     border-radius: 30px;
+     padding: 10px 24px;
+     font-size: 1.15rem;
+     font-weight: 600;
+     display: inline-flex;
+     align-items: center;
+     justify-content: center;
+     box-shadow: 0 4px 15px rgba(59, 142, 191, 0.3);
+     width: 80%;
+     margin: 0.5rem auto 0;
+     min-height: 44px;
+     text-decoration: none;
   }
 </style>
 

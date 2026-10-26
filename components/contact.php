@@ -1,70 +1,5 @@
-
-
 <?php
-// /**
-//  * Contact Us component – PHPMailer via Gmail SMTP
-//  */
-
-// use PHPMailer\PHPMailer\PHPMailer;
-// use PHPMailer\PHPMailer\Exception;
-
-// // Make sure PHPMailer is installed (composer require phpmailer/phpmailer)
-// require_once __DIR__ . '/../vendor/autoload.php';
-
-// $feedback = "";
-
-// if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['submit_contact'])) {
-    
-//     // Sanitize inputs
-//     $name    = filter_input(INPUT_POST, 'name', FILTER_SANITIZE_SPECIAL_CHARS);
-//     $email   = filter_input(INPUT_POST, 'email', FILTER_VALIDATE_EMAIL);
-//     $phone   = filter_input(INPUT_POST, 'phone', FILTER_SANITIZE_SPECIAL_CHARS);
-//     $reason  = filter_input(INPUT_POST, 'reason', FILTER_SANITIZE_SPECIAL_CHARS);
-//     $message = filter_input(INPUT_POST, 'message', FILTER_SANITIZE_SPECIAL_CHARS);
-
-//     if ($email) {
-//         $mail = new PHPMailer(true);
-
-//         try {
-//             // --- GMAIL SMTP SETTINGS ---
-//             $mail->isSMTP();
-//             $mail->Host       = 'smtp.gmail.com';
-//             $mail->SMTPAuth   = true;
-//             $mail->Username   = 'mufizmalar@gmail.com';   
-//             $mail->Password   = 'njqzjaumxueqkqgt';     
-//             $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS; 
-//             $mail->Port       = 587;                        
-
-//             // --- RECIPIENTS ---
-//             $mail->setFrom('mufizmalar@gmail.com', 'Liyas Web Form');
-//             $mail->addAddress('mufizmalar@gmail.com');     
-//             $mail->addReplyTo($email, $name);              
-
-//             // --- CONTENT ---
-//             $mail->isHTML(true);
-//             $mail->Subject = 'New Enquiry: ' . $reason;
-            
-//             $mail->Body = "
-//             <html>
-//             <body style='font-family: Arial, sans-serif;'>
-//                 <h2>New Contact Request</h2>
-//                 <p><strong>Name:</strong> {$name}</p>
-//                 <p><strong>Email:</strong> {$email}</p>
-//                 <p><strong>Phone:</strong> {$phone}</p>
-//                 <p><strong>Message:</strong><br>" . nl2br($message) . "</p>
-//             </body>
-//             </html>";
-
-//             $mail->send();
-//             $feedback = '<div class="alert alert-success text-center mb-4" style="border-radius:16px;">Sent successfully! We will contact you soon.</div>';
-            
-//         } catch (Exception $e) {
-//             $feedback = '<div class="alert alert-danger text-center mb-4" style="border-radius:16px;">Submission failed. Please try again later.</div>';
-//         }
-//     } else {
-//         $feedback = '<div class="alert alert-warning text-center mb-4" style="border-radius:16px;">Invalid email address.</div>';
-//     }
-// }
+// Contact section
 ?>
 
 <section class="contact-section" id="contact" data-aos="fade-up">
@@ -112,7 +47,7 @@
                     </div>
                 </div>
 
-                <div class="text-center mt-5">
+                <div class="text-center mt-4 mt-md-5">
                     <button type="submit" class="btn contact-submit px-5">
                         Send Message
                     </button>
@@ -146,6 +81,7 @@
             position: relative;
             overflow: hidden;
             min-height: 100vh;
+            width: 100%;
         }
 
         .contact-bg-fixed {
@@ -167,6 +103,7 @@
             margin: 0 auto;
             position: relative;
             z-index: 10;
+            padding: 0 10px;
         }
 
         .contact-form {
@@ -180,24 +117,28 @@
             inset: -60px;
             background: radial-gradient(circle at center, rgba(74,210,226,0.12), transparent 70%);
             z-index: -1;
+            pointer-events: none;
         }
 
         .contact-form .form-control {
             background: rgba(255,255,255,0.88);
             border: 1px solid #e6f0f4;
             border-radius: 16px;
-            padding: 15px 18px;
+            padding: 14px 18px;
+            font-size: 16px; /* Prevents auto-zoom on iOS Safari */
             transition: all .3s ease;
         }
 
         .contact-form .form-control:focus {
             background: #ffffff;
             border-color: var(--primary);
-            box-shadow: 0 12px 30px rgba(74,210,226,.25);
+            box-shadow: 0 10px 25px rgba(74,210,226,.25);
             outline: none;
         }
 
-        .contact-textarea { resize: none; }
+        .contact-textarea { 
+            resize: none; 
+        }
 
         .contact-submit {
             background: linear-gradient(135deg, #3bb6c4, #3b8ebf);
@@ -205,8 +146,13 @@
             border-radius: 50px;
             padding: 14px 44px;
             font-weight: 600;
+            font-size: 1rem;
             transition: .3s;
             border: none;
+            min-height: 48px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
         }
 
         .contact-submit:hover {
@@ -230,13 +176,47 @@
             color: rgba(74,210,226,.08);
             pointer-events: none;
             z-index: 1;
+            user-select: none;
         }
 
         .wave-svg { width: 100%; height: auto; display: block; }
 
+        @media (max-width: 991px) {
+            .contact-textarea {
+                min-height: 160px;
+            }
+        }
+
         @media (max-width: 768px) {
-            .contact-form { padding: 2rem 0; }
-            .contact-watermark { font-size: 3.5rem; }
+            .contact-section { 
+                padding: 40px 0 0; 
+                min-height: auto;
+            }
+            .contact-form { 
+                padding: 1.5rem 0; 
+            }
+            .contact-form::before {
+                inset: -10px;
+            }
+            .contact-watermark { 
+                font-size: 3rem; 
+                right: 10px;
+                bottom: 20px;
+                opacity: 0.05;
+            }
+            .contact-submit {
+                width: 100%;
+                max-width: 280px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .contact-watermark {
+                display: none;
+            }
+            .contact-textarea {
+                min-height: 130px;
+            }
         }
     </style>
 </section>

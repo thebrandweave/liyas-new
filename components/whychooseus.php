@@ -52,42 +52,36 @@ $asset_base = $is_subdirectory ? '../' : '';
 		:root {
 			--why-text-primary: #0b2e4e;
 			--why-text-secondary: #5a6b7b;
-			--why-accent: #3b8ebf; /* Site cyan */
+			--why-accent: #3b8ebf;
 			--why-white: #ffffff;
 			--why-bg: #f6fbff;
 		}
 
-		/* .why-choose-section {
+		.why-choose-section {
 			position: relative;
-			padding: 80px 0;
-			background: #2ca0a8;
+			padding: 60px 0;
 			border-radius: 20px;
-		} */
+			overflow: hidden;
+			isolation: isolate;
+			width: 100%;
+		}
 
-.why-choose-section {
-    position: relative;
-    padding: 40px 0;
-    border-radius: 20px;
-    overflow: hidden;
-    isolation: isolate;
-}
-
-.why-choose-section::before {
-    content: "";
-    position: absolute;
-    inset: 0;
-    background-image: url('assets/images/w1.png');
-    background-size: cover;
-    background-position: center;
-    background-repeat: no-repeat;
-    opacity: 0.7; Background image opacity */
-    z-index: -1;
-}
+		.why-choose-section::before {
+			content: "";
+			position: absolute;
+			inset: 0;
+			background-image: url('assets/images/w1.png');
+			background-size: cover;
+			background-position: center;
+			background-repeat: no-repeat;
+			opacity: 0.7; /* Background image opacity */
+			z-index: -1;
+		}
 
 		.why-title { text-align: center; margin-bottom: 30px; }
-		.why-subtitle { color: var(--why-accent); font-weight: 600; letter-spacing: 1px;text-align:center; }
-		.why-heading { font-weight: 700; color: var(--why-text-primary); text-align:center;}
-		.why-intro { color: #ffffff; max-width: 720px; margin: 0 auto; text-align:center; }
+		.why-subtitle { color: var(--why-accent); font-weight: 600; letter-spacing: 1.5px; text-align: center; font-size: 0.9rem; margin-bottom: 8px; }
+		.why-heading { font-weight: 700; color: var(--why-text-primary); text-align: center; font-size: clamp(1.4rem, 4.5vw, 2.2rem); margin-bottom: 12px; }
+		.why-intro { color: #3b8ebf; max-width: 720px; margin: 0 auto; text-align: center; font-size: clamp(0.9rem, 2.5vw, 1.05rem); padding: 0 12px; line-height: 1.6; }
 
 		.features-grid { display: grid; gap: 2rem; align-items: center; grid-template-columns: 1fr; }
 		.features-column { display: flex; flex-direction: column; gap: 2rem; }
@@ -95,13 +89,13 @@ $asset_base = $is_subdirectory ? '../' : '';
 		.image-column { order: 1; }
 		.features-column.right { order: 2; }
 
-		.feature-item { background: transparent; display: flex; flex-direction: column; align-items: center; text-align: center; gap: .5rem; }
-		.feature-item h3 { color: var(--why-text-primary); font-weight: 700; font-size: 1.125rem; }
-		.feature-item p { color: #ffffff; font-size: .95rem; max-width: 320px; }
+		.feature-item { background: transparent; display: flex; flex-direction: column; align-items: center; text-align: center; gap: .5rem; padding: 0 10px; }
+		.feature-item h3 { color: var(--why-text-primary); font-weight: 700; font-size: 1.125rem; margin-bottom: 4px; }
+		.feature-item p { color: #000000; font-size: .95rem; max-width: 320px; line-height: 1.5; margin: 0; }
 		.icon-emoji { font-size: 2.2rem; color: var(--why-accent); line-height: 1; }
 
-		.image-wrapper { position: relative; max-width: 360px; margin: 0 auto; }
-		.image-wrapper img {  height: 46vh; display: block; position: relative; z-index: 1; }
+		.image-wrapper { position: relative; max-width: 360px; margin: 0 auto; display: flex; justify-content: center; }
+		.image-wrapper img { height: clamp(240px, 42vh, 380px); width: auto; max-width: 100%; object-fit: contain; display: block; position: relative; z-index: 1; }
 
 		@media (min-width: 1024px) {
 			.features-grid { grid-template-columns: 1fr auto 1fr; }
@@ -112,7 +106,21 @@ $asset_base = $is_subdirectory ? '../' : '';
 			.image-column { order: 0; }
 			.features-column.right { order: 0; }
 		}
+
+		@media (max-width: 768px) {
+			.why-choose-section {
+				padding: 40px 0;
+				border-radius: 0;
+			}
+			.features-grid {
+				gap: 1.5rem;
+			}
+			.features-column {
+				gap: 1.5rem;
+			}
+			.image-column {
+				margin: 0.5rem 0;
+			}
+		}
 	</style>
 </section>
-
-

@@ -51,7 +51,7 @@ body {
 }
 
 .brand-title {
-  font-size: clamp(3rem, 8vw, 5.5rem);
+  font-size: clamp(2.5rem, 7vw, 5.5rem);
   font-weight: 900;
   letter-spacing: 0.18em;
   color: #0b2e4e;
@@ -59,7 +59,7 @@ body {
 }
 
 .brand-subtitle {
-  font-size: clamp(1.8rem, 4vw, 2.8rem);
+  font-size: clamp(1.5rem, 4vw, 2.8rem);
   font-weight: 700;
   margin-bottom: 1.2rem;
 }
@@ -112,6 +112,8 @@ body {
 
 .about-hero-right img {
   width: 280px;
+  max-width: 100%;
+  height: auto;
   animation: floatBottle 6s ease-in-out infinite;
 }
 
@@ -124,9 +126,10 @@ body {
 
 /* ================= ABOUT UNIQUE ================= */
 .about-unique {
-  padding: 0rem 8%;
+  padding: 4rem 8%;
   background: linear-gradient(180deg, #ffffff 0%, #f3fdff 100%);
   overflow: hidden;
+  width: 100%;
 }
 
 .about-unique-inner {
@@ -136,22 +139,24 @@ body {
   gap: 4rem;
   max-width: 1200px;
   margin: auto;
-  margin-top: 100px;
 }
 
 .about-eyebrow {
   font-size: 0.85rem;
   color: #3b8ebf;
   font-weight: 600;
-  letter-spacing: 1px;
+  letter-spacing: 1.5px;
   text-transform: uppercase;
+  display: inline-block;
+  margin-bottom: 0.5rem;
 }
 
 .about-unique-left h2 {
-  font-size: clamp(2rem, 4vw, 2.6rem);
+  font-size: clamp(1.6rem, 4vw, 2.6rem);
   font-weight: 700;
-  margin: 1rem 0;
+  margin: 0.5rem 0 1rem;
   color: #0b2e4e;
+  line-height: 1.25;
 }
 
 .about-unique-left p {
@@ -159,6 +164,7 @@ body {
   font-size: 1rem;
   margin-bottom: 1.2rem;
   max-width: 520px;
+  line-height: 1.6;
 }
 
 .about-unique-right {
@@ -166,139 +172,87 @@ body {
   display: flex;
   justify-content: center;
   align-items: center;
-  transform: translateX(40px);
 }
 
 .about-unique-right img {
-  /* width: 320px;
-  z-index: 2;
-  max-width: none; */
-  position:relative;
-  left: 135px;
-  height: 45vh;
-}
-
-/*.vertical-text {*/
-/*  position: absolute;*/
-/*  font-size: 130px;*/
-/*  font-weight: 800;*/
-/*  color: rgba(74, 210, 226, 0.12);*/
-/*  letter-spacing: 12px;*/
-/*  transform: rotate(-90deg);*/
-/*  left: 20px;*/
-/*}*/
-/* ================= PREMIUM HERO UPGRADE ================= */
-
-.about-hero {
-  min-height: 90vh;
-  background: radial-gradient(circle at top left, #f4fdff, #e8fbff 40%, #ffffff 75%);
-  display: flex;
-  align-items: center;
-  padding: 8rem 8%;
-}
-
-.about-hero-inner {
-  display: grid;
-  grid-template-columns: 1.1fr 1fr;
-  align-items: center;
-  gap: 4rem;
-  max-width: 1200px;
-  margin: auto;
-}
-
-.hero-desc {
-  font-size: 1.05rem;
-  color: #5a6b7b;
-  max-width: 480px;
-  margin-bottom: 1.8rem;
-}
-
-.hero-meta {
-  font-size: 0.85rem;
-  letter-spacing: 1px;
-  color: #0b2e4e;
-  opacity: 0.7;
-}
-
-/* PRODUCT PEDESTAL */
-.product-pedestal {
-  position: relative;
-  width: 320px;
-  height: 320px;
-  border-radius: 50%;
-  background: linear-gradient(145deg, #ffffff, #e6f8fc);
-  box-shadow:
-    0 40px 80px rgba(11, 46, 78, 0.15),
-    inset 0 0 40px rgba(74, 210, 226, 0.25);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.product-pedestal img {
-  width: 160px;
-  z-index: 2;
-  animation: floatBottle 6s ease-in-out infinite;
-}
-
-/* Glow ring */
-.product-pedestal::after {
-  content: '';
-  position: absolute;
-  inset: -15px;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(74,210,226,0.25), transparent 70%);
-  z-index: 1;
+  height: clamp(260px, 45vh, 420px);
+  width: auto;
+  max-width: 100%;
+  object-fit: contain;
+  display: block;
 }
 
 /* RESPONSIVE */
 @media (max-width: 900px) {
-  .about-hero-inner {
-    grid-template-columns: 1fr;
-    text-align: center;
+  .about-hero {
+    padding: 4rem 5%;
+    min-height: auto;
   }
 
-  .hero-desc {
-    margin: 0 auto 1.8rem;
-  }
-
-  .about-hero-right {
-    margin-top: 3rem;
-  }
-}
-
-/* ================= RESPONSIVE ================= */
-@media (max-width: 900px) {
   .about-hero-inner,
   .about-unique-inner {
     grid-template-columns: 1fr;
     text-align: center;
+    gap: 2.5rem;
+    margin-top: 0;
   }
 
-  .about-hero-left p {
-    margin: auto auto 2rem;
+  .about-hero-left p,
+  .about-unique-left p {
+    margin: 0 auto 1.5rem;
+    max-width: 600px;
   }
 
-  /*.vertical-text {*/
-  /*  display: none;*/
-  /*}*/
+  .about-hero-right,
+  .about-unique-right {
+    transform: none !important;
+    margin: 1.5rem auto 0;
+    width: 100%;
+  }
+
+  .about-unique-right img {
+    position: static !important;
+    left: auto !important;
+    margin: 0 auto !important;
+    height: clamp(220px, 38vh, 340px);
+    max-width: 100%;
+  }
+
+  .about-unique {
+    padding: 3rem 1.25rem;
+  }
 
   .hero-btns a {
-    display: block;
-    margin: 10px auto;
+    display: inline-block;
+    margin: 8px 6px;
   }
 }
 
-@media (max-width: 499px){
-    
-    .about-unique-right img {
+@media (max-width: 480px) {
+  .about-unique {
+    padding: 2.5rem 1rem;
+  }
 
-  margin-right:350px;
-}
+  .about-hero-inner,
+  .about-unique-inner {
+    gap: 1.8rem;
+  }
+
+  .hero-btns {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .hero-btns a {
+    width: 100%;
+    max-width: 260px;
+    margin: 0;
+    text-align: center;
+  }
 }
 </style>
-
-
 
 <!-- ================= ABOUT LIYAS ================= -->
 <section class="about-unique" id="about-cards">
@@ -320,7 +274,6 @@ body {
     </div>
 
     <div class="about-unique-right">
-      <!--<div class="vertical-text">LIYAS</div>-->
       <img src="<?php echo $asset_base; ?>../assets/images/liyas-bottle1.png" alt="LIYAS Bottle">
     </div>
 

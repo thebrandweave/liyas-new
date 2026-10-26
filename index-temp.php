@@ -394,8 +394,8 @@ $social_links = $social_links_stmt->fetchAll(PDO::FETCH_ASSOC);
   width: 98px;
   height: 45px;
   border-radius: 7%;
-  background: rgba(255, 255, 255, 0.95);
-  color: #000000;
+  background: #3b8ebf ;
+  color: #ffffff;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -420,7 +420,7 @@ $social_links = $social_links_stmt->fetchAll(PDO::FETCH_ASSOC);
 .top-login-btn:hover {
   transform: translateY(-3px) scale(1.05);
   box-shadow: 0 6px 20px rgba(74, 210, 226, 0.25);
-  background: rgba(255, 255, 255, 1);
+  background: #3bb6c4;
   border-color: rgba(74, 210, 226, 0.2);
 }
 
@@ -464,91 +464,90 @@ $social_links = $social_links_stmt->fetchAll(PDO::FETCH_ASSOC);
 /* Responsive adjustments (mobile view) */
 @media screen and (max-width: 767px) {
   .top-login-btn {
-      display: none;
-    /*width: 80px !important;*/
-    /*height: 48px !important;*/
-    /*min-width: 48px !important;*/
-    /*min-height: 48px !important;*/
-    /*top: 16px !important;*/
-    /*right: 16px !important;*/
-    /*left: auto !important;*/
-    /*bottom: auto !important;*/
-    /*box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2) !important;*/
-    z-index: 1101 !important; /* Above navbar but below mobile menu when open */
-    /*background: rgba(255, 255, 255, 1) !important;*/
-    /*border: 1px solid rgba(0, 0, 0, 0.1) !important;*/
-    /* Ensure visibility */
-    /*opacity: 1 !important;*/
-    /*visibility: visible !important;*/
-    /*pointer-events: auto !important;*/
-    /*display: flex !important;*/
-    /*position: fixed !important;*/
-    /*transform: none !important;*/
+    display: none !important;
   }
   
-  .top-login-btn .login-svg {
-    width: 22px !important;
-    height: 22px !important;
-    stroke-width: 2.2 !important;
-    display: block !important;
-    flex-shrink: 0 !important;
+  /* Hero section mobile spacing & layout */
+  .hero {
+    padding-top: 85px !important;
+    padding-bottom: 110px !important;
+    min-height: auto !important;
+    overflow: hidden;
   }
 
-  /* Adjust position when navbar is scrolled */
-  .liyas-navbar.scrolled ~ .top-login-btn {
-    top: 14px !important;
+  .hero-content {
+    text-align: center;
+    padding: 0 10px;
+    margin-bottom: 1rem;
   }
-  
-  /* Ensure button is clickable */
-  .top-login-btn:active {
-    transform: scale(0.95) !important;
+
+  .hero h1 {
+    font-size: clamp(2rem, 8vw, 2.8rem) !important;
+    line-height: 1.15 !important;
+    margin-bottom: 12px !important;
+  }
+
+  .hero-subtitle {
+    font-size: 0.8rem !important;
+    letter-spacing: 2px !important;
+    margin-bottom: 10px !important;
+  }
+
+  .hero-description {
+    font-size: 0.95rem !important;
+    line-height: 1.6 !important;
+    max-width: 440px !important;
+    margin: 0 auto 24px !important;
+  }
+
+  .hero-buttons {
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+    width: 100%;
+    max-width: 320px;
+    margin: 0 auto;
+  }
+
+  .hero-buttons .btn-primary,
+  .hero-buttons .btn-secondary {
+    flex: 1;
+    min-width: 125px;
+    padding: 12px 18px;
+    font-size: 0.95rem;
+    text-align: center;
+    border-radius: 30px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 44px;
+    text-decoration: none;
+  }
+
+  .hero-scroll-down {
+    bottom: 15px !important;
+    width: 75px !important;
+    height: 75px !important;
+  }
+
+  .hero-scroll-down svg {
+    width: 75px !important;
+    height: 75px !important;
+  }
+
+  .hero-scroll-down text {
+    font-size: 20px !important;
   }
 }
 
-/* Extra small devices */
-@media screen and (max-width: 480px) {
-  .top-login-btn {
-    width: 61px !important;
-    height: 46px !important;
-    min-width: 46px !important;
-    min-height: 46px !important;
-    top: 15px !important;
-    right: 124px !important;
-    left: auto !important;
-    position: fixed !important;
+@media screen and (max-width: 380px) {
+  .hero-buttons {
+    flex-direction: column;
+    gap: 10px;
   }
-  
-  .top-login-btn .login-svg {
-    width: 20px !important;
-    height: 20px !important;
-  }
-}
-
-@media screen and (max-width: 375px) {
-  .top-login-btn {
-    width: 44px !important;
-    height: 44px !important;
-    min-width: 44px !important;
-    min-height: 44px !important;
-    top: 12px !important;
-    right: 12px !important;
-    left: auto !important;
-    position: fixed !important;
-  }
-  
-  .top-login-btn .login-svg {
-    width: 18px !important;
-    height: 18px !important;
-  }
-}
-
-/* Hide login button when mobile menu is open to avoid overlap */
-@media screen and (max-width: 767px) {
-  body.no-scroll .top-login-btn {
-    opacity: 0 !important;
-    pointer-events: none !important;
-    transform: scale(0.8) !important;
-    visibility: hidden !important;
+  .hero-buttons .btn-primary,
+  .hero-buttons .btn-secondary {
+    width: 100%;
   }
 }
 

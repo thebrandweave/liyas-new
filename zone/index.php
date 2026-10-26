@@ -1154,7 +1154,7 @@ if (!function_exists('buildWhatsAppLink')) {
             background: #ffffff;
             border: 1px solid var(--border-color);
             border-radius: var(--radius-lg);
-            padding: 12px 16px;
+            padding: 12px 8px;
             margin-bottom: 16px;
             box-shadow: var(--shadow-subtle);
         }
@@ -1356,7 +1356,7 @@ if (!function_exists('buildWhatsAppLink')) {
             background: #ffffff;
             border: 1px solid var(--border-color);
             border-radius: var(--radius-lg);
-            padding: 12px;
+            padding: 10px;
             margin-bottom: 20px;
             box-shadow: var(--shadow-subtle);
             display: flex;
@@ -1390,7 +1390,7 @@ if (!function_exists('buildWhatsAppLink')) {
             display: inline-flex;
             align-items: center;
             gap: 6px;
-            padding: 8px 14px;
+            padding: 4px 10px;
             border-radius: 30px;
             font-size: 13px;
             font-weight: 600;
@@ -1503,9 +1503,9 @@ if (!function_exists('buildWhatsAppLink')) {
             justify-content: space-between;
             flex-wrap: wrap;
             gap: 10px;
-            border-bottom: 1px solid #e2e8f0;
-            padding-bottom: 12px;
-            margin-bottom: 12px;
+            /* border-bottom: 1px solid #e2e8f0; */
+            padding-bottom: 6px;
+            /* margin-bottom: 12px; */
         }
 
         .vehicle-load-title-group {
@@ -2707,21 +2707,22 @@ if (!function_exists('buildWhatsAppLink')) {
                 <div class="vehicle-load-card">
                     <div class="vehicle-load-header">
                         <div class="vehicle-load-title-group">
-                            <span class="vehicle-truck-icon-box">
+                            <!-- <span class="vehicle-truck-icon-box">
                                 <i class='bx bxs-truck'></i>
-                            </span>
-                            <div>
+                            </span> -->
+                            <!-- <div>
                                 <div class="vehicle-load-title">Vehicle Stock &amp; Remaining Load</div>
                              
-                            </div>
-                        </div>
-                        <div class="vehicle-load-badge-group">
+                            </div> -->
+                              <div class="vehicle-load-badge-group">
                                     <span class="zone-badge">
                     <span class="pulse-dot"></span>
                     <span><?= htmlspecialchars($zone_name) ?></span>
                 </span>
                            
                         </div>
+                        </div>
+                      
                     </div>
 
                     <div class="vehicle-cards-grid">
@@ -2744,9 +2745,9 @@ if (!function_exists('buildWhatsAppLink')) {
                                     <span class="veh-num-badge">
                                         <i class='bx bxs-truck' style="color: #60a5fa;"></i> <?= htmlspecialchars($zv['vehicle_number']) ?>
                                     </span>
-                                    <?php if (!empty($zv['vehicle_name'])): ?>
+                                    <!-- <?php if (!empty($zv['vehicle_name'])): ?>
                                         <span class="veh-name-text"><?= htmlspecialchars($zv['vehicle_name']) ?></span>
-                                    <?php endif; ?>
+                                    <?php endif; ?> -->
                                     <?php if (!empty($zv['driver_name'])): ?>
                                         <span class="veh-driver-tag" title="Assigned Driver">
                                             <i class='bx bx-user'></i> <?= htmlspecialchars($zv['driver_name']) ?>
@@ -2862,16 +2863,16 @@ if (!function_exists('buildWhatsAppLink')) {
                 <div class="date-filter-title-row">
                     <div class="date-scope-indicator">
                         <i class='bx bx-calendar-event'></i>
-                        <span>Deliveries: <strong><?= htmlspecialchars($dateLabel) ?></strong></span>
-                        <?php if ($date_preset === 'today'): ?>
+                        <span><strong><?= htmlspecialchars($dateLabel) ?></strong></span>
+                        <!-- <?php if ($date_preset === 'today'): ?>
                             <span class="daily-reset-tag" title="Operational delivery counts reset daily"><i class='bx bx-refresh'></i> Daily Reset</span>
-                        <?php endif; ?>
+                        <?php endif; ?> -->
                     </div>
-                    <?php if ($date_preset !== 'today'): ?>
+                    <!-- <?php if ($date_preset !== 'today'): ?>
                         <a href="<?= zone_filter_url($zone_slug, ['date_preset' => 'today', 'date_from' => null, 'date_to' => null]) ?>" class="btn-reset-today" title="Reset view back to Today">
                             <i class='bx bx-redo'></i> Switch to Today (Daily)
                         </a>
-                    <?php endif; ?>
+                    <?php endif; ?> -->
                 </div>
 
                 <div class="date-preset-pills-row">

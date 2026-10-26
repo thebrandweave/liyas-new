@@ -297,22 +297,57 @@ $social_links = $social_links_stmt->fetchAll(PDO::FETCH_ASSOC);
 
   /* ===== RESPONSIVE ===== */
   @media (max-width: 991px) {
+    footer {
+      padding: 40px 0 0;
+    }
+
+    .footer-container {
+      padding: 0 15px 30px;
+    }
+
     .footer-grid {
       grid-template-columns: 1fr;
       text-align: center;
+      gap: 2rem;
+    }
+
+    .social-links {
+      display: flex;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .social-links a {
+      margin: 0;
     }
 
     .newsletter-form {
       flex-direction: column;
+      width: 100%;
+      max-width: 380px;
+      margin: 0 auto;
+      gap: 12px;
+    }
+
+    .newsletter-form input {
+      width: 100%;
+      min-height: 44px;
+      font-size: 16px;
+    }
+
+    .newsletter-form button {
+      width: 100%;
+      min-height: 44px;
     }
 
     .hollow-text-svg {
-      font-size: 90px;
+      font-size: 70px !important;
     }
 
     .footer-overlay-wrapper {
-      height: 150px;
-      margin-top: 16px;
+      height: 120px;
+      margin-top: 12px;
     }
   }
   </style>

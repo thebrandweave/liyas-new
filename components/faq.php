@@ -36,7 +36,7 @@
                         <div class="faq-question">
                             <h3>What makes Liyas water different from regular bottled water?</h3>
                             <div class="faq-icon">
-                                <i class="fas fa-chevron-down"></i>
+                                <i class="bx bx-chevron-down"></i>
                             </div>
                         </div>
                         <div class="faq-answer">
@@ -48,7 +48,7 @@
                         <div class="faq-question">
                             <h3>How do I place an order for water delivery?</h3>
                             <div class="faq-icon">
-                                <i class="fas fa-chevron-down"></i>
+                                <i class="bx bx-chevron-down"></i>
                             </div>
                         </div>
                         <div class="faq-answer">
@@ -60,7 +60,7 @@
                         <div class="faq-question">
                             <h3>What are your delivery areas and schedules?</h3>
                             <div class="faq-icon">
-                                <i class="fas fa-chevron-down"></i>
+                                <i class="bx bx-chevron-down"></i>
                             </div>
                         </div>
                         <div class="faq-answer">
@@ -72,7 +72,7 @@
                         <div class="faq-question">
                             <h3>How do I handle empty water bottles?</h3>
                             <div class="faq-icon">
-                                <i class="fas fa-chevron-down"></i>
+                                <i class="bx bx-chevron-down"></i>
                             </div>
                         </div>
                         <div class="faq-answer">
@@ -84,7 +84,7 @@
                         <div class="faq-question">
                             <h3>What payment methods do you accept?</h3>
                             <div class="faq-icon">
-                                <i class="fas fa-chevron-down"></i>
+                                <i class="bx bx-chevron-down"></i>
                             </div>
                         </div>
                         <div class="faq-answer">
@@ -96,7 +96,7 @@
                         <div class="faq-question">
                             <h3>Can I pause or modify my delivery schedule?</h3>
                             <div class="faq-icon">
-                                <i class="fas fa-chevron-down"></i>
+                                <i class="bx bx-chevron-down"></i>
                             </div>
                         </div>
                         <div class="faq-answer">
@@ -406,32 +406,34 @@
             margin: 0;
         }
 
-        @media (max-width: 991.98px) {
-            .faq-title { font-size: 36px; }
-            .faq-section { padding: 72px 0; }
-        }
-        
-        @media (max-width: 767.98px) {
-            .faq-title { font-size: 30px; }
-            .faq-question { padding: 20px; }
-            .faq-answer { padding: 0 20px; }
-            .faq-item.active .faq-answer { padding: 0 20px 20px 20px; }
-            .faq-question h3 { font-size: 16px; }
-            .faq-answer p { font-size: 15px; }
-        }
-
         .faq-wave { 
             position: relative; 
             z-index: 1; 
             display: block; 
             width: 100%;
             transform: scaleX(-1);
-            margin-top: -10em;
-            bottom: -10em;
+            margin-top: -6em;
+            bottom: 0;
         }
 
         @media (max-width: 991.98px) {
-            .faq-wave { margin-top: -100px; }
+            .faq-title { font-size: 32px; }
+            .faq-section { padding: 60px 0 0; }
+            .faq-header { text-align: center; margin-bottom: 30px; }
+            .faq-wave { margin-top: -60px; bottom: 0; }
+        }
+        
+        @media (max-width: 767.98px) {
+            .faq-title { font-size: clamp(1.4rem, 5vw, 1.85rem); }
+            .faq-eyebrow { font-size: 0.85rem; }
+            .faq-subtext { font-size: 0.95rem; }
+            .faq-question { padding: 16px 18px; }
+            .faq-answer { padding: 0 18px; }
+            .faq-item.active .faq-answer { padding: 0 18px 18px 18px; }
+            .faq-question h3 { font-size: 15px; }
+            .faq-answer p { font-size: 14px; }
+            .faq-section { padding: 45px 0 0; }
+            .faq-wave { margin-top: -40px; bottom: 0; }
         }
     </style>
 
