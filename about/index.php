@@ -651,13 +651,6 @@ $social_links = $social_links_stmt->fetchAll(PDO::FETCH_ASSOC);
 
 
 
-    <div class="social-sidebar">
-        <?php foreach ($social_links as $link): ?>
-            <a href="<?= htmlspecialchars($link['url']) ?>" class="social-icon" target="_blank" aria-label="<?= htmlspecialchars($link['platform']) ?>">
-                <i class="<?= htmlspecialchars($link['icon_class']) ?>"></i>
-            </a>
-        <?php endforeach; ?>
-    </div>
     
     <!-- <button id="backToTop" title="Go to top"><i class="fas fa-arrow-up"></i></button> -->
 <button id="backToTop" title="Go to top">
