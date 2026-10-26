@@ -257,7 +257,7 @@ $products = $products_stmt->fetchAll(PDO::FETCH_ASSOC);
               <h4><?= htmlspecialchars($product['name']) ?></h4>
               <p class="by">By <span>Liyas</span></p>
               
-              <div class="price-section">
+              <div class="price-section" style="align-items:center;">
                 <p class="new-price">₹<?= htmlspecialchars($product['price']) ?>/Case</p>
                 <?php if ($product['discount'] > 0): ?>
                     <p class="old-price">₹<?= htmlspecialchars($product['price'] + ($product['price'] * $product['discount'] / 100)) ?></p>
