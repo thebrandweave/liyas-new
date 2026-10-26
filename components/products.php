@@ -65,7 +65,7 @@ $products = $products_stmt->fetchAll(PDO::FETCH_ASSOC);
   box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
   position: relative;
   transition: transform 0.3s ease, box-shadow 0.3s ease;
-  width: 100%;
+  width: 289px;
 }
 
 .product-card:hover {

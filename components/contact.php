@@ -59,7 +59,7 @@
         </div>
     </div>
 
-    <svg class="wave-svg" viewBox="0 0 1440 390" xmlns="http://www.w3.org/2000/svg" style="margin-top: -50px;">
+    <!-- <svg class="wave-svg" viewBox="0 0 1440 390" xmlns="http://www.w3.org/2000/svg" style="margin-top: -50px;">
         <path fill="#ffffff" d="M0,400L0,150C94.7,117.9,189.4,85.8,277,76
         C364.5,66.1,444.8,78.4,507,92
         C569.1,105.5,613,120.3,694,122
@@ -67,7 +67,7 @@
         C1078.8,143.7,1146.5,186.7,1218,195
         C1289.4,203.2,1364.7,176.6,1440,150
         L1440,400L0,400Z"/>
-    </svg>
+    </svg> -->
 
     <style>
         :root {
