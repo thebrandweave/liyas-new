@@ -995,12 +995,13 @@ body.has-hero {
     .hero-image-mobile .hero-bottle-container {
         max-width: 280px;
         margin: 0 auto;
+        top:20px;
     }
     
     .hero-image-mobile img {
         max-height: 300px;
         width: auto;
-        margin: 0 auto !important;
+        margin: -48px auto !important;
     }
     
     .hero-image-desktop {

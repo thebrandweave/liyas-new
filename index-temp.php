@@ -497,7 +497,7 @@ $social_links = $social_links_stmt->fetchAll(PDO::FETCH_ASSOC);
     font-size: 0.95rem !important;
     line-height: 1.6 !important;
     max-width: 440px !important;
-    margin: 0 auto 24px !important;
+    margin: 0 auto 9px !important;
   }
 
   .hero-buttons {
@@ -600,7 +600,6 @@ $social_links = $social_links_stmt->fetchAll(PDO::FETCH_ASSOC);
                         <p class="hero-description">
                         Meet Liyas — hydration redefined for today's lifestyle.
 Crafted for clarity, freshness, and a touch of fun.
-Because great water isn't just a choice — it's a vibe.
                         </p>
                         <div class="hero-buttons">
                             <a href="products.php" class="btn-primary">Shop Now</a>
