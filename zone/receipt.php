@@ -160,7 +160,7 @@ if (!function_exists('buildThermalRawBtPayload')) {
         $receiptDate = date('d-m-Y', strtotime($data['receipt_created_at'] ?: 'now'));
         $receiptTime = date('h:i A', strtotime($data['receipt_created_at'] ?: 'now'));
 
-        $lines[] = "<b><font size='big'>#" . $billNumber . "</font></b>";
+        $lines[] = "#" . $billNumber . "</font>";
         $lines[] = "" . $receiptDate . " • " . $receiptTime;
         $lines[] = "" . $dividerDashed;
 
@@ -296,7 +296,7 @@ if (!function_exists('buildThermalRawBtPayload')) {
         } else {
             $lines[] = "" . $website . " • " . $phone;
         }
-        $lines[] = "Thank you for doing business with Liyas International!";
+        // $lines[] = "Thank you for doing business with Liyas International!";
         $lines[] = "* * * * * THANK YOU * * * * *";
         $lines[] = "\n\n\n\n";
 
