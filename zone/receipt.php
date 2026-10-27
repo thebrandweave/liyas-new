@@ -150,13 +150,13 @@ if (!function_exists('buildThermalRawBtPayload')) {
         $dividerDotted = substr(str_repeat('- ', (int)ceil($width / 2)), 0, $width);
 
         $center = function($text) use ($width) {
-            $visibleLen = strlen(strip_tags($text));
-            if ($visibleLen >= $width) return $text;
-            return str_repeat(' ', (int)floor(($width - $visibleLen) / 2)) . $text;
+            $len = strlen($text);
+            if ($len >= $width) return $text;
+            return str_repeat(' ', (int)floor(($width - $len) / 2)) . $text;
         };
 
         // 1. Header (Brand Title, Subtitle, GSTIN)
-        $lines[] = $center("<b>LIYAS INTERNATIONAL</b>");
+        $lines[] = $center("LIYAS INTERNATIONAL");
         $lines[] = $center("Packaged Drinking Water");
         $lines[] = $center("GSTIN: " . $gstin);
         $lines[] = $dividerDashed;
@@ -166,7 +166,7 @@ if (!function_exists('buildThermalRawBtPayload')) {
         $receiptDate = date('d-m-Y', strtotime($data['receipt_created_at'] ?: 'now'));
         $receiptTime = date('h:i A', strtotime($data['receipt_created_at'] ?: 'now'));
 
-        $lines[] = $center("<b>#" . $billNumber . "</b>");
+        $lines[] = $center("#" . $billNumber);
         $lines[] = $center($receiptDate . " / " . $receiptTime);
         $lines[] = $dividerDashed;
 
@@ -176,12 +176,12 @@ if (!function_exists('buildThermalRawBtPayload')) {
         $customerTel = $data['phone'] ?: '';
         $contactName = $data['customer_name'] ?: '';
 
-        $lines[] = "<b>Billed To:</b> " . $shopName;
+        $lines[] = "Billed To: " . $shopName;
         if (!empty($contactName) && $contactName !== $shopName) {
-            $lines[] = "<b>Attn:</b> " . $contactName;
+            $lines[] = "Attn: " . $contactName;
         }
-        $lines[] = "<b>Delivery Location:</b> " . $place;
-        $lines[] = "<b>Phone:</b> " . ($customerTel ?: 'N/A');
+        $lines[] = "Delivery Location: " . $place;
+        $lines[] = "Phone: " . ($customerTel ?: 'N/A');
         $lines[] = $dividerDashed;
 
         // 4. Products Table (Item, Qty, Rate, Amt)
@@ -205,7 +205,7 @@ if (!function_exists('buildThermalRawBtPayload')) {
                      . str_pad("QTY", $wQty, " ", STR_PAD_LEFT) 
                      . str_pad("RATE", $wRate, " ", STR_PAD_LEFT) 
                      . str_pad("AMT", $wAmt, " ", STR_PAD_LEFT);
-        $lines[] = "<b>" . $tableHeader . "</b>";
+        $lines[] = $tableHeader;
         $lines[] = $dividerDashed;
 
         $itemCount = count($order_items);
@@ -225,7 +225,7 @@ if (!function_exists('buildThermalRawBtPayload')) {
             if (strlen($iName) <= $wItem) {
                 $lines[] = str_pad($iName, $wItem) . $colQty . $colRate . $colAmt;
             } else {
-                $lines[] = "<b>" . $iName . "</b>";
+                $lines[] = $iName;
                 $lines[] = str_pad("", $wItem) . $colQty . $colRate . $colAmt;
             }
 
@@ -263,7 +263,7 @@ if (!function_exists('buildThermalRawBtPayload')) {
         // TOTAL PAYABLE (framed by double border)
         $payableStr = "Rs. " . number_format($totalPayable, 0);
         $lines[] = $dividerDouble;
-        $lines[] = "<b>" . str_pad("TOTAL PAYABLE:", $wLabel) . str_pad($payableStr, $wVal, " ", STR_PAD_LEFT) . "</b>";
+        $lines[] = str_pad("TOTAL PAYABLE:", $wLabel) . str_pad($payableStr, $wVal, " ", STR_PAD_LEFT);
         $lines[] = $dividerDouble;
 
         // Cash Received & Credited
@@ -278,12 +278,12 @@ if (!function_exists('buildThermalRawBtPayload')) {
         // Balance / Due (framed by dotted border)
         $dueStr = "Rs. " . number_format($dueAmount, 0);
         $lines[] = $dividerDotted;
-        $lines[] = "<b>" . str_pad("BALANCE / DUE:", $wLabel) . str_pad($dueStr, $wVal, " ", STR_PAD_LEFT) . "</b>";
+        $lines[] = str_pad("BALANCE / DUE:", $wLabel) . str_pad($dueStr, $wVal, " ", STR_PAD_LEFT);
         $lines[] = $dividerDotted;
 
         // Prior Due Settled (if notes)
         if (!empty($data['receipt_notes']) && stripos($data['receipt_notes'], 'Cleared') !== false) {
-            $lines[] = "<b>Prior Due Settled:</b> " . trim($data['receipt_notes']);
+            $lines[] = "Prior Due Settled: " . trim($data['receipt_notes']);
         }
 
         // Remaining Shop Due
@@ -291,7 +291,7 @@ if (!function_exists('buildThermalRawBtPayload')) {
             $remDueLabel = "Remaining Shop Due:";
             $remDueValStr = "Rs. " . number_format($remainingShopDues['total_due'], 0);
             $labelLen = strlen($remDueLabel);
-            $lines[] = "<b>" . str_pad($remDueLabel, $labelLen) . str_pad($remDueValStr, $width - $labelLen, " ", STR_PAD_LEFT) . "</b>";
+            $lines[] = str_pad($remDueLabel, $labelLen) . str_pad($remDueValStr, $width - $labelLen, " ", STR_PAD_LEFT);
         }
 
         // 6. Footer
@@ -303,7 +303,7 @@ if (!function_exists('buildThermalRawBtPayload')) {
             $lines[] = $center($website . " • " . $phone);
         }
         // $lines[] = "Thank you for doing business with Liyas International!";
-        $lines[] = $center("<b>* * * * * THANK YOU * * * * *</b>");
+        $lines[] = $center("* * * * * THANK YOU * * * * *");
         $lines[] = "\n\n\n\n";
 
         return implode("\n", $lines);
@@ -1729,12 +1729,9 @@ if (file_exists($logoPath)) {
                     throw new Error("Connected, but could not detect writable print characteristic.");
                 }
 
-                // Convert text and <b> tags to standard ESC/POS bold hardware bytes
-                const escText = rawText
-                    .replace(/<b>/g, '\x1B\x45\x01')
-                    .replace(/<\/b>/g, '\x1B\x45\x00');
+                // Convert text to ESC/POS bytes
                 const encoder = new TextEncoder();
-                const data = encoder.encode(escText);
+                const data = encoder.encode(rawText);
 
                 // Write in chunks (safe for BLE MTU)
                 const chunkSize = 64;
