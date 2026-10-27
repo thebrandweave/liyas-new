@@ -150,19 +150,19 @@ if (!function_exists('buildThermalRawBtPayload')) {
         $dividerDotted = substr(str_repeat('- ', (int)ceil($width / 2)), 0, $width);
 
         // 1. Header (Brand Title, Subtitle, GSTIN)
-        $lines[] = "[C]<b><font size='big'>LIYAS INTERNATIONAL</font></b>";
-        $lines[] = "[C]Packaged Drinking Water";
-        $lines[] = "[C]GSTIN: " . $gstin;
-        $lines[] = "[C]" . $dividerDashed;
+        $lines[] = "LIYAS INTERNATIONAL";
+        $lines[] = "Packaged Drinking Water";
+        $lines[] = "GSTIN: " . $gstin;
+        $lines[] = "" . $dividerDashed;
 
         // 2. Bill Meta (#BillNumber, Date • Time)
         $billNumber = $data['bill_number'];
         $receiptDate = date('d-m-Y', strtotime($data['receipt_created_at'] ?: 'now'));
         $receiptTime = date('h:i A', strtotime($data['receipt_created_at'] ?: 'now'));
 
-        $lines[] = "[C]<b><font size='big'>#" . $billNumber . "</font></b>";
-        $lines[] = "[C]" . $receiptDate . " • " . $receiptTime;
-        $lines[] = "[C]" . $dividerDashed;
+        $lines[] = "<b><font size='big'>#" . $billNumber . "</font></b>";
+        $lines[] = "" . $receiptDate . " • " . $receiptTime;
+        $lines[] = "" . $dividerDashed;
 
         // 3. Customer Info (Billed To, Attn, Delivery Location, Phone)
         $shopName    = $data['shop_name'] ?: ($data['customer_name'] ?: 'Valued Customer');
@@ -170,13 +170,13 @@ if (!function_exists('buildThermalRawBtPayload')) {
         $customerTel = $data['phone'] ?: '';
         $contactName = $data['customer_name'] ?: '';
 
-        $lines[] = "[L]<b>Billed To:</b> " . $shopName;
+        $lines[] = "Billed To: " . $shopName;
         if (!empty($contactName) && $contactName !== $shopName) {
-            $lines[] = "[L]Attn: " . $contactName;
+            $lines[] = "Attn: " . $contactName;
         }
-        $lines[] = "[L]<b>Delivery Location:</b> " . $place;
-        $lines[] = "[L]Phone: " . ($customerTel ?: 'N/A');
-        $lines[] = "[C]" . $dividerDashed;
+        $lines[] = "Delivery Location:" . $place;
+        $lines[] = "Phone: " . ($customerTel ?: 'N/A');
+        $lines[] = "" . $dividerDashed;
 
         // 4. Products Table (Item, Qty, Rate, Amt)
         if ($width == 30) {
@@ -199,8 +199,8 @@ if (!function_exists('buildThermalRawBtPayload')) {
                      . str_pad("QTY", $wQty, " ", STR_PAD_LEFT) 
                      . str_pad("RATE", $wRate, " ", STR_PAD_LEFT) 
                      . str_pad("AMT", $wAmt, " ", STR_PAD_LEFT);
-        $lines[] = "[L]<b>" . $tableHeader . "</b>";
-        $lines[] = "[C]" . $dividerDashed;
+        $lines[] = "" . $tableHeader . "";
+        $lines[] = "" . $dividerDashed;
 
         $itemCount = count($order_items);
         foreach ($order_items as $idx => $oi) {
@@ -217,17 +217,17 @@ if (!function_exists('buildThermalRawBtPayload')) {
             $colAmt  = str_pad($amtStr, $wAmt, " ", STR_PAD_LEFT);
 
             if (strlen($iName) <= $wItem) {
-                $lines[] = "[L]" . str_pad($iName, $wItem) . $colQty . $colRate . $colAmt;
+                $lines[] = "" . str_pad($iName, $wItem) . $colQty . $colRate . $colAmt;
             } else {
-                $lines[] = "[L]<b>" . $iName . "</b>";
-                $lines[] = "[L]" . str_pad("", $wItem) . $colQty . $colRate . $colAmt;
+                $lines[] = "" . $iName . "";
+                $lines[] = "" . str_pad("", $wItem) . $colQty . $colRate . $colAmt;
             }
 
             if ($idx < $itemCount - 1) {
-                $lines[] = "[C]" . $dividerDotted;
+                $lines[] = "" . $dividerDotted;
             }
         }
-        $lines[] = "[C]" . $dividerDashed;
+        $lines[] = "" . $dividerDashed;
 
         // 5. Financial Summary Breakdown
         $receiptSubtotal = 0.0;
@@ -246,38 +246,38 @@ if (!function_exists('buildThermalRawBtPayload')) {
 
         // Subtotal
         $subtotalStr = "Rs. " . number_format($receiptSubtotal, 0);
-        $lines[] = "[L]" . str_pad("Subtotal:", $wLabel) . str_pad($subtotalStr, $wVal, " ", STR_PAD_LEFT);
+        $lines[] = "" . str_pad("Subtotal:", $wLabel) . str_pad($subtotalStr, $wVal, " ", STR_PAD_LEFT);
 
         // Discount if any
         if ($discountVal > 0) {
             $discountStr = "-Rs. " . number_format($discountVal, 0);
-            $lines[] = "[L]" . str_pad("Discount:", $wLabel) . str_pad($discountStr, $wVal, " ", STR_PAD_LEFT);
+            $lines[] = "" . str_pad("Discount:", $wLabel) . str_pad($discountStr, $wVal, " ", STR_PAD_LEFT);
         }
 
         // TOTAL PAYABLE (framed by double border)
         $payableStr = "Rs. " . number_format($totalPayable, 0);
-        $lines[] = "[C]" . $dividerDouble;
-        $lines[] = "[L]<b>" . str_pad("TOTAL PAYABLE:", $wLabel) . str_pad($payableStr, $wVal, " ", STR_PAD_LEFT) . "</b>";
-        $lines[] = "[C]" . $dividerDouble;
+        $lines[] = "" . $dividerDouble;
+        $lines[] = "" . str_pad("TOTAL PAYABLE:", $wLabel) . str_pad($payableStr, $wVal, " ", STR_PAD_LEFT) . "";
+        $lines[] = "" . $dividerDouble;
 
         // Cash Received & Credited
         $cashStr = "Rs. " . number_format($cashReceived, 0);
-        $lines[] = "[L]" . str_pad("Cash", $wLabel) . str_pad($cashStr, $wVal, " ", STR_PAD_LEFT);
+        $lines[] = "" . str_pad("Cash", $wLabel) . str_pad($cashStr, $wVal, " ", STR_PAD_LEFT);
 
         if ($creditAmount > 0) {
             $creditStr = "Rs. " . number_format($creditAmount, 0);
-            $lines[] = "[L]" . str_pad("Credited", $wLabel) . str_pad($creditStr, $wVal, " ", STR_PAD_LEFT);
+            $lines[] = "" . str_pad("Credited", $wLabel) . str_pad($creditStr, $wVal, " ", STR_PAD_LEFT);
         }
 
         // Balance / Due (framed by dotted border)
         $dueStr = "Rs. " . number_format($dueAmount, 0);
-        $lines[] = "[C]" . $dividerDotted;
-        $lines[] = "[L]<b>" . str_pad("BALANCE / DUE:", $wLabel) . str_pad($dueStr, $wVal, " ", STR_PAD_LEFT) . "</b>";
-        $lines[] = "[C]" . $dividerDotted;
+        $lines[] = "" . $dividerDotted;
+        $lines[] = "" . str_pad("BALANCE / DUE:", $wLabel) . str_pad($dueStr, $wVal, " ", STR_PAD_LEFT) . "";
+        $lines[] = "" . $dividerDotted;
 
         // Prior Due Settled (if notes)
         if (!empty($data['receipt_notes']) && stripos($data['receipt_notes'], 'Cleared') !== false) {
-            $lines[] = "[L]<b>Prior Due Settled:</b> " . trim($data['receipt_notes']);
+            $lines[] = "Prior Due Settled: " . trim($data['receipt_notes']);
         }
 
         // Remaining Shop Due
@@ -285,19 +285,19 @@ if (!function_exists('buildThermalRawBtPayload')) {
             $remDueLabel = "Remaining Shop Due:";
             $remDueValStr = "Rs. " . number_format($remainingShopDues['total_due'], 0);
             $labelLen = strlen($remDueLabel);
-            $lines[] = "[L]<b>" . str_pad($remDueLabel, $labelLen) . str_pad($remDueValStr, $width - $labelLen, " ", STR_PAD_LEFT) . "</b>";
+            $lines[] = "" . str_pad($remDueLabel, $labelLen) . str_pad($remDueValStr, $width - $labelLen, " ", STR_PAD_LEFT) . "";
         }
 
         // 6. Footer
-        $lines[] = "[C]" . $dividerDashed;
+        $lines[] = "" . $dividerDashed;
         if ($width == 30) {
-            $lines[] = "[C]" . $website;
-            $lines[] = "[C]Ph: " . $phone;
+            $lines[] = "" . $website;
+            $lines[] = "Ph: " . $phone;
         } else {
-            $lines[] = "[C]" . $website . " • " . $phone;
+            $lines[] = "" . $website . " • " . $phone;
         }
-        $lines[] = "[C]Thank you for doing business with Liyas International!";
-        $lines[] = "[C]<b>* * * * * THANK YOU * * * * *</b>";
+        $lines[] = "Thank you for doing business with Liyas International!";
+        $lines[] = "* * * * * THANK YOU * * * * *";
         $lines[] = "\n\n\n\n";
 
         return implode("\n", $lines);
@@ -1350,7 +1350,7 @@ if (file_exists($logoPath)) {
 
                 <button onclick="printViaRawBT()" id="btnQuickPrint" class="btn-ctrl btn-quick-print" title="⚡ Instant 1-Click High-Speed Bluetooth Print via RawBT (Under 1 second)">
                     <i class='bx bxs-zap' style="color: #f59e0b; font-size: 18px;"></i>
-                    <span>⚡ Quick Print</span>
+                    <span> Quick Print</span>
                 </button>
 
                 <button onclick="window.print()" id="btnPrintReceipt" class="btn-ctrl btn-print" title="Print receipt via Thermal Printer">
