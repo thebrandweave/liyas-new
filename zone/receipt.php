@@ -1345,7 +1345,7 @@ if (file_exists($logoPath)) {
             <div class="action-buttons-group">
                
 
-                <button onclick="printViaRawBT()" id="btnQuickPrint" class="btn-ctrl btn-quick-print" title="⚡ Instant 1-Click High-Speed Bluetooth Print via RawBT (Under 1 second)">
+                <button onclick="printViaRawBT()" id="btnQuickPrint" class="btn-ctrl btn-quick-print" title="⚡ Instant 1-Click Bluetooth Print (Direct in Chrome / iOS / RawBT)">
                     <i class='bx bxs-zap' style="color: #f59e0b; font-size: 18px;"></i>
                     <span> Quick Print</span>
                 </button>
@@ -1693,24 +1693,50 @@ if (file_exists($logoPath)) {
         let bleDevice = null;
         let bleCharacteristic = null;
 
-        // Direct Web Bluetooth Printing (works in Bluefy browser on iOS, Chrome on Android/Desktop)
+        // Direct Web Bluetooth Printing (Zero apps required: Google Chrome on Android, Bluefy on iOS, Desktop Chrome)
         async function printViaWebBluetooth(rawText) {
+            const isIOS = (/iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)) && !window.MSStream;
+            const isAndroid = /Android/i.test(navigator.userAgent);
+
             try {
                 showToast('⚡ Connecting to Bluetooth printer...', 3000);
-                if (!bleCharacteristic) {
+
+                // Auto-reconnect if device was already selected in this session
+                if (bleDevice && bleDevice.gatt && !bleDevice.gatt.connected) {
+                    try {
+                        await bleDevice.gatt.connect();
+                    } catch(e) {
+                        bleCharacteristic = null;
+                    }
+                }
+
+                if (!bleCharacteristic || !bleDevice || !bleDevice.gatt || !bleDevice.gatt.connected) {
                     const device = await navigator.bluetooth.requestDevice({
                         acceptAllDevices: true,
                         optionalServices: [
-                            '000018f0-0000-1000-8000-00805f9b34fb',
-                            '49535343-fe7d-4ae5-8fa9-9fafd205e455',
-                            'e7810a71-73ae-499d-8c15-faa9aef0c3f2',
-                            '0000ff00-0000-1000-8000-00805f9b34fb',
-                            '0000e0ff-0000-1000-8000-00805f9b34fb'
+                            '000018f0-0000-1000-8000-00805f9b34fb', // Standard ESC/POS
+                            '49535343-fe7d-4ae5-8fa9-9fafd205e455', // ISSC transparent serial (Posiflow / Xprinter / Rongta)
+                            'e7810a71-73ae-499d-8c15-faa9aef0c3f2', // Posiflow BLE
+                            '0000ff00-0000-1000-8000-00805f9b34fb', // Generic POS BLE
+                            '0000e0ff-0000-1000-8000-00805f9b34fb', // MPT-II / 58mm BLE
+                            '0000ae00-0000-1000-8000-00805f9b34fb',
+                            '0000fee7-0000-1000-8000-00805f9b34fb', // Wechat / POS BLE
+                            '0000fff0-0000-1000-8000-00805f9b34fb', // Common serial BLE
+                            '0000af30-0000-1000-8000-00805f9b34fb',
+                            '000018f1-0000-1000-8000-00805f9b34fb'
                         ]
                     });
+
                     bleDevice = device;
+                    bleDevice.addEventListener('gattserverdisconnected', () => {
+                        bleCharacteristic = null;
+                        console.log('Bluetooth printer disconnected');
+                    });
+
                     const server = await device.gatt.connect();
                     const services = await server.getPrimaryServices();
+                    bleCharacteristic = null;
+
                     for (const s of services) {
                         try {
                             const chars = await s.getCharacteristics();
@@ -1726,14 +1752,18 @@ if (file_exists($logoPath)) {
                 }
 
                 if (!bleCharacteristic) {
-                    throw new Error("Connected, but could not detect writable print characteristic.");
+                    throw new Error("Connected to printer, but could not detect writable print characteristic.");
                 }
 
-                // Convert text to ESC/POS bytes
-                const encoder = new TextEncoder();
-                const data = encoder.encode(rawText);
+                showToast('⚡ Sending receipt to printer...', 2500);
 
-                // Write in chunks (safe for BLE MTU)
+                // Prepare ESC/POS data with ESC @ init command and proper CRLF line breaks
+                const escInit = '\x1b@';
+                const formattedText = escInit + rawText.replace(/\r?\n/g, '\r\n') + '\r\n\r\n\r\n';
+                const encoder = new TextEncoder();
+                const data = encoder.encode(formattedText);
+
+                // Write in 64-byte chunks with brief pause to avoid buffer overflow on small thermal printers
                 const chunkSize = 64;
                 for (let i = 0; i < data.length; i += chunkSize) {
                     const chunk = data.slice(i, i + chunkSize);
@@ -1742,15 +1772,28 @@ if (file_exists($logoPath)) {
                     } else {
                         await bleCharacteristic.writeValue(chunk);
                     }
-                    await new Promise(r => setTimeout(r, 20));
+                    await new Promise(r => setTimeout(r, 25));
                 }
 
-                showToast('⚡ Receipt printed via Bluetooth!');
+                showToast('⚡ Receipt printed successfully!');
             } catch (err) {
                 console.warn('Web Bluetooth error:', err);
-                if (err.name !== 'NotFoundError') {
-                    showToast('Bluetooth error: ' + err.message, 4000);
-                    openIosPrintModal();
+                bleCharacteristic = null;
+
+                if (err.name === 'NotFoundError') {
+                    // User closed the Bluetooth picker without selecting
+                    showToast('Bluetooth pairing cancelled', 2500);
+                } else {
+                    showToast('Bluetooth: ' + (err.message || 'Connection failed'), 4000);
+                    if (isIOS) {
+                        openIosPrintModal();
+                    } else if (isAndroid) {
+                        setTimeout(() => {
+                            if (confirm('Direct Bluetooth print was unsuccessful: ' + (err.message || '') + '\n\nWould you like to print using the RawBT app instead?')) {
+                                triggerRawBtIntent(rawText);
+                            }
+                        }, 500);
+                    }
                 }
             }
         }
@@ -1793,35 +1836,45 @@ if (file_exists($logoPath)) {
             }
         }
 
-        // Direct Ultra-Fast Print (Android RawBT / iOS Web Bluetooth / iOS Modal / AirPrint)
+        // Helper: Trigger RawBT Android App Intent (Fallback if Web Bluetooth is unavailable/blocked)
+        function triggerRawBtIntent(rawText) {
+            try {
+                showToast('⚡ Sending to RawBT for instant print...', 2500);
+                const encoded = btoa(unescape(encodeURIComponent(rawText)));
+                const intentUrl = "intent:base64," + encoded + "#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;S.browser_fallback_url=https%3A%2F%2Fplay.google.com%2Fstore%2Fapps%2Fdetails%3Fid%3Dru.a402d.rawbtprinter;end;";
+                window.location.href = intentUrl;
+            } catch (err) {
+                console.warn('RawBT intent error, falling back to browser print:', err);
+                window.print();
+            }
+        }
+
+        // Direct Ultra-Fast Print:
+        // Priority 1: Web Bluetooth (Chrome on Android, Bluefy on iOS, Chrome on Desktop) -> Zero external apps!
+        // Priority 2: iOS Safari -> Native modal with Simple Bluetooth Printer deep link, Share Sheet, AirPrint
+        // Priority 3: Android non-BLE browser -> RawBT App intent fallback
+        // Priority 4: Desktop / standard browser print
         function printViaRawBT() {
-            const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+            const isIOS = (/iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)) && !window.MSStream;
             const isAndroid = /Android/i.test(navigator.userAgent);
             const rawText = (currentPrintFormat === '80') ? RAWBT_TEXT_80 : RAWBT_TEXT_58;
 
-            // 1. If Web Bluetooth is available on iOS (e.g. user is in Bluefy browser)
-            if (isIOS && navigator.bluetooth) {
+            // 1. Direct Web Bluetooth (Chrome on Android, Bluefy on iOS, Chrome on Desktop)
+            // NO APP REQUIRED! Directly connects to Posiflow SC588 / thermal printer over Bluetooth
+            if (navigator.bluetooth) {
                 printViaWebBluetooth(rawText);
                 return;
             }
 
-            // 2. Standard iOS Safari (open iOS print options modal)
+            // 2. iOS Safari (Apple blocks Web Bluetooth in Safari -> open iOS helper modal)
             if (isIOS) {
                 openIosPrintModal();
                 return;
             }
 
-            // 3. Android - Ultra-Fast RawBT Intent (< 1 second)
+            // 3. Android browsers lacking Web Bluetooth (e.g. WebView / Firefox Android)
             if (isAndroid) {
-                try {
-                    showToast('⚡ Sending to RawBT for instant print...', 2500);
-                    const encoded = btoa(unescape(encodeURIComponent(rawText)));
-                    const intentUrl = "intent:base64," + encoded + "#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;S.browser_fallback_url=https%3A%2F%2Fplay.google.com%2Fstore%2Fapps%2Fdetails%3Fid%3Dru.a402d.rawbtprinter;end;";
-                    window.location.href = intentUrl;
-                } catch (err) {
-                    console.warn('RawBT intent error, falling back to browser print:', err);
-                    window.print();
-                }
+                triggerRawBtIntent(rawText);
                 return;
             }
 
