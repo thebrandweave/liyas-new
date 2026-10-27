@@ -137,51 +137,177 @@ $waMsg = "🧾 *LIYAS INTERNATIONAL - DELIVERY RECEIPT*\n"
        . "Thank you for choosing Liyas Water!";
 $waShareUrl = !empty($cleanPhone) ? "https://wa.me/{$cleanPhone}?text=" . rawurlencode($waMsg) : "https://api.whatsapp.com/send?text=" . rawurlencode($waMsg);
 
-// Build RawBT ESC/POS formatted text for instant (< 1 second) thermal printing
-$rawBtLines = [];
-$rawBtLines[] = "[C]<b><font size='big'>LIYAS INTERNATIONAL</font></b>";
-$rawBtLines[] = "[C]Packaged Drinking Water";
-$rawBtLines[] = "[C]GSTIN: " . $gstin;
-$rawBtLines[] = "[C]--------------------------------";
-$rawBtLines[] = "[C]<b>BILL #" . $billNumber . "</b>";
-$rawBtLines[] = "[C]" . $receiptDate . " • " . $receiptTime;
-$rawBtLines[] = "[C]--------------------------------";
-$rawBtLines[] = "[L]Billed To: " . $shopName;
-if (!empty($contactName) && $contactName !== $shopName) {
-    $rawBtLines[] = "[L]Attn: " . $contactName;
+// Build RawBT ESC/POS formatted text matching thermal printer layout (< 1 second)
+if (!function_exists('buildThermalRawBtPayload')) {
+    /**
+     * Helper to generate structured RawBT ESC/POS text matching the official thermal receipt layout
+     * Strictly calibrated for 30 columns (58mm Posiflow SC588) and 42 columns (80mm)
+     */
+    function buildThermalRawBtPayload($data, $order_items, $remainingShopDues, $gstin, $phone, $website, $width = 30) {
+        $lines = [];
+        $dividerDashed = str_repeat('-', $width);
+        $dividerDouble = str_repeat('=', $width);
+        $dividerDotted = substr(str_repeat('- ', (int)ceil($width / 2)), 0, $width);
+
+        // 1. Header (Brand Title, Subtitle, GSTIN)
+        $lines[] = "[C]<b><font size='big'>LIYAS INTERNATIONAL</font></b>";
+        $lines[] = "[C]Packaged Drinking Water";
+        $lines[] = "[C]GSTIN: " . $gstin;
+        $lines[] = "[C]" . $dividerDashed;
+
+        // 2. Bill Meta (#BillNumber, Date • Time)
+        $billNumber = $data['bill_number'];
+        $receiptDate = date('d-m-Y', strtotime($data['receipt_created_at'] ?: 'now'));
+        $receiptTime = date('h:i A', strtotime($data['receipt_created_at'] ?: 'now'));
+
+        $lines[] = "[C]<b><font size='big'>#" . $billNumber . "</font></b>";
+        $lines[] = "[C]" . $receiptDate . " • " . $receiptTime;
+        $lines[] = "[C]" . $dividerDashed;
+
+        // 3. Customer Info (Billed To, Attn, Delivery Location, Phone)
+        $shopName    = $data['shop_name'] ?: ($data['customer_name'] ?: 'Valued Customer');
+        $place       = $data['location'] ?: 'Mangalore';
+        $customerTel = $data['phone'] ?: '';
+        $contactName = $data['customer_name'] ?: '';
+
+        $lines[] = "[L]<b>Billed To:</b> " . $shopName;
+        if (!empty($contactName) && $contactName !== $shopName) {
+            $lines[] = "[L]Attn: " . $contactName;
+        }
+        $lines[] = "[L]<b>Delivery Location:</b> " . $place;
+        $lines[] = "[L]Phone: " . ($customerTel ?: 'N/A');
+        $lines[] = "[C]" . $dividerDashed;
+
+        // 4. Products Table (Item, Qty, Rate, Amt)
+        if ($width == 30) {
+            $wItem = 11;
+            $wQty = 4;
+            $wRate = 7;
+            $wAmt = 8;
+            $wLabel = 18;
+            $wVal = 12;
+        } else {
+            $wItem = 18;
+            $wQty = 6;
+            $wRate = 9;
+            $wAmt = 9;
+            $wLabel = 26;
+            $wVal = 16;
+        }
+
+        $tableHeader = str_pad("ITEM", $wItem) 
+                     . str_pad("QTY", $wQty, " ", STR_PAD_LEFT) 
+                     . str_pad("RATE", $wRate, " ", STR_PAD_LEFT) 
+                     . str_pad("AMT", $wAmt, " ", STR_PAD_LEFT);
+        $lines[] = "[L]<b>" . $tableHeader . "</b>";
+        $lines[] = "[C]" . $dividerDashed;
+
+        $itemCount = count($order_items);
+        foreach ($order_items as $idx => $oi) {
+            $iName = trim($oi['product_name'] ?: ($oi['name'] ?: 'Liyas Water'));
+            $iQty = (int)$oi['quantity'];
+            $iRate = (float)$oi['price_at_purchase'];
+            $iAmt = (float)$oi['line_total'];
+
+            $rateStr = (fmod($iRate, 1.0) == 0.0) ? number_format($iRate, 0) : number_format($iRate, 2);
+            $amtStr  = (fmod($iAmt, 1.0) == 0.0) ? number_format($iAmt, 0) : number_format($iAmt, 2);
+
+            $colQty  = str_pad((string)$iQty, $wQty, " ", STR_PAD_LEFT);
+            $colRate = str_pad($rateStr, $wRate, " ", STR_PAD_LEFT);
+            $colAmt  = str_pad($amtStr, $wAmt, " ", STR_PAD_LEFT);
+
+            if (strlen($iName) <= $wItem) {
+                $lines[] = "[L]" . str_pad($iName, $wItem) . $colQty . $colRate . $colAmt;
+            } else {
+                $lines[] = "[L]<b>" . $iName . "</b>";
+                $lines[] = "[L]" . str_pad("", $wItem) . $colQty . $colRate . $colAmt;
+            }
+
+            if ($idx < $itemCount - 1) {
+                $lines[] = "[C]" . $dividerDotted;
+            }
+        }
+        $lines[] = "[C]" . $dividerDashed;
+
+        // 5. Financial Summary Breakdown
+        $receiptSubtotal = 0.0;
+        foreach ($order_items as $oi) {
+            $receiptSubtotal += (float)$oi['line_total'];
+        }
+        if ($receiptSubtotal <= 0) {
+            $receiptSubtotal = (float)$data['receipt_total'] + (float)$data['discount'];
+        }
+
+        $totalPayable = (float)$data['receipt_total'];
+        $cashReceived = (float)$data['receipt_cash'];
+        $creditAmount = (float)$data['receipt_credit'];
+        $dueAmount    = (float)$data['receipt_due'];
+        $discountVal  = (float)$data['discount'];
+
+        // Subtotal
+        $subtotalStr = "Rs. " . number_format($receiptSubtotal, 0);
+        $lines[] = "[L]" . str_pad("Subtotal:", $wLabel) . str_pad($subtotalStr, $wVal, " ", STR_PAD_LEFT);
+
+        // Discount if any
+        if ($discountVal > 0) {
+            $discountStr = "-Rs. " . number_format($discountVal, 0);
+            $lines[] = "[L]" . str_pad("Discount:", $wLabel) . str_pad($discountStr, $wVal, " ", STR_PAD_LEFT);
+        }
+
+        // TOTAL PAYABLE (framed by double border)
+        $payableStr = "Rs. " . number_format($totalPayable, 0);
+        $lines[] = "[C]" . $dividerDouble;
+        $lines[] = "[L]<b>" . str_pad("TOTAL PAYABLE:", $wLabel) . str_pad($payableStr, $wVal, " ", STR_PAD_LEFT) . "</b>";
+        $lines[] = "[C]" . $dividerDouble;
+
+        // Cash Received & Credited
+        $cashStr = "Rs. " . number_format($cashReceived, 0);
+        $lines[] = "[L]" . str_pad("Cash", $wLabel) . str_pad($cashStr, $wVal, " ", STR_PAD_LEFT);
+
+        if ($creditAmount > 0) {
+            $creditStr = "Rs. " . number_format($creditAmount, 0);
+            $lines[] = "[L]" . str_pad("Credited", $wLabel) . str_pad($creditStr, $wVal, " ", STR_PAD_LEFT);
+        }
+
+        // Balance / Due (framed by dotted border)
+        $dueStr = "Rs. " . number_format($dueAmount, 0);
+        $lines[] = "[C]" . $dividerDotted;
+        $lines[] = "[L]<b>" . str_pad("BALANCE / DUE:", $wLabel) . str_pad($dueStr, $wVal, " ", STR_PAD_LEFT) . "</b>";
+        $lines[] = "[C]" . $dividerDotted;
+
+        // Prior Due Settled (if notes)
+        if (!empty($data['receipt_notes']) && stripos($data['receipt_notes'], 'Cleared') !== false) {
+            $lines[] = "[L]<b>Prior Due Settled:</b> " . trim($data['receipt_notes']);
+        }
+
+        // Remaining Shop Due
+        if (!empty($remainingShopDues['has_due'])) {
+            $remDueLabel = "Remaining Shop Due:";
+            $remDueValStr = "Rs. " . number_format($remainingShopDues['total_due'], 0);
+            $labelLen = strlen($remDueLabel);
+            $lines[] = "[L]<b>" . str_pad($remDueLabel, $labelLen) . str_pad($remDueValStr, $width - $labelLen, " ", STR_PAD_LEFT) . "</b>";
+        }
+
+        // 6. Footer
+        $lines[] = "[C]" . $dividerDashed;
+        if ($width == 30) {
+            $lines[] = "[C]" . $website;
+            $lines[] = "[C]Ph: " . $phone;
+        } else {
+            $lines[] = "[C]" . $website . " • " . $phone;
+        }
+        $lines[] = "[C]Thank you for doing business with Liyas International!";
+        $lines[] = "[C]<b>* * * * * THANK YOU * * * * *</b>";
+        $lines[] = "\n\n\n\n";
+
+        return implode("\n", $lines);
+    }
 }
-$rawBtLines[] = "[L]Location: " . $place;
-$rawBtLines[] = "[L]Phone: " . ($customerTel ?: 'N/A');
-$rawBtLines[] = "[C]--------------------------------";
-$rawBtLines[] = "[L]<b>" . str_pad("ITEM", 12) . str_pad("QTY", 4, " ", STR_PAD_LEFT) . str_pad("RATE", 7, " ", STR_PAD_LEFT) . str_pad("AMOUNT", 9, " ", STR_PAD_LEFT) . "</b>";
-$rawBtLines[] = "[C]--------------------------------";
-foreach ($order_items as $oi) {
-    $iName = substr($oi['product_name'] ?: ($oi['name'] ?: 'Liyas Water'), 0, 11);
-    $iQty = (int)$oi['quantity'];
-    $iRate = number_format((float)$oi['price_at_purchase'], 2);
-    $iAmt = number_format((float)$oi['line_total'], 2);
-    $rawBtLines[] = "[L]" . str_pad($iName, 12) . str_pad((string)$iQty, 4, " ", STR_PAD_LEFT) . str_pad($iRate, 7, " ", STR_PAD_LEFT) . str_pad($iAmt, 9, " ", STR_PAD_LEFT);
-}
-$rawBtLines[] = "[C]--------------------------------";
-$rawBtLines[] = "[L]" . str_pad("Subtotal:", 18) . str_pad(number_format($receiptSubtotal, 2), 14, " ", STR_PAD_LEFT);
-if ((float)$data['discount'] > 0) {
-    $rawBtLines[] = "[L]" . str_pad("Discount:", 18) . str_pad("-" . number_format((float)$data['discount'], 2), 14, " ", STR_PAD_LEFT);
-}
-$rawBtLines[] = "[L]<b>" . str_pad("TOTAL PAYABLE:", 18) . str_pad(number_format($totalPayable, 2), 14, " ", STR_PAD_LEFT) . "</b>";
-$rawBtLines[] = "[L]" . str_pad("Cash:", 18) . str_pad(number_format($cashReceived, 2), 14, " ", STR_PAD_LEFT);
-if ($creditAmount > 0) {
-    $rawBtLines[] = "[L]" . str_pad("Credited:", 18) . str_pad(number_format($creditAmount, 2), 14, " ", STR_PAD_LEFT);
-}
-$rawBtLines[] = "[L]<b>" . str_pad("BALANCE / DUE:", 18) . str_pad(number_format($dueAmount, 2), 14, " ", STR_PAD_LEFT) . "</b>";
-if (!empty($remainingShopDues['has_due'])) {
-    $rawBtLines[] = "[L]" . str_pad("Total Shop Due:", 18) . str_pad(number_format($remainingShopDues['total_due'], 2), 14, " ", STR_PAD_LEFT);
-}
-$rawBtLines[] = "[C]--------------------------------";
-$rawBtLines[] = "[C]" . $website . " • " . $phone;
-$rawBtLines[] = "[C]Thank you for your business!";
-$rawBtLines[] = "[C]<b>* * * * * THANK YOU * * * * *</b>";
-$rawBtLines[] = "\n\n\n";
-$rawBtText = implode("\n", $rawBtLines);
+
+// Generate Quick Print payloads for Posiflow SC588 (58mm / 30 chars) and 80mm
+$rawBtText58 = buildThermalRawBtPayload($data, $order_items, $remainingShopDues, $gstin, $phone, $website, 30);
+$rawBtText80 = buildThermalRawBtPayload($data, $order_items, $remainingShopDues, $gstin, $phone, $website, 42);
+$rawBtText   = $rawBtText58;
 
 // Prepare inline base64 logo for flawless canvas & PDF generation (zero CORS issues)
 $logoPath = dirname(__DIR__) . '/assets/images/logo/logo.png';
@@ -1469,7 +1595,10 @@ if (file_exists($logoPath)) {
         const BILL_NUMBER = <?= json_encode($billNumber) ?>;
         const WA_MESSAGE_TEXT = <?= json_encode($waMsg) ?>;
         const WA_SHARE_URL = <?= json_encode($waShareUrl) ?>;
-        const RAWBT_TEXT = <?= json_encode($rawBtText) ?>;
+        const RAWBT_TEXT_58 = <?= json_encode($rawBtText58) ?>;
+        const RAWBT_TEXT_80 = <?= json_encode($rawBtText80) ?>;
+        const RAWBT_TEXT = RAWBT_TEXT_58;
+        let currentPrintFormat = '58';
 
         let cachedPdfBlob = null;
 
@@ -1487,8 +1616,9 @@ if (file_exists($logoPath)) {
         // Direct Ultra-Fast Print via RawBT (Android Intent, < 1 second)
         function printViaRawBT() {
             try {
+                const rawText = (currentPrintFormat === '80') ? RAWBT_TEXT_80 : RAWBT_TEXT_58;
                 showToast('⚡ Sending to RawBT for instant print...', 2500);
-                const encoded = btoa(unescape(encodeURIComponent(RAWBT_TEXT)));
+                const encoded = btoa(unescape(encodeURIComponent(rawText)));
                 const intentUrl = "intent:base64," + encoded + "#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;S.browser_fallback_url=https%3A%2F%2Fplay.google.com%2Fstore%2Fapps%2Fdetails%3Fid%3Dru.a402d.rawbtprinter;end;";
                 
                 // Trigger RawBT app immediately
@@ -1685,6 +1815,7 @@ if (file_exists($logoPath)) {
 
         // Thermal Printer Format Switcher (Posiflow SC588 58mm / 80mm)
         function setPrintFormat(fmt) {
+            currentPrintFormat = fmt;
             const pageStyleEl = document.getElementById('dynamicPrintPageStyle');
             const btn58 = document.getElementById('btnFmt58');
             const btn80 = document.getElementById('btnFmt80');
