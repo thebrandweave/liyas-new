@@ -180,7 +180,7 @@ if (!function_exists('buildThermalRawBtPayload')) {
         if (!empty($contactName) && $contactName !== $shopName) {
             $lines[] = "Attn: " . $contactName;
         }
-        $lines[] = "Delivery Location: " . $place;
+        $lines[] = "Address: " . $place;
         $lines[] = "Phone: " . ($customerTel ?: 'N/A');
         $lines[] = $dividerDashed;
 
