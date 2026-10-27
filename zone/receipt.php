@@ -667,13 +667,87 @@ if (file_exists($logoPath)) {
 
         .btn-modal-secondary:hover { background: #e2e8f0; }
 
+        /* Printer Model Selector / Badge */
+        .printer-badge-group {
+            display: inline-flex;
+            align-items: center;
+            background: #f1f5f9;
+            border: 1px solid #cbd5e1;
+            border-radius: 10px;
+            padding: 3px 6px;
+            gap: 6px;
+        }
+
+        .printer-model-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 12px;
+            font-weight: 700;
+            color: #1e293b;
+            padding: 2px 6px;
+            border-right: 1px solid #cbd5e1;
+        }
+
+        .printer-model-badge i {
+            color: #2563eb;
+            font-size: 16px;
+        }
+
+        .printer-format-toggle {
+            display: inline-flex;
+            gap: 3px;
+        }
+
+        .btn-fmt {
+            background: transparent;
+            border: 1px solid transparent;
+            padding: 5px 9px;
+            font-size: 11px;
+            font-weight: 700;
+            color: #475569;
+            border-radius: 7px;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 3px;
+        }
+
+        .btn-fmt:hover {
+            color: #0f172a;
+            background: #e2e8f0;
+        }
+
+        .btn-fmt.active {
+            background: #0f172a;
+            color: #ffffff;
+            border-color: #0f172a;
+            box-shadow: 0 1px 3px rgba(15, 23, 42, 0.2);
+        }
+
+        .thermal-feed-spacer {
+            display: none;
+        }
+
+        .print-only {
+            display: none;
+        }
+
+        @media (max-width: 640px) {
+            .printer-model-badge {
+                display: none;
+            }
+        }
+
         /* ========================================================
-           Dedicated 80mm Thermal Printer Print Styles
+           Dedicated Thermal Printer Print Styles
+           Posiflow SC588 (58mm Paper / 42mm Safe Printable Width)
            ======================================================== */
         @media print {
             @page {
-                size: 80mm auto;
-                margin: 0;
+                size: 48mm auto;
+                margin: 0mm;
             }
 
             *, *:before, *:after {
@@ -684,38 +758,47 @@ if (file_exists($logoPath)) {
                 text-shadow: none !important;
                 -webkit-print-color-adjust: exact !important;
                 print-color-adjust: exact !important;
+                -webkit-text-size-adjust: none !important;
+                text-size-adjust: none !important;
             }
 
             html, body {
-                width: 78mm !important;
-                max-width: 80mm !important;
-                margin: 0 auto !important;
+                width: 45mm !important;
+                max-width: 45mm !important;
+                margin: 0 !important;
                 padding: 0 !important;
                 background: #ffffff !important;
                 color: #000000 !important;
-                font-family: 'JetBrains Mono', 'Courier New', Courier, monospace, sans-serif !important;
-                font-size: 11px !important;
-                line-height: 1.3 !important;
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
+                font-size: 8px !important;
+                line-height: 1.15 !important;
+                overflow-x: hidden !important;
             }
 
             .no-print-bar,
             .new-receipt-banner,
             .modal-overlay,
-            .toast-msg {
+            .toast-msg,
+            .hide-print {
                 display: none !important;
             }
 
+            .print-only {
+                display: inline !important;
+            }
+
             .receipt-card {
-                width: 100% !important;
-                max-width: 78mm !important;
-                margin: 0 auto !important;
-                padding: 3mm 2mm 8mm 2mm !important;
+                width: 45mm !important;
+                max-width: 45mm !important;
+                box-sizing: border-box !important;
+                margin: 0 !important;
+                padding: 1mm 1.5mm 8mm 1mm !important;
                 border: none !important;
                 border-radius: 0 !important;
                 box-shadow: none !important;
                 background: #ffffff !important;
                 color: #000000 !important;
-                font-size: 11px !important;
+                font-size: 8px !important;
             }
 
             /* Header Section */
@@ -725,9 +808,10 @@ if (file_exists($logoPath)) {
                 align-items: center !important;
                 text-align: center !important;
                 border-bottom: 1px dashed #000000 !important;
-                padding-bottom: 6px !important;
-                margin-bottom: 6px !important;
-                gap: 2px !important;
+                padding-bottom: 2px !important;
+                margin-bottom: 2px !important;
+                gap: 1px !important;
+                width: 100% !important;
             }
 
             .company-block {
@@ -736,45 +820,52 @@ if (file_exists($logoPath)) {
                 align-items: center !important;
                 text-align: center !important;
                 width: 100% !important;
-                gap: 1px !important;
+                gap: 0 !important;
             }
 
             .company-logo-img {
-                max-height: 28px !important;
+                max-height: 18px !important;
+                max-width: 65px !important;
                 width: auto !important;
-                filter: grayscale(100%) contrast(150%) !important;
-                margin-bottom: 2px !important;
+                filter: grayscale(100%) contrast(180%) !important;
+                margin: 0 auto 1px auto !important;
+                display: block !important;
             }
 
             .company-name, .thermal-brand-title {
                 display: block !important;
-                font-size: 14px !important;
+                font-size: 10px !important;
                 font-weight: 800 !important;
-                letter-spacing: 0.04em !important;
+                letter-spacing: 0.02em !important;
                 text-transform: uppercase !important;
                 color: #000000 !important;
-                line-height: 1.1 !important;
+                line-height: 1.05 !important;
             }
 
             .thermal-subtitle {
-                font-size: 9.5px !important;
-                font-weight: 600 !important;
+                font-size: 8.5px !important;
+                font-weight: 400 !important;
+                text-transform: uppercase !important;
                 color: #000000 !important;
+                line-height: 1.05 !important;
+                margin-top: 1px !important;
             }
 
             .gstin-tag {
-                font-size: 10px !important;
-                font-weight: 700 !important;
+                font-size: 8.5px !important;
+                font-weight: 400 !important;
                 color: #000000 !important;
-                margin-top: 2px !important;
+                margin-top: 1px !important;
+                line-height: 1.05 !important;
             }
 
             .invoice-meta {
+                display: block !important;
                 text-align: center !important;
                 width: 100% !important;
-                margin-top: 4px !important;
-                border-top: 1px dotted #888888 !important;
-                padding-top: 4px !important;
+                margin-top: 2px !important;
+                border-top: 1px dotted #000000 !important;
+                padding-top: 2px !important;
             }
 
             .official-tag {
@@ -782,16 +873,18 @@ if (file_exists($logoPath)) {
             }
 
             .bill-num-display {
-                font-size: 11px !important;
-                font-weight: 800 !important;
+                font-size: 9.5px !important;
+                font-weight: 600 !important;
                 color: #000000 !important;
-                letter-spacing: 0.03em !important;
+                letter-spacing: 0.02em !important;
+                line-height: 1.05 !important;
             }
 
             .meta-date {
-                font-size: 10px !important;
+                font-size: 10.5px !important;
                 font-weight: 600 !important;
                 color: #000000 !important;
+                line-height: 1.1 !important;
             }
 
             /* Customer Details */
@@ -800,57 +893,70 @@ if (file_exists($logoPath)) {
                 border: none !important;
                 border-bottom: 1px dashed #000000 !important;
                 border-radius: 0 !important;
-                padding: 4px 0 6px 0 !important;
-                margin-bottom: 6px !important;
+                padding: 2px 0 !important;
+                margin-bottom: 2px !important;
                 display: block !important;
-                font-size: 11px !important;
+                font-size: 8.5px !important;
+                line-height: 1.2 !important;
+                width: 100% !important;
             }
 
             .customer-panel div {
-                margin-bottom: 2px !important;
+                margin-bottom: 1px !important;
             }
 
             .cust-label {
-                font-size: 9px !important;
-                font-weight: 700 !important;
+                font-size: 8.5px !important;
+                font-weight: 400 !important;
                 text-transform: uppercase !important;
                 color: #000000 !important;
-                display: inline-block !important;
+                display: inline !important;
             }
 
             .cust-val {
-                font-size: 12px !important;
-                font-weight: 800 !important;
+                font-size: 8.5px !important;
+                font-weight: 400 !important;
                 color: #000000 !important;
-                display: block !important;
+                display: inline !important;
+                word-break: break-word !important;
+            }
+
+            .cust-sub {
+                font-size: 8.5px !important;
+                color: #000000 !important;
+                margin-top: 1px !important;
             }
 
             /* Items Table */
             .receipt-table {
                 width: 100% !important;
-                margin-bottom: 6px !important;
+                max-width: 100% !important;
+                table-layout: fixed !important;
+                margin-bottom: 2px !important;
                 border-collapse: collapse !important;
-                font-size: 10.5px !important;
+                font-size: 8.5px !important;
+                line-height: 1.1 !important;
+                font-variant-numeric: tabular-nums !important;
             }
 
             .receipt-table th {
                 background: transparent !important;
                 color: #000000 !important;
                 border: none !important;
-                /* border-top: 1px dashed #000000 !important; */
+                border-top: 1px dashed #000000 !important;
                 border-bottom: 1px dashed #000000 !important;
-                padding: 4px 2px !important;
-                font-size: 9.5px !important;
-                font-weight: 800 !important;
+                padding: 1.5px 0.5px !important;
+                font-size: 8.5px !important;
+                font-weight: 700 !important;
                 text-transform: uppercase !important;
                 letter-spacing: 0 !important;
             }
 
             .receipt-table td {
                 border: none !important;
-                padding: 3px 2px !important;
+                padding: 1px 0.5px !important;
                 color: #000000 !important;
-                font-size: 10.5px !important;
+                font-size: 8.5px !important;
                 vertical-align: top !important;
             }
 
@@ -858,67 +964,182 @@ if (file_exists($logoPath)) {
                 border-bottom: 1px dotted #888888 !important;
             }
 
+            .receipt-table .th-product,
+            .receipt-table .td-product {
+                width: 35% !important;
+                text-align: left !important;
+                word-break: break-word !important;
+                padding-right: 1px !important;
+                font-weight: 600 !important;
+                font-size: 10.5px !important;
+            }
+
+            .receipt-table .th-qty,
+            .receipt-table .td-qty {
+                width: 14% !important;
+                text-align: center !important;
+                   font-size: 10.5px !important;
+            }
+
+            .receipt-table .th-rate,
+            .receipt-table .td-rate {
+                width: 24% !important;
+                text-align: right !important;
+                white-space: nowrap !important;
+                   font-size: 10.5px !important;
+            }
+
+            .receipt-table .th-amt,
+            .receipt-table .td-amt {
+                width: 27% !important;
+                text-align: right !important;
+                padding-right: 2mm !important;
+                white-space: nowrap !important;
+                   font-size: 10.5px !important;
+            }
+
             /* Financial Summary */
             .summary-container {
                 display: block !important;
                 width: 100% !important;
-                margin-bottom: 6px !important;
-                /* border-top: 1px dashed #000000 !important; */
-                padding-top: 4px !important;
+                max-width: 100% !important;
+                margin-bottom: 2px !important;
+                padding-top: 1px !important;
             }
 
             .summary-table {
                 width: 100% !important;
-                font-size: 11px !important;
+                max-width: 100% !important;
+                table-layout: fixed !important;
+                font-size: 8.5px !important;
+                line-height: 1.2 !important;
+                border-collapse: collapse !important;
+                font-variant-numeric: tabular-nums !important;
             }
 
             .summary-table td {
-                padding: 2px 2px !important;
+                padding: 1px 0.5px !important;
                 color: #000000 !important;
+                font-size: 8.5px !important;
+            }
+
+            .summary-table td:first-child {
+                width: 55% !important;
+                text-align: left !important;
+                word-break: break-word !important;
+            }
+
+            .summary-table td:last-child {
+                width: 45% !important;
+                text-align: right !important;
+                padding-right: 2mm !important;
+                white-space: nowrap !important;
+            }
+
+            .summary-table tr td[style*="padding-top"] {
+                padding-top: 1px !important;
             }
 
             .summary-total-row td {
                 border-top: 1px dashed #000000 !important;
                 border-bottom: 1px dashed #000000 !important;
-                font-size: 13px !important;
-                font-weight: 800 !important;
-                padding: 4px 2px !important;
+                font-size: 8.5px !important;
+                font-weight: 400 !important;
+                padding: 2px 0.5px !important;
             }
 
             .summary-due-row td {
                 border-top: 1px dotted #000000 !important;
                 border-bottom: 1px dotted #000000 !important;
-                font-size: 12px !important;
-                font-weight: 800 !important;
-                padding: 3px 2px !important;
+                font-size: 10.5px !important;
+                font-weight: 400 !important;
+                padding: 1.5px 0.5px !important;
             }
 
             /* Footer */
             .footer-note {
                 border-top: 1px dashed #000000 !important;
-                padding-top: 6px !important;
+                padding-top: 2px !important;
                 text-align: center !important;
-                font-size: 9.5px !important;
+                font-size: 10.5px !important;
                 color: #000000 !important;
-                margin-top: 6px !important;
-                line-height: 1.35 !important;
+                margin-top: 2px !important;
+                line-height: 1.15 !important;
             }
 
             .footer-note a {
                 color: #000000 !important;
                 text-decoration: none !important;
+                font-size: 10.5px !important;
             }
 
             .thermal-cut-guide {
                 display: block !important;
                 text-align: center !important;
-                margin-top: 8px !important;
-                font-size: 10px !important;
+                margin-top: 2px !important;
+                font-size: 7px !important;
                 color: #000000 !important;
-                letter-spacing: 2px !important;
+                letter-spacing: 0.5px !important;
+            }
+
+            .thermal-feed-spacer {
+                display: block !important;
+                height: 10mm !important;
+                width: 100% !important;
+            }
+
+            /* 80mm Overrides when .fmt-80 is toggled */
+            body.fmt-80 {
+                width: 78mm !important;
+                max-width: 80mm !important;
+                font-size: 10.5px !important;
+            }
+            body.fmt-80 .receipt-card {
+                width: 78mm !important;
+                max-width: 78mm !important;
+                font-size: 10.5px !important;
+                padding: 2mm 2mm 8mm 2mm !important;
+            }
+            body.fmt-80 .company-logo-img {
+                max-height: 26px !important;
+                max-width: 90px !important;
+            }
+            body.fmt-80 .company-name, body.fmt-80 .thermal-brand-title {
+                font-size: 13px !important;
+            }
+            body.fmt-80 .bill-num-display {
+                font-size: 11.5px !important;
+            }
+            body.fmt-80 .cust-val {
+                font-size: 10px !important;
+            }
+            body.fmt-80 .receipt-table {
+                font-size: 9px !important;
+            }
+            body.fmt-80 .receipt-table th {
+                font-size: 8px !important;
+                padding: 2px 1px !important;
+            }
+            body.fmt-80 .receipt-table td {
+                font-size: 9px !important;
+                padding: 1.5px 1px !important;
+            }
+            body.fmt-80 .summary-table {
+                font-size: 9px !important;
+            }
+            body.fmt-80 .summary-total-row td {
+                font-size: 10.5px !important;
+                padding: 2.5px 1px !important;
+            }
+            body.fmt-80 .summary-due-row td {
+                font-size: 10.5px !important;
+            }
+            body.fmt-80 .footer-note {
+                font-size: 10.5px !important;
             }
         }
     </style>
+    <style id="dynamicPrintPageStyle">@page { size: 48mm auto; margin: 0; }</style>
 </head>
 <body>
 
@@ -930,6 +1151,17 @@ if (file_exists($logoPath)) {
             </a>
 
             <div class="action-buttons-group">
+                <div class="printer-badge-group">
+                    <div class="printer-model-badge" title="Target Printer: Posiflow SC588 (58mm thermal paper, 48mm printable width)">
+                        <i class='bx bx-printer'></i>
+                        <span>Posiflow SC588</span>
+                    </div>
+                    <div class="printer-format-toggle">
+                        <button type="button" class="btn-fmt active" id="btnFmt58" onclick="setPrintFormat('58')" title="58mm Paper (Posiflow SC588)">58mm</button>
+                        <button type="button" class="btn-fmt" id="btnFmt80" onclick="setPrintFormat('80')" title="80mm Thermal Paper">80mm</button>
+                    </div>
+                </div>
+
                 <button onclick="window.print()" id="btnPrintReceipt" class="btn-ctrl btn-print" title="Print receipt via Thermal Printer">
                     <i class='bx bx-printer' style="font-size: 18px;"></i>
                     <span>Print Receipt</span>
@@ -973,7 +1205,7 @@ if (file_exists($logoPath)) {
             <div class="company-block">
                 <img src="<?= $logoSrc ?>" alt="Liyas Logo" class="company-logo-img">
                 <!-- <div class="company-name thermal-brand-title">LIYAS INTERNATIONAL</div> -->
-                <div class="thermal-subtitle" style="font-size: 11px; color: #64748b;">Packaged Drinking Water</div>
+                <div class="thermal-subtitle" style="font-size: 8.5px; color: #64748b;">Packaged Drinking Water</div>
                 <div class="gstin-tag">GSTIN: <?= htmlspecialchars($gstin) ?></div>
             </div>
 
@@ -987,18 +1219,18 @@ if (file_exists($logoPath)) {
         <!-- Customer Info -->
         <div class="customer-panel">
             <div>
-                <span class="cust-label">Billed To (Shop / Customer):</span>
+                <span class="cust-label">Billed To:</span>
                 <span class="cust-val"><?= $shopName ?></span>
                 <?php if (!empty($contactName) && $contactName !== $shopName): ?>
-                    <div style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">
+                    <div class="cust-sub" style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">
                         Attn: <?= $contactName ?>
                     </div>
                 <?php endif; ?>
             </div>
             <div>
-                <span class="cust-label">Delivery Location :</span>
+                <span class="cust-label">Delivery Location:</span>
                 <div class="cust-val"><?= $place ?></div>
-                <div style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">
+                <div class="cust-sub" style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">
                     Phone: <?= $customerTel ?: 'N/A' ?>
                 </div>
             </div>
@@ -1008,10 +1240,10 @@ if (file_exists($logoPath)) {
         <table class="receipt-table">
             <thead>
                 <tr>
-                    <th style="text-align: left;">Product</th>
-                    <th style="text-align: center;">Qty (Cases)</th>
-                    <th style="text-align: right;">Rate</th>
-                    <th style="text-align: right;">Amount</th>
+                    <th class="th-product" style="text-align: left;"><span class="hide-print">Product</span><span class="print-only">Item</span></th>
+                    <th class="th-qty" style="text-align: center;">Qty<span class="hide-print"> (Cases)</span></th>
+                    <th class="th-rate" style="text-align: right;">Rate</th>
+                    <th class="th-amt" style="text-align: right;"><span class="hide-print">Amount</span><span class="print-only">Amt</span></th>
                 </tr>
             </thead>
             <tbody>
@@ -1022,19 +1254,17 @@ if (file_exists($logoPath)) {
                     $pItemAmount = (float)$item['line_total'];
                 ?>
                 <tr>
-                    <td>
-                        <strong><?= $pItemName ?></strong>
-                 
-                    
+                    <td class="td-product">
+                        <?= $pItemName ?>
                     </td>
-                    <td style="text-align: center; font-weight: 700;">
+                    <td class="td-qty" style="text-align: center; font-size: 8.5px; font-weight: 400;">
                         <?= $pItemQty ?>
                     </td>
-                    <td style="text-align: right;">
+                    <td class="td-rate" style="text-align: right;">
                         <?= formatCurrency($pItemRate) ?>
                     </td>
-                    <td style="text-align: right; font-weight: 700;">
-                        <?= formatCurrency($pItemAmount) ?>
+                    <td class="td-amt" style="text-align: right; font-size: 8.5px; font-weight: 400;">
+                     <?= '₹' . number_format((float)$pItemAmount, 0) ?>
                     </td>
                 </tr>
                 <?php endforeach; ?>
@@ -1046,33 +1276,33 @@ if (file_exists($logoPath)) {
             <table class="summary-table">
                 <tr>
                     <td style="color: var(--text-muted);">Subtotal:</td>
-                    <td style="text-align: right; font-weight: 700;"><?= formatCurrency($receiptSubtotal) ?></td>
+                    <td style="text-align: right; font-size: 8.5px; font-weight: 400;"><?= '₹' . number_format((float)$receiptSubtotal, 0) ?></td>
                 </tr>
                 <?php if ((float)$data['discount'] > 0): ?>
                 <tr>
                     <td style="color: var(--text-muted);">Discount:</td>
-                    <td style="text-align: right; color: #dc2626; font-weight: 700;">- <?= formatCurrency($data['discount']) ?></td>
+                    <td style="text-align: right; color: #dc2626; font-size: 8.5px; font-weight: 400;">- <?= '₹' . number_format((float)$data['discount'], 0) ?></td>
                 </tr>
                 <?php endif; ?>
                 <tr class="summary-total-row">
                     <td>TOTAL PAYABLE:</td>
-                    <td style="text-align: right;"><?= formatCurrency($totalPayable) ?></td>
+                    <td style="text-align: right; font-size: 8.5px;"><?= '₹' . number_format((float)$totalPayable, 0) ?></td>
                 </tr>
-                <tr>
+                <!-- <tr>
                     <td style="color: var(--text-muted); padding-top: 10px;">Payment Mode:</td>
                     <td style="text-align: right; font-weight: 700; padding-top: 10px;"><?= $payType ?></td>
+                </tr> -->
+                <tr>
+                    <td style="color: #059669;">Cash</td>
+                    <td style="text-align: right; color: #059669; font-size:8.5px; font-weight: 400;"><?= '₹' . number_format((float)$cashReceived, 0) ?></td>
                 </tr>
                 <tr>
-                    <td style="color: #059669;">Cash Received:</td>
-                    <td style="text-align: right; color: #059669; font-weight: 700;"><?= formatCurrency($cashReceived) ?></td>
-                </tr>
-                <tr>
-                    <td style="color: #d97706;">Credited Amount:</td>
-                    <td style="text-align: right; color: #d97706; font-weight: 700;"><?= formatCurrency($creditAmount) ?></td>
+                    <td style="color: #d97706;">Credited</td>
+                    <td style="text-align: right; color: #d97706; font-size: 8.5px; font-weight: 400;"><?= '₹' . number_format((float)$creditAmount, 0) ?></td>
                 </tr>
                 <tr class="summary-due-row">
                     <td>BALANCE / DUE:</td>
-                    <td style="text-align: right;"><?= formatCurrency($dueAmount) ?></td>
+                   <td style="text-align: right; font-size: 8.5px;"><?= '₹' . number_format((float)$dueAmount, 0) ?></td>
                 </tr>
                 <?php if (!empty($data['receipt_notes']) && stripos($data['receipt_notes'], 'Cleared') !== false): ?>
                 <tr>
@@ -1086,7 +1316,7 @@ if (file_exists($logoPath)) {
                 <tr>
                     <td style="color: #dc2626; font-weight: 700; padding-top: 8px;">Remaining Shop Due:</td>
                     <td style="text-align: right; color: #dc2626; font-weight: 800; padding-top: 8px;">
-                        <?= formatCurrency($remainingShopDues['total_due']) ?>
+                       <?= '₹' . number_format((float)$remainingShopDues['total_due'], 0) ?>
                     </td>
                 </tr>
                 <?php endif; ?>
@@ -1096,11 +1326,12 @@ if (file_exists($logoPath)) {
         <!-- Footer -->
         <div class="footer-note">
             <div style="font-weight: 700; color: #0f172a; margin-bottom: 2px;">
-                <a class="website-link" href="https://liyasinternational.com/"> <?= htmlspecialchars($website) ?> &bull;</a> <?= htmlspecialchars($phone) ?>
+                <a class="website-link" href="https://liyasinternational.com/"> <?= htmlspecialchars($website) ?> &bull;</a> 
             </div>
             <div>Thank you for doing business with Liyas International!</div>
             <div class="thermal-cut-guide" style="display: none;">* * * * * THANK YOU * * * * *</div>
         </div>
+        <div class="thermal-feed-spacer"></div>
     </div>
 
     <!-- Desktop WhatsApp Helper Modal -->
@@ -1369,6 +1600,41 @@ if (file_exists($logoPath)) {
             } catch (e) {
                 alert('Could not copy text automatically. Please copy manually.');
             }
+        }
+
+        // Thermal Printer Format Switcher (Posiflow SC588 58mm / 80mm)
+        function setPrintFormat(fmt) {
+            const pageStyleEl = document.getElementById('dynamicPrintPageStyle');
+            const btn58 = document.getElementById('btnFmt58');
+            const btn80 = document.getElementById('btnFmt80');
+
+            if (fmt === '80') {
+                document.body.classList.remove('fmt-58');
+                document.body.classList.add('fmt-80');
+                if (btn58) btn58.classList.remove('active');
+                if (btn80) btn80.classList.add('active');
+                if (pageStyleEl) {
+                    pageStyleEl.textContent = '@page { size: 80mm auto; margin: 0; }';
+                }
+                try { localStorage.setItem('liyas_receipt_printer_format', '80'); } catch(e){}
+            } else {
+                document.body.classList.remove('fmt-80');
+                document.body.classList.add('fmt-58');
+                if (btn58) btn58.classList.add('active');
+                if (btn80) btn80.classList.remove('active');
+                if (pageStyleEl) {
+                    pageStyleEl.textContent = '@page { size: 48mm auto; margin: 0; }';
+                }
+                try { localStorage.setItem('liyas_receipt_printer_format', '58'); } catch(e){}
+            }
+        }
+
+        // Apply saved thermal printer preference (defaults to Posiflow SC588 58mm)
+        try {
+            const savedFmt = localStorage.getItem('liyas_receipt_printer_format') || '58';
+            setPrintFormat(savedFmt);
+        } catch(e) {
+            setPrintFormat('58');
         }
     </script>
 
