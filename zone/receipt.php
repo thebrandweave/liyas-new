@@ -1343,23 +1343,14 @@ if (file_exists($logoPath)) {
             </a>
 
             <div class="action-buttons-group">
-                <div class="printer-badge-group">
-                    <div class="printer-model-badge" title="Target Printer: Posiflow SC588 (58mm thermal paper, 48mm printable width)">
-                        <i class='bx bx-printer'></i>
-                        <span>Posiflow SC588</span>
-                    </div>
-                
-                </div>
+               
 
                 <button onclick="printViaRawBT()" id="btnQuickPrint" class="btn-ctrl btn-quick-print" title="⚡ Instant 1-Click High-Speed Bluetooth Print via RawBT (Under 1 second)">
                     <i class='bx bxs-zap' style="color: #f59e0b; font-size: 18px;"></i>
                     <span> Quick Print</span>
                 </button>
 
-                <button onclick="window.print()" id="btnPrintReceipt" class="btn-ctrl btn-print" title="Print receipt via Thermal Printer">
-                    <i class='bx bx-printer' style="font-size: 18px;"></i>
-                    <span>Print Receipt</span>
-                </button>
+                
 
                 <button onclick="downloadReceiptPdf()" id="btnDownloadPdf" class="btn-ctrl btn-pdf-download" title="Download official PDF receipt file">
                     <i class='bx bxs-file-pdf' style="font-size: 18px; color: #dc2626;"></i>
