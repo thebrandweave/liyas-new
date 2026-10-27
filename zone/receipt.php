@@ -160,8 +160,8 @@ if (!function_exists('buildThermalRawBtPayload')) {
         $receiptDate = date('d-m-Y', strtotime($data['receipt_created_at'] ?: 'now'));
         $receiptTime = date('h:i A', strtotime($data['receipt_created_at'] ?: 'now'));
 
-        $lines[] = "#" . $billNumber . "</font>";
-        $lines[] = "" . $receiptDate . " • " . $receiptTime;
+        $lines[] = "#" . $billNumber . "";
+        $lines[] = "" . $receiptDate . "/" . $receiptTime;
         $lines[] = "" . $dividerDashed;
 
         // 3. Customer Info (Billed To, Attn, Delivery Location, Phone)
@@ -1342,10 +1342,7 @@ if (file_exists($logoPath)) {
                         <i class='bx bx-printer'></i>
                         <span>Posiflow SC588</span>
                     </div>
-                    <div class="printer-format-toggle">
-                        <button type="button" class="btn-fmt active" id="btnFmt58" onclick="setPrintFormat('58')" title="58mm Paper (Posiflow SC588)">58mm</button>
-                        <button type="button" class="btn-fmt" id="btnFmt80" onclick="setPrintFormat('80')" title="80mm Thermal Paper">80mm</button>
-                    </div>
+                
                 </div>
 
                 <button onclick="printViaRawBT()" id="btnQuickPrint" class="btn-ctrl btn-quick-print" title="⚡ Instant 1-Click High-Speed Bluetooth Print via RawBT (Under 1 second)">
