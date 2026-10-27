@@ -149,20 +149,26 @@ if (!function_exists('buildThermalRawBtPayload')) {
         $dividerDouble = str_repeat('=', $width);
         $dividerDotted = substr(str_repeat('- ', (int)ceil($width / 2)), 0, $width);
 
+        $center = function($text) use ($width) {
+            $len = strlen($text);
+            if ($len >= $width) return $text;
+            return str_repeat(' ', (int)floor(($width - $len) / 2)) . $text;
+        };
+
         // 1. Header (Brand Title, Subtitle, GSTIN)
-        $lines[] = "LIYAS INTERNATIONAL";
-        $lines[] = "Packaged Drinking Water";
-        $lines[] = "GSTIN: " . $gstin;
-        $lines[] = "" . $dividerDashed;
+        $lines[] = $center("LIYAS INTERNATIONAL");
+        $lines[] = $center("Packaged Drinking Water");
+        $lines[] = $center("GSTIN: " . $gstin);
+        $lines[] = $dividerDashed;
 
         // 2. Bill Meta (#BillNumber, Date • Time)
         $billNumber = $data['bill_number'];
         $receiptDate = date('d-m-Y', strtotime($data['receipt_created_at'] ?: 'now'));
         $receiptTime = date('h:i A', strtotime($data['receipt_created_at'] ?: 'now'));
 
-        $lines[] = "#" . $billNumber . "";
-        $lines[] = "" . $receiptDate . "/" . $receiptTime;
-        $lines[] = "" . $dividerDashed;
+        $lines[] = $center("#" . $billNumber);
+        $lines[] = $center($receiptDate . " / " . $receiptTime);
+        $lines[] = $dividerDashed;
 
         // 3. Customer Info (Billed To, Attn, Delivery Location, Phone)
         $shopName    = $data['shop_name'] ?: ($data['customer_name'] ?: 'Valued Customer');
@@ -174,9 +180,9 @@ if (!function_exists('buildThermalRawBtPayload')) {
         if (!empty($contactName) && $contactName !== $shopName) {
             $lines[] = "Attn: " . $contactName;
         }
-        $lines[] = "Delivery Location:" . $place;
+        $lines[] = "Delivery Location: " . $place;
         $lines[] = "Phone: " . ($customerTel ?: 'N/A');
-        $lines[] = "" . $dividerDashed;
+        $lines[] = $dividerDashed;
 
         // 4. Products Table (Item, Qty, Rate, Amt)
         if ($width == 30) {
@@ -199,8 +205,8 @@ if (!function_exists('buildThermalRawBtPayload')) {
                      . str_pad("QTY", $wQty, " ", STR_PAD_LEFT) 
                      . str_pad("RATE", $wRate, " ", STR_PAD_LEFT) 
                      . str_pad("AMT", $wAmt, " ", STR_PAD_LEFT);
-        $lines[] = "" . $tableHeader . "";
-        $lines[] = "" . $dividerDashed;
+        $lines[] = $tableHeader;
+        $lines[] = $dividerDashed;
 
         $itemCount = count($order_items);
         foreach ($order_items as $idx => $oi) {
@@ -217,17 +223,17 @@ if (!function_exists('buildThermalRawBtPayload')) {
             $colAmt  = str_pad($amtStr, $wAmt, " ", STR_PAD_LEFT);
 
             if (strlen($iName) <= $wItem) {
-                $lines[] = "" . str_pad($iName, $wItem) . $colQty . $colRate . $colAmt;
+                $lines[] = str_pad($iName, $wItem) . $colQty . $colRate . $colAmt;
             } else {
-                $lines[] = "" . $iName . "";
-                $lines[] = "" . str_pad("", $wItem) . $colQty . $colRate . $colAmt;
+                $lines[] = $iName;
+                $lines[] = str_pad("", $wItem) . $colQty . $colRate . $colAmt;
             }
 
             if ($idx < $itemCount - 1) {
-                $lines[] = "" . $dividerDotted;
+                $lines[] = $dividerDotted;
             }
         }
-        $lines[] = "" . $dividerDashed;
+        $lines[] = $dividerDashed;
 
         // 5. Financial Summary Breakdown
         $receiptSubtotal = 0.0;
@@ -246,34 +252,34 @@ if (!function_exists('buildThermalRawBtPayload')) {
 
         // Subtotal
         $subtotalStr = "Rs. " . number_format($receiptSubtotal, 0);
-        $lines[] = "" . str_pad("Subtotal:", $wLabel) . str_pad($subtotalStr, $wVal, " ", STR_PAD_LEFT);
+        $lines[] = str_pad("Subtotal:", $wLabel) . str_pad($subtotalStr, $wVal, " ", STR_PAD_LEFT);
 
         // Discount if any
         if ($discountVal > 0) {
             $discountStr = "-Rs. " . number_format($discountVal, 0);
-            $lines[] = "" . str_pad("Discount:", $wLabel) . str_pad($discountStr, $wVal, " ", STR_PAD_LEFT);
+            $lines[] = str_pad("Discount:", $wLabel) . str_pad($discountStr, $wVal, " ", STR_PAD_LEFT);
         }
 
         // TOTAL PAYABLE (framed by double border)
         $payableStr = "Rs. " . number_format($totalPayable, 0);
-        $lines[] = "" . $dividerDouble;
-        $lines[] = "" . str_pad("TOTAL PAYABLE:", $wLabel) . str_pad($payableStr, $wVal, " ", STR_PAD_LEFT) . "";
-        $lines[] = "" . $dividerDouble;
+        $lines[] = $dividerDouble;
+        $lines[] = str_pad("TOTAL PAYABLE:", $wLabel) . str_pad($payableStr, $wVal, " ", STR_PAD_LEFT);
+        $lines[] = $dividerDouble;
 
         // Cash Received & Credited
         $cashStr = "Rs. " . number_format($cashReceived, 0);
-        $lines[] = "" . str_pad("Cash", $wLabel) . str_pad($cashStr, $wVal, " ", STR_PAD_LEFT);
+        $lines[] = str_pad("Cash", $wLabel) . str_pad($cashStr, $wVal, " ", STR_PAD_LEFT);
 
         if ($creditAmount > 0) {
             $creditStr = "Rs. " . number_format($creditAmount, 0);
-            $lines[] = "" . str_pad("Credited", $wLabel) . str_pad($creditStr, $wVal, " ", STR_PAD_LEFT);
+            $lines[] = str_pad("Credited", $wLabel) . str_pad($creditStr, $wVal, " ", STR_PAD_LEFT);
         }
 
         // Balance / Due (framed by dotted border)
         $dueStr = "Rs. " . number_format($dueAmount, 0);
-        $lines[] = "" . $dividerDotted;
-        $lines[] = "" . str_pad("BALANCE / DUE:", $wLabel) . str_pad($dueStr, $wVal, " ", STR_PAD_LEFT) . "";
-        $lines[] = "" . $dividerDotted;
+        $lines[] = $dividerDotted;
+        $lines[] = str_pad("BALANCE / DUE:", $wLabel) . str_pad($dueStr, $wVal, " ", STR_PAD_LEFT);
+        $lines[] = $dividerDotted;
 
         // Prior Due Settled (if notes)
         if (!empty($data['receipt_notes']) && stripos($data['receipt_notes'], 'Cleared') !== false) {
@@ -285,19 +291,19 @@ if (!function_exists('buildThermalRawBtPayload')) {
             $remDueLabel = "Remaining Shop Due:";
             $remDueValStr = "Rs. " . number_format($remainingShopDues['total_due'], 0);
             $labelLen = strlen($remDueLabel);
-            $lines[] = "" . str_pad($remDueLabel, $labelLen) . str_pad($remDueValStr, $width - $labelLen, " ", STR_PAD_LEFT) . "";
+            $lines[] = str_pad($remDueLabel, $labelLen) . str_pad($remDueValStr, $width - $labelLen, " ", STR_PAD_LEFT);
         }
 
         // 6. Footer
-        $lines[] = "" . $dividerDashed;
+        $lines[] = $dividerDashed;
         if ($width == 30) {
-            $lines[] = "" . $website;
-            $lines[] = "Ph: " . $phone;
+            $lines[] = $center($website);
+            $lines[] = $center("Ph: " . $phone);
         } else {
-            $lines[] = "" . $website . " • " . $phone;
+            $lines[] = $center($website . " • " . $phone);
         }
         // $lines[] = "Thank you for doing business with Liyas International!";
-        $lines[] = "* * * * * THANK YOU * * * * *";
+        $lines[] = $center("* * * * * THANK YOU * * * * *");
         $lines[] = "\n\n\n\n";
 
         return implode("\n", $lines);
@@ -1582,6 +1588,89 @@ if (file_exists($logoPath)) {
         </div>
     </div>
 
+    <!-- iOS Thermal Print Helper Modal -->
+    <div id="iosPrintModal" class="modal-overlay" style="display: none;">
+        <div class="modal-box">
+            <div class="modal-header">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <i class='bx bxl-apple' style="font-size: 32px; color: #0f172a;"></i>
+                    <div>
+                        <h3 style="font-size: 16px; font-weight: 800; color: #0f172a; margin: 0;">Print Receipt on iPhone</h3>
+                        <p style="font-size: 12px; color: #64748b; margin-top: 2px;">Bill #<?= htmlspecialchars($billNumber) ?> &bull; Posiflow SC588 (58mm)</p>
+                    </div>
+                </div>
+                <button onclick="closeIosPrintModal()" class="modal-close-btn" aria-label="Close modal">&times;</button>
+            </div>
+
+            <div class="modal-body">
+                <!-- Option 1: Direct App Deep-Link -->
+                <div class="modal-step-card">
+                    <div class="step-num"><i class='bx bxs-zap' style="color: #fef08a;"></i></div>
+                    <div style="flex: 1;">
+                        <strong style="font-size: 13px; color: #0f172a;">1-Tap App Print</strong>
+                        <div style="font-size: 12px; color: #64748b; margin-top: 1px;">
+                            Sends 30-col layout to <em>Simple Bluetooth Printer</em>.
+                        </div>
+                    </div>
+                    <div style="display: flex; gap: 6px; flex-direction: column; align-items: flex-end;">
+                        <a href="thermalprint://print?text=<?= rawurlencode($rawBtText58) ?>" class="btn-step-action" style="background: #0f172a; color: #ffffff;" id="iosDeepLinkBtn">
+                            <i class='bx bx-printer'></i> Print Now
+                        </a>
+                        <a href="https://apps.apple.com/app/simple-bluetooth-printer/id1457492850" target="_blank" class="btn-step-action" style="font-size: 10px; color: #64748b; border: none; padding: 2px 4px;">
+                            <i class='bx bxl-apple'></i> Get App (Free)
+                        </a>
+                    </div>
+                </div>
+
+                <!-- Option 2: iOS Share Sheet -->
+                <div class="modal-step-card">
+                    <div class="step-num">2</div>
+                    <div style="flex: 1;">
+                        <strong style="font-size: 13px; color: #0f172a;">Share to Printer App</strong>
+                        <div style="font-size: 12px; color: #64748b; margin-top: 1px;">
+                            Passes receipt to <em>Thermer</em>, <em>POS-Printer</em>, or WhatsApp.
+                        </div>
+                    </div>
+                    <button onclick="shareViaIosSheet()" class="btn-step-action btn-step-wa">
+                        <i class='bx bx-share-alt'></i> Share
+                    </button>
+                </div>
+
+                <!-- Option 3: Standard AirPrint -->
+                <div class="modal-step-card">
+                    <div class="step-num">3</div>
+                    <div style="flex: 1;">
+                        <strong style="font-size: 13px; color: #0f172a;">Standard AirPrint</strong>
+                        <div style="font-size: 12px; color: #64748b; margin-top: 1px;">
+                            For Wi-Fi / AirPrint-shared printers.
+                        </div>
+                    </div>
+                    <button onclick="window.print()" class="btn-step-action">
+                        <i class='bx bx-printer'></i> AirPrint
+                    </button>
+                </div>
+
+                <!-- Tip Box: Direct Web Bluetooth via Bluefy -->
+                <div class="modal-tip-box" style="background: #f0fdf4; border-color: #bbf7d0; color: #166534;">
+                    <i class='bx bx-check-shield' style="font-size: 24px; color: #16a34a; flex-shrink: 0;"></i>
+                    <div>
+                        <strong>Want 1-Tap Direct Bluetooth Print on iPhone?</strong><br>
+                        Open this receipt in the free <strong>Bluefy Browser</strong> on iOS. In Bluefy, tapping ⚡ Quick Print connects directly to your Posiflow SC588 over Bluetooth with zero intermediate apps!
+                        <div style="margin-top: 6px;">
+                            <a href="https://apps.apple.com/app/bluefy-web-ble-browser/id1492822055" target="_blank" style="display: inline-flex; align-items: center; gap: 4px; background: #16a34a; color: #ffffff; padding: 4px 10px; border-radius: 6px; text-decoration: none; font-weight: 700; font-size: 11px;">
+                                <i class='bx bxl-apple'></i> Install Free Bluefy
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal-footer">
+                <button onclick="closeIosPrintModal()" class="btn-modal-secondary">Close</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Floating Toast Notification -->
     <div id="toastMsg" class="toast-msg">
         <i class='bx bx-check-circle' style="font-size: 18px; color: #34d399;"></i>
@@ -1610,20 +1699,143 @@ if (file_exists($logoPath)) {
             }, duration);
         }
 
-        // Direct Ultra-Fast Print via RawBT (Android Intent, < 1 second)
-        function printViaRawBT() {
+        let bleDevice = null;
+        let bleCharacteristic = null;
+
+        // Direct Web Bluetooth Printing (works in Bluefy browser on iOS, Chrome on Android/Desktop)
+        async function printViaWebBluetooth(rawText) {
             try {
-                const rawText = (currentPrintFormat === '80') ? RAWBT_TEXT_80 : RAWBT_TEXT_58;
-                showToast('⚡ Sending to RawBT for instant print...', 2500);
-                const encoded = btoa(unescape(encodeURIComponent(rawText)));
-                const intentUrl = "intent:base64," + encoded + "#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;S.browser_fallback_url=https%3A%2F%2Fplay.google.com%2Fstore%2Fapps%2Fdetails%3Fid%3Dru.a402d.rawbtprinter;end;";
-                
-                // Trigger RawBT app immediately
-                window.location.href = intentUrl;
+                showToast('⚡ Connecting to Bluetooth printer...', 3000);
+                if (!bleCharacteristic) {
+                    const device = await navigator.bluetooth.requestDevice({
+                        acceptAllDevices: true,
+                        optionalServices: [
+                            '000018f0-0000-1000-8000-00805f9b34fb',
+                            '49535343-fe7d-4ae5-8fa9-9fafd205e455',
+                            'e7810a71-73ae-499d-8c15-faa9aef0c3f2',
+                            '0000ff00-0000-1000-8000-00805f9b34fb',
+                            '0000e0ff-0000-1000-8000-00805f9b34fb'
+                        ]
+                    });
+                    bleDevice = device;
+                    const server = await device.gatt.connect();
+                    const services = await server.getPrimaryServices();
+                    for (const s of services) {
+                        try {
+                            const chars = await s.getCharacteristics();
+                            for (const c of chars) {
+                                if (c.properties.write || c.properties.writeWithoutResponse) {
+                                    bleCharacteristic = c;
+                                    break;
+                                }
+                            }
+                        } catch(ce){}
+                        if (bleCharacteristic) break;
+                    }
+                }
+
+                if (!bleCharacteristic) {
+                    throw new Error("Connected, but could not detect writable print characteristic.");
+                }
+
+                // Convert text to ESC/POS bytes
+                const encoder = new TextEncoder();
+                const data = encoder.encode(rawText);
+
+                // Write in chunks (safe for BLE MTU)
+                const chunkSize = 64;
+                for (let i = 0; i < data.length; i += chunkSize) {
+                    const chunk = data.slice(i, i + chunkSize);
+                    if (bleCharacteristic.writeValueWithoutResponse) {
+                        await bleCharacteristic.writeValueWithoutResponse(chunk);
+                    } else {
+                        await bleCharacteristic.writeValue(chunk);
+                    }
+                    await new Promise(r => setTimeout(r, 20));
+                }
+
+                showToast('⚡ Receipt printed via Bluetooth!');
             } catch (err) {
-                console.warn('RawBT intent error, falling back to browser print:', err);
-                window.print();
+                console.warn('Web Bluetooth error:', err);
+                if (err.name !== 'NotFoundError') {
+                    showToast('Bluetooth error: ' + err.message, 4000);
+                    openIosPrintModal();
+                }
             }
+        }
+
+        function updateIosDeepLink() {
+            const rawText = (currentPrintFormat === '80') ? RAWBT_TEXT_80 : RAWBT_TEXT_58;
+            const btn = document.getElementById('iosDeepLinkBtn');
+            if (btn) {
+                btn.href = "thermalprint://print?text=" + encodeURIComponent(rawText);
+            }
+        }
+
+        function openIosPrintModal() {
+            updateIosDeepLink();
+            const modal = document.getElementById('iosPrintModal');
+            if (modal) modal.style.display = 'flex';
+        }
+
+        function closeIosPrintModal() {
+            const modal = document.getElementById('iosPrintModal');
+            if (modal) modal.style.display = 'none';
+        }
+
+        async function shareViaIosSheet() {
+            const rawText = (currentPrintFormat === '80') ? RAWBT_TEXT_80 : RAWBT_TEXT_58;
+            try {
+                if (navigator.share) {
+                    await navigator.share({
+                        title: `Receipt #${BILL_NUMBER}`,
+                        text: rawText
+                    });
+                    showToast('Receipt shared to printer app / chat');
+                } else {
+                    copyWaText();
+                }
+            } catch (err) {
+                if (err.name !== 'AbortError') {
+                    console.warn('Share sheet error:', err);
+                }
+            }
+        }
+
+        // Direct Ultra-Fast Print (Android RawBT / iOS Web Bluetooth / iOS Modal / AirPrint)
+        function printViaRawBT() {
+            const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+            const isAndroid = /Android/i.test(navigator.userAgent);
+            const rawText = (currentPrintFormat === '80') ? RAWBT_TEXT_80 : RAWBT_TEXT_58;
+
+            // 1. If Web Bluetooth is available on iOS (e.g. user is in Bluefy browser)
+            if (isIOS && navigator.bluetooth) {
+                printViaWebBluetooth(rawText);
+                return;
+            }
+
+            // 2. Standard iOS Safari (open iOS print options modal)
+            if (isIOS) {
+                openIosPrintModal();
+                return;
+            }
+
+            // 3. Android - Ultra-Fast RawBT Intent (< 1 second)
+            if (isAndroid) {
+                try {
+                    showToast('⚡ Sending to RawBT for instant print...', 2500);
+                    const encoded = btoa(unescape(encodeURIComponent(rawText)));
+                    const intentUrl = "intent:base64," + encoded + "#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;S.browser_fallback_url=https%3A%2F%2Fplay.google.com%2Fstore%2Fapps%2Fdetails%3Fid%3Dru.a402d.rawbtprinter;end;";
+                    window.location.href = intentUrl;
+                } catch (err) {
+                    console.warn('RawBT intent error, falling back to browser print:', err);
+                    window.print();
+                }
+                return;
+            }
+
+            // 4. Desktop / Other browsers
+            window.print();
         }
 
         // Helper to trigger browser download from a Blob
@@ -1813,6 +2025,7 @@ if (file_exists($logoPath)) {
         // Thermal Printer Format Switcher (Posiflow SC588 58mm / 80mm)
         function setPrintFormat(fmt) {
             currentPrintFormat = fmt;
+            updateIosDeepLink();
             const pageStyleEl = document.getElementById('dynamicPrintPageStyle');
             const btn58 = document.getElementById('btnFmt58');
             const btn80 = document.getElementById('btnFmt80');
@@ -1837,6 +2050,11 @@ if (file_exists($logoPath)) {
                 try { localStorage.setItem('liyas_receipt_printer_format', '58'); } catch(e){}
             }
         }
+
+        // Close iOS modal on background click
+        document.getElementById('iosPrintModal')?.addEventListener('click', function(e) {
+            if (e.target === this) closeIosPrintModal();
+        });
 
         // Apply saved thermal printer preference (defaults to Posiflow SC588 58mm)
         try {
