@@ -137,6 +137,52 @@ $waMsg = "🧾 *LIYAS INTERNATIONAL - DELIVERY RECEIPT*\n"
        . "Thank you for choosing Liyas Water!";
 $waShareUrl = !empty($cleanPhone) ? "https://wa.me/{$cleanPhone}?text=" . rawurlencode($waMsg) : "https://api.whatsapp.com/send?text=" . rawurlencode($waMsg);
 
+// Build RawBT ESC/POS formatted text for instant (< 1 second) thermal printing
+$rawBtLines = [];
+$rawBtLines[] = "[C]<b><font size='big'>LIYAS INTERNATIONAL</font></b>";
+$rawBtLines[] = "[C]Packaged Drinking Water";
+$rawBtLines[] = "[C]GSTIN: " . $gstin;
+$rawBtLines[] = "[C]--------------------------------";
+$rawBtLines[] = "[C]<b>BILL #" . $billNumber . "</b>";
+$rawBtLines[] = "[C]" . $receiptDate . " • " . $receiptTime;
+$rawBtLines[] = "[C]--------------------------------";
+$rawBtLines[] = "[L]Billed To: " . $shopName;
+if (!empty($contactName) && $contactName !== $shopName) {
+    $rawBtLines[] = "[L]Attn: " . $contactName;
+}
+$rawBtLines[] = "[L]Location: " . $place;
+$rawBtLines[] = "[L]Phone: " . ($customerTel ?: 'N/A');
+$rawBtLines[] = "[C]--------------------------------";
+$rawBtLines[] = "[L]<b>" . str_pad("ITEM", 12) . str_pad("QTY", 4, " ", STR_PAD_LEFT) . str_pad("RATE", 7, " ", STR_PAD_LEFT) . str_pad("AMOUNT", 9, " ", STR_PAD_LEFT) . "</b>";
+$rawBtLines[] = "[C]--------------------------------";
+foreach ($order_items as $oi) {
+    $iName = substr($oi['product_name'] ?: ($oi['name'] ?: 'Liyas Water'), 0, 11);
+    $iQty = (int)$oi['quantity'];
+    $iRate = number_format((float)$oi['price_at_purchase'], 2);
+    $iAmt = number_format((float)$oi['line_total'], 2);
+    $rawBtLines[] = "[L]" . str_pad($iName, 12) . str_pad((string)$iQty, 4, " ", STR_PAD_LEFT) . str_pad($iRate, 7, " ", STR_PAD_LEFT) . str_pad($iAmt, 9, " ", STR_PAD_LEFT);
+}
+$rawBtLines[] = "[C]--------------------------------";
+$rawBtLines[] = "[L]" . str_pad("Subtotal:", 18) . str_pad(number_format($receiptSubtotal, 2), 14, " ", STR_PAD_LEFT);
+if ((float)$data['discount'] > 0) {
+    $rawBtLines[] = "[L]" . str_pad("Discount:", 18) . str_pad("-" . number_format((float)$data['discount'], 2), 14, " ", STR_PAD_LEFT);
+}
+$rawBtLines[] = "[L]<b>" . str_pad("TOTAL PAYABLE:", 18) . str_pad(number_format($totalPayable, 2), 14, " ", STR_PAD_LEFT) . "</b>";
+$rawBtLines[] = "[L]" . str_pad("Cash:", 18) . str_pad(number_format($cashReceived, 2), 14, " ", STR_PAD_LEFT);
+if ($creditAmount > 0) {
+    $rawBtLines[] = "[L]" . str_pad("Credited:", 18) . str_pad(number_format($creditAmount, 2), 14, " ", STR_PAD_LEFT);
+}
+$rawBtLines[] = "[L]<b>" . str_pad("BALANCE / DUE:", 18) . str_pad(number_format($dueAmount, 2), 14, " ", STR_PAD_LEFT) . "</b>";
+if (!empty($remainingShopDues['has_due'])) {
+    $rawBtLines[] = "[L]" . str_pad("Total Shop Due:", 18) . str_pad(number_format($remainingShopDues['total_due'], 2), 14, " ", STR_PAD_LEFT);
+}
+$rawBtLines[] = "[C]--------------------------------";
+$rawBtLines[] = "[C]" . $website . " • " . $phone;
+$rawBtLines[] = "[C]Thank you for your business!";
+$rawBtLines[] = "[C]<b>* * * * * THANK YOU * * * * *</b>";
+$rawBtLines[] = "\n\n\n";
+$rawBtText = implode("\n", $rawBtLines);
+
 // Prepare inline base64 logo for flawless canvas & PDF generation (zero CORS issues)
 $logoPath = dirname(__DIR__) . '/assets/images/logo/logo.png';
 if (!file_exists($logoPath)) $logoPath = dirname(__DIR__) . '/assets/images/logo/logo-bg.jpg';
@@ -281,6 +327,20 @@ if (file_exists($logoPath)) {
             background: #fee2e2;
             border-color: #fca5a5;
             color: #991b1b;
+        }
+
+        .btn-quick-print {
+            background: #0f172a;
+            color: #ffffff;
+            border-color: #0f172a;
+            box-shadow: 0 2px 8px rgba(15, 23, 42, 0.25);
+        }
+
+        .btn-quick-print:hover {
+            background: #1e293b;
+            border-color: #1e293b;
+            color: #ffffff;
+            transform: translateY(-1px);
         }
 
         .btn-print {
@@ -1162,6 +1222,11 @@ if (file_exists($logoPath)) {
                     </div>
                 </div>
 
+                <button onclick="printViaRawBT()" id="btnQuickPrint" class="btn-ctrl btn-quick-print" title="⚡ Instant 1-Click High-Speed Bluetooth Print via RawBT (Under 1 second)">
+                    <i class='bx bxs-zap' style="color: #f59e0b; font-size: 18px;"></i>
+                    <span>⚡ Quick Print</span>
+                </button>
+
                 <button onclick="window.print()" id="btnPrintReceipt" class="btn-ctrl btn-print" title="Print receipt via Thermal Printer">
                     <i class='bx bx-printer' style="font-size: 18px;"></i>
                     <span>Print Receipt</span>
@@ -1404,6 +1469,7 @@ if (file_exists($logoPath)) {
         const BILL_NUMBER = <?= json_encode($billNumber) ?>;
         const WA_MESSAGE_TEXT = <?= json_encode($waMsg) ?>;
         const WA_SHARE_URL = <?= json_encode($waShareUrl) ?>;
+        const RAWBT_TEXT = <?= json_encode($rawBtText) ?>;
 
         let cachedPdfBlob = null;
 
@@ -1416,6 +1482,21 @@ if (file_exists($logoPath)) {
             setTimeout(() => {
                 toast.classList.remove('show');
             }, duration);
+        }
+
+        // Direct Ultra-Fast Print via RawBT (Android Intent, < 1 second)
+        function printViaRawBT() {
+            try {
+                showToast('⚡ Sending to RawBT for instant print...', 2500);
+                const encoded = btoa(unescape(encodeURIComponent(RAWBT_TEXT)));
+                const intentUrl = "intent:base64," + encoded + "#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;S.browser_fallback_url=https%3A%2F%2Fplay.google.com%2Fstore%2Fapps%2Fdetails%3Fid%3Dru.a402d.rawbtprinter;end;";
+                
+                // Trigger RawBT app immediately
+                window.location.href = intentUrl;
+            } catch (err) {
+                console.warn('RawBT intent error, falling back to browser print:', err);
+                window.print();
+            }
         }
 
         // Helper to trigger browser download from a Blob
