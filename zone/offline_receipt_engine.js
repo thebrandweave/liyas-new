@@ -114,7 +114,7 @@ const LiyasOfflineEngine = (function () {
             return str.length >= len ? str : str + ' '.repeat(len - str.length);
         }
 
-        const gstin = rec.company_gstin || '29ABCDE1234F1Z5';
+        const gstin = rec.company_gstin || '29AAOCP8622L1ZM';
         const phone = rec.company_phone || '+91 63663 78967';
         const website = rec.company_website || 'liyasinternational.com';
 
@@ -320,7 +320,7 @@ const LiyasOfflineEngine = (function () {
             <div class="off-print-header">
                 <div style="font-size: 11px; font-weight: 900; text-transform: uppercase;">LIYAS INTERNATIONAL</div>
                 <div style="font-size: 8px; text-transform: uppercase;">Packaged Drinking Water</div>
-                <div style="font-size: 8px;">GSTIN: ${escapeHtml(rec.company_gstin || '29ABCDE1234F1Z5')}</div>
+                <div style="font-size: 8px;">GSTIN: ${escapeHtml(rec.company_gstin || '29AAOCP8622L1ZM')}</div>
                 <div style="font-size: 8px; font-weight: 700; margin-top: 2px;">[OFFLINE DELIVERY RECEIPT]</div>
                 <div style="font-size: 9px; font-weight: 800; font-family: monospace; margin-top: 2px;">${escapeHtml(rec.bill_number)}</div>
                 <div style="font-size: 8px; color: #444;">${dateStr} &bull; ${timeStr}</div>
@@ -600,7 +600,7 @@ const LiyasOfflineEngine = (function () {
                 <div style="background: #fffdf5; border: 1.5px dashed #cbd5e1; border-radius: 12px; padding: 14px; text-align: left; font-family: monospace, sans-serif; font-size: 11px; color: #1e293b; box-shadow: inset 0 1px 3px rgba(0,0,0,0.04); margin-bottom: 16px;">
                     <div style="text-align: center; border-bottom: 1px dashed #cbd5e1; padding-bottom: 8px; margin-bottom: 8px;">
                         <div style="font-weight: 900; font-size: 13px; color: #0f172a;">LIYAS INTERNATIONAL</div>
-                        <div style="font-size: 9.5px; color: #64748b;">Packaged Drinking Water &bull; GSTIN: ${escapeHtml(rec.company_gstin || '29ABCDE1234F1Z5')}</div>
+                        <div style="font-size: 9.5px; color: #64748b;">Packaged Drinking Water &bull; GSTIN: ${escapeHtml(rec.company_gstin || '29AAOCP8622L1ZM')}</div>
                         <div style="font-weight: 800; font-size: 12px; color: #2563eb; margin-top: 4px;">${escapeHtml(rec.bill_number)}</div>
                         <div style="font-size: 9.5px; color: #64748b;">${dateStr} &bull; ${timeStr}</div>
                     </div>

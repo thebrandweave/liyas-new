@@ -41,7 +41,7 @@ if (!$data) {
 $remainingShopDues = getShopPendingDueDetails($pdo, $data['shop_name'] ?: ($data['customer_name'] ?? ''), $data['phone'] ?? '', $order_id);
 
 // Company Details
-$gstin   = getSystemSetting($pdo, 'company_gstin', '29ABCDE1234F1Z5');
+$gstin   = getSystemSetting($pdo, 'company_gstin', '29AAOCP8622L1ZM');
 $phone   = getSystemSetting($pdo, 'company_phone', '+91 63663 78967');
 $website = getSystemSetting($pdo, 'company_website', 'liyasinternational.com');
 

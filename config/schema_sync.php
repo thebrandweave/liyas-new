@@ -248,7 +248,7 @@ function ensureWarehouseSchema(PDO $pdo): bool {
                 INSERT IGNORE INTO `system_settings` (`setting_key`, `setting_value`) VALUES
                     ('reward_threshold', '10'),
                     ('company_name', 'Liyas International'),
-                    ('company_gstin', '29ABCDE1234F1Z5'),
+                    ('company_gstin', '29AAOCP8622L1ZM'),
                     ('company_phone', '+91 63663 78967'),
                     ('company_website', 'liyasinternational.com'),
                     ('company_address', 'Website, Mangalore, Karnataka'),

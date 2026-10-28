@@ -2142,7 +2142,7 @@ if (collectPriorCheckbox && priorDueAmountInput && priorDueFields) {
                     zone_id: <?= (int)$zone_id ?>,
                     zone_slug: <?= json_encode($zone_slug) ?>,
                     zone_name: <?= json_encode($current_zone['name'] ?? 'Zone') ?>,
-                    company_gstin: <?= json_encode(getSystemSetting($pdo, 'company_gstin', '29ABCDE1234F1Z5')) ?>,
+                    company_gstin: <?= json_encode(getSystemSetting($pdo, 'company_gstin', '29AAOCP8622L1ZM')) ?>,
                     company_phone: <?= json_encode(getSystemSetting($pdo, 'company_phone', '+91 63663 78967')) ?>,
                     company_website: <?= json_encode(getSystemSetting($pdo, 'company_website', 'liyasinternational.com')) ?>
                 }
@@ -2237,7 +2237,7 @@ if (collectPriorCheckbox && priorDueAmountInput && priorDueFields) {
                 credited_amount: creditVal,
                 due_amount: dueVal,
                 payment_type: (cashVal > 0 && creditVal > 0) ? 'Cash + Credited' : (cashVal > 0 ? 'Cash' : (creditVal > 0 ? 'Credited' : 'Pending')),
-                company_gstin: zoneInfo.company_gstin || '29ABCDE1234F1Z5',
+                company_gstin: zoneInfo.company_gstin || '29AAOCP8622L1ZM',
                 company_phone: zoneInfo.company_phone || '+91 63663 78967',
                 company_website: zoneInfo.company_website || 'liyasinternational.com',
                 created_at: new Date().toISOString().slice(0, 19).replace('T', ' ')
