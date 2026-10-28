@@ -1442,13 +1442,13 @@ if (file_exists($logoPath)) {
                     <td class="td-product">
                         <?= $pItemName ?>
                     </td>
-                    <td class="td-qty" style="text-align: center; font-size: 8.5px; font-weight: 400;">
+                    <td class="td-qty" style="text-align: center; font-size: 10.5px; font-weight: 400;">
                         <?= $pItemQty ?>
                     </td>
                     <td class="td-rate" style="text-align: right;">
                         <?= formatCurrency($pItemRate) ?>
                     </td>
-                    <td class="td-amt" style="text-align: right; font-size: 8.5px; font-weight: 400;">
+                    <td class="td-amt" style="text-align: right; font-size: 10.5px; font-weight: 400;">
                      <?= '₹' . number_format((float)$pItemAmount, 0) ?>
                     </td>
                 </tr>
@@ -1461,17 +1461,17 @@ if (file_exists($logoPath)) {
             <table class="summary-table">
                 <tr>
                     <td style="color: var(--text-muted);">Subtotal:</td>
-                    <td style="text-align: right; font-size: 8.5px; font-weight: 400;"><?= '₹' . number_format((float)$receiptSubtotal, 0) ?></td>
+                    <td style="text-align: right; font-size: 10.5px; font-weight: 400;"><?= '₹' . number_format((float)$receiptSubtotal, 0) ?></td>
                 </tr>
                 <?php if ((float)$data['discount'] > 0): ?>
                 <tr>
                     <td style="color: var(--text-muted);">Discount:</td>
-                    <td style="text-align: right; color: #dc2626; font-size: 8.5px; font-weight: 400;">- <?= '₹' . number_format((float)$data['discount'], 0) ?></td>
+                    <td style="text-align: right; color: #dc2626; font-size: 10.5px; font-weight: 400;">- <?= '₹' . number_format((float)$data['discount'], 0) ?></td>
                 </tr>
                 <?php endif; ?>
                 <tr class="summary-total-row">
                     <td>TOTAL PAYABLE:</td>
-                    <td style="text-align: right; font-size: 8.5px;"><?= '₹' . number_format((float)$totalPayable, 0) ?></td>
+                    <td style="text-align: right; font-size: 10.5px;"><?= '₹' . number_format((float)$totalPayable, 0) ?></td>
                 </tr>
                 <!-- <tr>
                     <td style="color: var(--text-muted); padding-top: 10px;">Payment Mode:</td>
@@ -1479,15 +1479,15 @@ if (file_exists($logoPath)) {
                 </tr> -->
                 <tr>
                     <td style="color: #059669;">Cash</td>
-                    <td style="text-align: right; color: #059669; font-size:8.5px; font-weight: 400;"><?= '₹' . number_format((float)$cashReceived, 0) ?></td>
+                    <td style="text-align: right; color: #059669; font-size:10.5px; font-weight: 400;"><?= '₹' . number_format((float)$cashReceived, 0) ?></td>
                 </tr>
                 <tr>
                     <td style="color: #d97706;">Credited</td>
-                    <td style="text-align: right; color: #d97706; font-size: 8.5px; font-weight: 400;"><?= '₹' . number_format((float)$creditAmount, 0) ?></td>
+                    <td style="text-align: right; color: #d97706; font-size: 10.5px; font-weight: 400;"><?= '₹' . number_format((float)$creditAmount, 0) ?></td>
                 </tr>
                 <tr class="summary-due-row">
                     <td>BALANCE / DUE:</td>
-                   <td style="text-align: right; font-size: 8.5px;"><?= '₹' . number_format((float)$dueAmount, 0) ?></td>
+                   <td style="text-align: right; font-size: 10.5px;"><?= '₹' . number_format((float)$dueAmount, 0) ?></td>
                 </tr>
                 <?php if (!empty($data['receipt_notes']) && stripos($data['receipt_notes'], 'Cleared') !== false): ?>
                 <tr>
