@@ -3,6 +3,13 @@
  * Zone Context Resolver for Multi-Zone Delivery Portals
  * Automatically detects and validates zone slug from URL
  */
+
+// Enable transparent Gzip output compression for all Zone portals (shrinks 168KB HTML down to ~28KB)
+if (!headers_sent() && !ini_get('zlib.output_compression')) {
+    @ini_set('zlib.output_compression', 'On');
+    @ini_set('zlib.output_compression_level', '5');
+}
+
 require_once dirname(__DIR__) . '/config/config.php';
 require_once dirname(__DIR__) . '/admin/includes/functions.php';
 
@@ -41,11 +48,19 @@ if (empty($zone_slug)) {
     exit;
 }
 
-// Fetch zone from database
+// Fetch zone from database (session-cached for 5 minutes to avoid redundant DB queries on every poll/request)
 try {
-    $stmt = $pdo->prepare("SELECT * FROM zones WHERE slug = ?");
-    $stmt->execute([$zone_slug]);
-    $current_zone = $stmt->fetch(PDO::FETCH_ASSOC);
+    $zoneCacheKey = 'zone_ctx_' . $zone_slug;
+    if (isset($_SESSION[$zoneCacheKey]) && ($_SESSION[$zoneCacheKey]['ts'] ?? 0) > (time() - 300)) {
+        $current_zone = $_SESSION[$zoneCacheKey]['data'];
+    } else {
+        $stmt = $pdo->prepare("SELECT * FROM zones WHERE slug = ?");
+        $stmt->execute([$zone_slug]);
+        $current_zone = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($current_zone) {
+            $_SESSION[$zoneCacheKey] = ['data' => $current_zone, 'ts' => time()];
+        }
+    }
 
     if (!$current_zone) {
         // Fallback 1: check if a root script exists (e.g. /logout -> logout.php, /checkout -> checkout.php)

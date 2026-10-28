@@ -143,7 +143,7 @@ $unread_stmt = $pdo->prepare("
               AND (
                   (TRIM(LOWER(o2.shop_name)) = TRIM(LOWER(o.shop_name)) AND TRIM(o.shop_name) != '')
                   OR (TRIM(LOWER(o2.customer_name)) = TRIM(LOWER(o.customer_name)) AND TRIM(o.customer_name) != '')
-                  OR (o.phone != '' AND LENGTH(o.phone) >= 7 AND RIGHT(REGEXP_REPLACE(o2.phone, '[^0-9]', ''), 10) = RIGHT(REGEXP_REPLACE(o.phone, '[^0-9]', ''), 10))
+                  OR (o.phone != '' AND LENGTH(o.phone) >= 7 AND (o2.phone = o.phone OR o2.phone LIKE CONCAT('%', RIGHT(o.phone, 10))))
               )
            ) AS prior_due_amount
     FROM orders o
@@ -268,7 +268,7 @@ $dueCountStmt = $pdo->prepare("
                 AND (
                     (TRIM(LOWER(o2.shop_name)) = TRIM(LOWER(o.shop_name)) AND TRIM(o.shop_name) != '')
                     OR (TRIM(LOWER(o2.customer_name)) = TRIM(LOWER(o.customer_name)) AND TRIM(o.customer_name) != '')
-                    OR (o.phone != '' AND LENGTH(o.phone) >= 7 AND RIGHT(REGEXP_REPLACE(o2.phone, '[^0-9]', ''), 10) = RIGHT(REGEXP_REPLACE(o.phone, '[^0-9]', ''), 10))
+                    OR (o.phone != '' AND LENGTH(o.phone) >= 7 AND (o2.phone = o.phone OR o2.phone LIKE CONCAT('%', RIGHT(o.phone, 10))))
                 )
           )
       )
@@ -294,7 +294,7 @@ if ($filter === 'due') {
               AND (
                   (TRIM(LOWER(o2.shop_name)) = TRIM(LOWER(o.shop_name)) AND TRIM(o.shop_name) != '')
                   OR (TRIM(LOWER(o2.customer_name)) = TRIM(LOWER(o.customer_name)) AND TRIM(o.customer_name) != '')
-                  OR (o.phone != '' AND LENGTH(o.phone) >= 7 AND RIGHT(REGEXP_REPLACE(o2.phone, '[^0-9]', ''), 10) = RIGHT(REGEXP_REPLACE(o.phone, '[^0-9]', ''), 10))
+                  OR (o.phone != '' AND LENGTH(o.phone) >= 7 AND (o2.phone = o.phone OR o2.phone LIKE CONCAT('%', RIGHT(o.phone, 10))))
               )
         )
     )";
@@ -354,7 +354,7 @@ $orders_stmt = $pdo->prepare("
            AND (
                (TRIM(LOWER(o2.shop_name)) = TRIM(LOWER(o.shop_name)) AND TRIM(o.shop_name) != '')
                OR (TRIM(LOWER(o2.customer_name)) = TRIM(LOWER(o.customer_name)) AND TRIM(o.customer_name) != '')
-               OR (o.phone != '' AND LENGTH(o.phone) >= 7 AND RIGHT(REGEXP_REPLACE(o2.phone, '[^0-9]', ''), 10) = RIGHT(REGEXP_REPLACE(o.phone, '[^0-9]', ''), 10))
+               OR (o.phone != '' AND LENGTH(o.phone) >= 7 AND (o2.phone = o.phone OR o2.phone LIKE CONCAT('%', RIGHT(o.phone, 10))))
            )
         ) AS prior_due_amount
     FROM orders o
@@ -2458,8 +2458,8 @@ if (!function_exists('buildWhatsAppLink')) {
 </head>
 <body>
 
-    <!-- Notification Audio Element (C:\xampp\htdocs\liyas-new\assets\videos\notify.wav) -->
-    <audio id="orderNotificationAudio" preload="auto">
+    <!-- Notification Audio Element (Preloaded on-demand to save initial bandwidth) -->
+    <audio id="orderNotificationAudio" preload="none">
         <source src="<?= BASE_URL ?>/assets/videos/notify.wav" type="audio/wav">
     </audio>
 

@@ -3,6 +3,13 @@
  * Zone Orders Portal - Helpers
  * (Zone access code login requirement has been removed; portal is directly accessible)
  */
+
+// Enable transparent Gzip output compression for Zone Orders portal
+if (!headers_sent() && !ini_get('zlib.output_compression')) {
+    @ini_set('zlib.output_compression', 'On');
+    @ini_set('zlib.output_compression_level', '5');
+}
+
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
