@@ -2056,5 +2056,7 @@ if (file_exists($logoPath)) {
         }
     </script>
 
+    <!-- Offline Service Worker & Auto-Sync Engine -->
+    <script src="offline_receipt_engine.js"></script>
 </body>
 </html>

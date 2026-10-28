@@ -1131,6 +1131,7 @@ foreach ($vehicle_products as $pid => $vp) {
                 <?php elseif ($order_id > 0): ?>
                     <input type="hidden" name="order_id" value="<?= $order_id ?>">
                 <?php endif; ?>
+                <input type="hidden" name="generate_receipt" value="1">
                 <input type="hidden" name="vehicle_id" id="assignedVehicleIdInput" value="<?= $assignedVehicleId ?>">
 
                 <?php if ($reorder_id > 0 && !empty($reorder_source)): ?>
@@ -2128,6 +2129,132 @@ if (collectPriorCheckbox && priorDueAmountInput && priorDueFields) {
         }
         recalculate();
         syncDropdownWithOptions();
+    </script>
+
+    <!-- Offline Receipt & Service Worker Engine -->
+    <script src="offline_receipt_engine.js"></script>
+    <script>
+        // Cache catalog and zone settings on phone for 100% offline usage
+        if (typeof LiyasOfflineEngine !== 'undefined') {
+            LiyasOfflineEngine.cacheContextData(
+                <?= json_encode($products) ?>,
+                {
+                    zone_id: <?= (int)$zone_id ?>,
+                    zone_slug: <?= json_encode($zone_slug) ?>,
+                    zone_name: <?= json_encode($current_zone['name'] ?? 'Zone') ?>,
+                    company_gstin: <?= json_encode(getSystemSetting($pdo, 'company_gstin', '29ABCDE1234F1Z5')) ?>,
+                    company_phone: <?= json_encode(getSystemSetting($pdo, 'company_phone', '+91 63663 78967')) ?>,
+                    company_website: <?= json_encode(getSystemSetting($pdo, 'company_website', 'liyasinternational.com')) ?>
+                }
+            );
+        }
+
+        // Intercept form submission when offline
+        document.getElementById('receiptForm')?.addEventListener('submit', function(e) {
+            if (!navigator.onLine) {
+                e.preventDefault();
+                handleOfflineReceiptSubmit();
+            }
+        });
+
+        function handleOfflineReceiptSubmit() {
+            const shopName = (document.getElementById('shop_name')?.value || '').trim();
+            const customerName = (document.getElementById('customer_name')?.value || shopName).trim();
+            const phone = (document.getElementById('phone')?.value || '').trim();
+            const location = (document.getElementById('place')?.value || document.getElementById('location')?.value || '').trim();
+            const vehicleId = parseInt(document.getElementById('assignedVehicleIdInput')?.value || document.getElementById('vehicleSelect')?.value || '0', 10);
+            const orderId = <?= (int)$order_id ?>;
+
+            if (!shopName) {
+                alert("Please enter Shop / Customer Name.");
+                return;
+            }
+
+            const { subtotal, discount, total } = calculateValues();
+
+            // Gather delivered items from #itemsContainer .item-delivery-card elements
+            const cards = document.querySelectorAll('#itemsContainer .item-delivery-card');
+            const items = [];
+            cards.forEach(card => {
+                const pidInput = card.querySelector('.item-pid');
+                const qtyInput = card.querySelector('.item-qty-input');
+                const rateInput = card.querySelector('.item-rate');
+                const isExtraInput = card.querySelector('.item-is-extra');
+                const nameEl = card.querySelector('strong');
+
+                const pid = parseInt(pidInput ? pidInput.value : '0', 10);
+                const qty = Math.max(0, parseInt(qtyInput ? qtyInput.value : '0', 10) || 0);
+                const rate = parseFloat(rateInput ? rateInput.value : '0') || 0;
+                const isExtra = (isExtraInput && isExtraInput.value === '1') || card.classList.contains('item-vehicle-extra-card');
+                const pName = nameEl ? nameEl.textContent.trim() : 'Liyas Water';
+
+                if (pid > 0 && qty > 0) {
+                    items.push({
+                        product_id: pid,
+                        product_name: pName,
+                        quantity: qty,
+                        rate: rate,
+                        line_total: qty * rate,
+                        is_extra: isExtra ? 1 : 0
+                    });
+                }
+            });
+
+            if (items.length === 0) {
+                alert("Please select at least one item to deliver.");
+                return;
+            }
+
+            const cashVal = enableCash && enableCash.checked ? (parseFloat(cashInput ? cashInput.value : 0) || 0) : 0;
+            const creditVal = enableCredit && enableCredit.checked ? (parseFloat(creditInput ? creditInput.value : 0) || 0) : 0;
+            const dueVal = Math.max(0, total - (cashVal + creditVal));
+
+            // Validate cash + credit doesn't exceed total
+            if ((cashVal + creditVal) > (total + 0.01)) {
+                alert("Payment error: Cash (₹" + cashVal.toFixed(2) + ") + Credit (₹" + creditVal.toFixed(2) + ") cannot exceed Total (₹" + total.toFixed(2) + ").");
+                return;
+            }
+
+            const zoneInfo = (typeof LiyasOfflineEngine !== 'undefined') ? LiyasOfflineEngine.getCachedZoneInfo() : {};
+            const timestamp = Date.now();
+            const offlineId = 'OFF-LI-' + new Date().toISOString().slice(0,10).replace(/-/g, '') + '-' + timestamp.toString().slice(-6);
+            const offlineBillNumber = '#OFF-' + timestamp.toString().slice(-6);
+
+            const offlineReceipt = {
+                offline_id: offlineId,
+                bill_number: offlineBillNumber,
+                zone_id: zoneInfo.zone_id || <?= (int)$zone_id ?>,
+                zone_slug: zoneInfo.zone_slug || <?= json_encode($zone_slug) ?>,
+                order_id: orderId,
+                vehicle_id: vehicleId,
+                shop_name: shopName,
+                customer_name: customerName,
+                phone: phone,
+                location: location,
+                items: items,
+                total_amount: total,
+                cash_amount: cashVal,
+                credited_amount: creditVal,
+                due_amount: dueVal,
+                payment_type: (cashVal > 0 && creditVal > 0) ? 'Cash + Credited' : (cashVal > 0 ? 'Cash' : (creditVal > 0 ? 'Credited' : 'Pending')),
+                company_gstin: zoneInfo.company_gstin || '29ABCDE1234F1Z5',
+                company_phone: zoneInfo.company_phone || '+91 63663 78967',
+                company_website: zoneInfo.company_website || 'liyasinternational.com',
+                created_at: new Date().toISOString().slice(0, 19).replace('T', ' ')
+            };
+
+            // Build raw 30-col ESC/POS text for thermal printer
+            const rawBtText = (typeof LiyasOfflineEngine !== 'undefined') ? LiyasOfflineEngine.buildOfflineRawBtPayload(offlineReceipt, 30) : '';
+
+            // Save in offline queue
+            if (typeof LiyasOfflineEngine !== 'undefined') {
+                LiyasOfflineEngine.enqueueReceipt(offlineReceipt);
+                // Pop up instant receipt modal with Quick Print button!
+                LiyasOfflineEngine.showOfflineReceiptModal(offlineReceipt, rawBtText);
+            } else {
+                alert("Offline receipt created: " + offlineBillNumber);
+            }
+        }
     </script>
 </body>
 </html>

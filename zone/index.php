@@ -3891,5 +3891,8 @@ if (!function_exists('buildWhatsAppLink')) {
             </form>
         </div>
     </div>
+
+    <!-- Offline Delivery & Auto-Sync Engine -->
+    <script src="offline_receipt_engine.js"></script>
 </body>
 </html>
