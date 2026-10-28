@@ -1584,9 +1584,9 @@ if (file_exists($logoPath)) {
         <div class="modal-box">
             <div class="modal-header">
                 <div style="display: flex; align-items: center; gap: 10px;">
-                    <i class='bx bxl-apple' style="font-size: 32px; color: #0f172a;"></i>
+                
                     <div>
-                        <h3 style="font-size: 16px; font-weight: 800; color: #0f172a; margin: 0;">Print Receipt on iPhone</h3>
+                        <h3 style="font-size: 16px; font-weight: 800; color: #0f172a; margin: 0;">Print Receipt </h3>
                         <p style="font-size: 12px; color: #64748b; margin-top: 2px;">Bill #<?= htmlspecialchars($billNumber) ?> &bull; Posiflow SC588 (58mm)</p>
                     </div>
                 </div>
@@ -1595,27 +1595,11 @@ if (file_exists($logoPath)) {
 
             <div class="modal-body">
                 <!-- Option 1: Direct App Deep-Link -->
-                <div class="modal-step-card">
-                    <div class="step-num"><i class='bx bxs-zap' style="color: #fef08a;"></i></div>
-                    <div style="flex: 1;">
-                        <strong style="font-size: 13px; color: #0f172a;">1-Tap App Print</strong>
-                        <div style="font-size: 12px; color: #64748b; margin-top: 1px;">
-                            Sends 30-col layout to <em>Simple Bluetooth Printer</em>.
-                        </div>
-                    </div>
-                    <div style="display: flex; gap: 6px; flex-direction: column; align-items: flex-end;">
-                        <a href="thermalprint://print?text=<?= rawurlencode($rawBtText58) ?>" class="btn-step-action" style="background: #0f172a; color: #ffffff;" id="iosDeepLinkBtn">
-                            <i class='bx bx-printer'></i> Print Now
-                        </a>
-                        <a href="https://apps.apple.com/app/simple-bluetooth-printer/id1457492850" target="_blank" class="btn-step-action" style="font-size: 10px; color: #64748b; border: none; padding: 2px 4px;">
-                            <i class='bx bxl-apple'></i> Get App (Free)
-                        </a>
-                    </div>
-                </div>
+             
 
                 <!-- Option 2: iOS Share Sheet -->
                 <div class="modal-step-card">
-                    <div class="step-num">2</div>
+                    <div class="step-num">1</div>
                     <div style="flex: 1;">
                         <strong style="font-size: 13px; color: #0f172a;">Share to Printer App</strong>
                         <div style="font-size: 12px; color: #64748b; margin-top: 1px;">
@@ -1627,23 +1611,11 @@ if (file_exists($logoPath)) {
                     </button>
                 </div>
 
-                <!-- Option 3: Standard AirPrint -->
-                <div class="modal-step-card">
-                    <div class="step-num">3</div>
-                    <div style="flex: 1;">
-                        <strong style="font-size: 13px; color: #0f172a;">Standard AirPrint</strong>
-                        <div style="font-size: 12px; color: #64748b; margin-top: 1px;">
-                            For Wi-Fi / AirPrint-shared printers.
-                        </div>
-                    </div>
-                    <button onclick="window.print()" class="btn-step-action">
-                        <i class='bx bx-printer'></i> AirPrint
-                    </button>
-                </div>
+            
 
                 <!-- Tip Box: Direct Web Bluetooth via Bluefy -->
                 <div class="modal-tip-box" style="background: #f0fdf4; border-color: #bbf7d0; color: #166534;">
-                    <i class='bx bx-check-shield' style="font-size: 24px; color: #16a34a; flex-shrink: 0;"></i>
+                 <div class="step-num">2</div>
                     <div>
                         <strong>Want 1-Tap Direct Bluetooth Print on iPhone?</strong><br>
                         Open this receipt in the free <strong>Bluefy Browser</strong> on iOS. In Bluefy, tapping ⚡ Quick Print connects directly to your Posiflow SC588 over Bluetooth with zero intermediate apps!
