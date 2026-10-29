@@ -1329,11 +1329,21 @@ foreach ($vehicle_products as $pid => $vp) {
                                     </div>
                                 <?php endif; ?>
                                 <div style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #475569; margin-top: 4px;">
-                                    <span>Rate: ₹</span>
-                                    <span style="font-weight: 700; color: #0f172a;">
-                                        <?= htmlspecialchars(number_format((float)$rate, 2), ENT_QUOTES, 'UTF-8') ?>
-                                    </span>
-                                    <input type="hidden" name="items[<?= $idx ?>][rate]" value="<?= htmlspecialchars((string)$rate, ENT_QUOTES, 'UTF-8') ?>" class="item-rate">
+                                   <label style="font-size: 12px; font-weight: 700; color: #475569;">
+    Rate per case (₹)
+</label>
+
+<input
+    type="number"
+    name="items[<?= $idx ?>][rate]"
+    value="<?= htmlspecialchars((string)$rate, ENT_QUOTES, 'UTF-8') ?>"
+    class="form-control item-rate"
+    min="0"
+    step="1"
+    required
+    style="width: 120px; padding: 6px 10px; font-size: 14px; font-weight: 700;"
+    oninput="recalculate()"
+>
                                     <span>/ case</span>
                                 </div>
                                 <div class="item-calc-text" style="font-size: 12px; color: #64748b; font-weight: 600; margin-top: 3px;">
@@ -1423,7 +1433,7 @@ foreach ($vehicle_products as $pid => $vp) {
                                     <div style="display: flex; gap: 8px; align-items: center;">
                                         <input
     type="text"
-    step="0.01"
+    step="1"
     min="0"
     max="<?= (float)($priorDues['total_due'] ?? 0) ?>"
     name="prior_due_amount"
@@ -1484,7 +1494,7 @@ foreach ($vehicle_products as $pid => $vp) {
                     </label>
                     <div class="amount-input-box visible" id="boxCash">
                         <label class="form-label" style="font-size: 12px; margin-top: 8px;">Cash Amount (₹):</label>
-                        <input type="text" step="0.01" min="0" name="cash_amount" id="cash_amount" class="form-control" placeholder="Enter cash collected" value="<?= htmlspecialchars($_POST['cash_amount'] ?? '') ?>">
+                        <input type="text" step="1" min="0" name="cash_amount" id="cash_amount" class="form-control" placeholder="Enter cash collected" value="<?= htmlspecialchars($_POST['cash_amount'] ?? '') ?>">
                     </div>
                 </div>
 
@@ -1496,7 +1506,7 @@ foreach ($vehicle_products as $pid => $vp) {
                     </label>
                     <div class="amount-input-box" id="boxCredit">
                         <label class="form-label" style="font-size: 12px; margin-top: 8px;">Credited Amount (₹):</label>
-                        <input type="text" step="0.01" min="0" name="credited_amount" id="credited_amount" class="form-control" placeholder="Enter credit amount" value="<?= htmlspecialchars($_POST['credited_amount'] ?? '') ?>">
+                        <input type="text" step="1" min="0" name="credited_amount" id="credited_amount" class="form-control" placeholder="Enter credit amount" value="<?= htmlspecialchars($_POST['credited_amount'] ?? '') ?>">
                     </div>
                 </div>
 
@@ -1755,9 +1765,21 @@ foreach ($vehicle_products as $pid => $vp) {
                         </div>
                         ${inVehicle ? `<div style="font-size: 11px; color: #64748b; margin-top: 2px;">Loaded in vehicle: <strong>${maxCases} cases</strong></div>` : ''}
                         <div style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #475569; margin-top: 4px;">
-                            <span>Rate: ₹</span>
-                            <span style="font-weight: 700; color: #0f172a;">${price.toFixed(2)}</span>
-                            <input type="hidden" name="items[${idx}][rate]" value="${price.toFixed(2)}" class="item-rate">
+                            <label style="font-size: 12px; font-weight: 700; color: #475569;">
+    Rate per case (₹)
+</label>
+
+<input
+    type="number"
+    name="items[${idx}][rate]"
+    value="${price.toFixed(2)}"
+    class="form-control item-rate"
+    min="0"
+    step="1"
+    required
+    style="width: 120px; padding: 6px 10px; font-size: 14px; font-weight: 700;"
+    oninput="recalculate()"
+>
                             <span>/ case</span>
                         </div>
                         <div class="item-calc-text" style="font-size: 12px; color: #64748b; font-weight: 600; margin-top: 3px;">
