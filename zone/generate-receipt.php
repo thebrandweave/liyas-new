@@ -1717,7 +1717,7 @@ foreach ($vehicle_products as $pid => $vp) {
                     <div style="display: flex; justify-content: flex-end; margin-bottom: 6px;">
                         <button type="button" id="btnToggleManualPrior" onclick="toggleManualPriorDueCard()" style="background: #fff1f2; color: #e11d48; border: 1.5px dashed #f43f5e; padding: 8px 14px; border-radius: 8px; font-size: 12px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; transition: all 0.15s ease;">
                             <i class='bx bx-history' style="font-size: 16px;"></i>
-                            <span id="btnToggleManualPriorText"><?= !empty($_POST['manual_prior_due']) ? 'Hide Previous Due Input' : 'Shop has previous pending balance? [ Enter Due ]' ?></span>
+                            <span id="btnToggleManualPriorText"><?= !empty($_POST['manual_prior_due']) ? 'Hide Previous Due Input' : 'Enter previous pending amount' ?></span>
                         </button>
                     </div>
 
@@ -2452,7 +2452,7 @@ foreach ($vehicle_products as $pid => $vp) {
             if (input) input.value = '';
             if (notes) notes.value = '';
             if (card) card.style.display = 'none';
-            if (btnText) btnText.textContent = 'Shop has previous pending balance? [ Enter Due ]';
+            if (btnText) btnText.textContent = 'Enter previous pending amount';
             recalculate();
         }
 
