@@ -1536,21 +1536,21 @@ foreach ($vehicle_products as $pid => $vp) {
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
                             <div style="display: flex; align-items: center; gap: 6px;">
                                 <i class='bx bx-wallet' style="color: #dc2626; font-size: 18px;"></i>
-                                <strong style="font-size: 13px; color: #991b1b;">Add Shop's Previous / Ledger Due</strong>
+                                <strong style="font-size: 13px; color: #991b1b;">Add Shop's Previous Due</strong>
                             </div>
                             <button type="button" onclick="cancelManualPriorDue()" style="background: none; border: none; color: #94a3b8; font-size: 18px; line-height: 1; cursor: pointer; padding: 0 4px;" title="Close and clear">&times;</button>
                         </div>
 
                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
                             <div>
-                                <label class="form-label" style="font-size: 11px; margin-bottom: 3px; font-weight: 700; color: #7f1d1d;">Earlier Pending Amount (₹):</label>
+                                <label class="form-label" style="font-size: 11px; margin-bottom: 3px; font-weight: 700; color: #7f1d1d;">Pending Amount (₹):</label>
                                 <div style="position: relative;">
                                     <span style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); font-weight: 700; color: #dc2626;">₹</span>
                                     <input type="text" min="0" step="1" name="manual_prior_due" id="manual_prior_due" class="form-control" placeholder="0" value="<?= htmlspecialchars($_POST['manual_prior_due'] ?? '') ?>" style="font-weight: 700; color: #dc2626; padding-left: 24px;" oninput="recalculate()">
                                 </div>
                             </div>
                             <div>
-                                <label class="form-label" style="font-size: 11px; margin-bottom: 3px; font-weight: 700; color: #7f1d1d;">Action for this Earlier Due:</label>
+                                <label class="form-label" style="font-size: 11px; margin-bottom: 3px; font-weight: 700; color: #7f1d1d;">Action</label>
                                 <select name="manual_prior_due_action" id="manual_prior_due_action" class="form-control" style="font-size: 12px; font-weight: 600;" onchange="recalculate()">
                                     <option value="carry_forward" <?= ($_POST['manual_prior_due_action'] ?? '') === 'carry_forward' ? 'selected' : '' ?>>Carry Forward (Keep as Outstanding)</option>
                                     <option value="collect_now" <?= ($_POST['manual_prior_due_action'] ?? '') === 'collect_now' ? 'selected' : '' ?>>Collect / Clear Today</option>
