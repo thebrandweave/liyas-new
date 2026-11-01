@@ -2245,7 +2245,7 @@ foreach ($vehicle_products as $pid => $vp) {
             const isHidden = card.style.display === 'none' || !card.style.display;
             card.style.display = isHidden ? 'block' : 'none';
             if (btnText) {
-                btnText.textContent = isHidden ? 'Hide Previous Due Input' : 'Shop has previous pending balance? [ Enter Due ]';
+                btnText.textContent = isHidden ? 'Hide Previous Due ' : 'Enter Previous Due';
             }
             if (isHidden) {
                 document.getElementById('manual_prior_due')?.focus();
