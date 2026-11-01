@@ -937,11 +937,157 @@ foreach ($vehicle_products as $pid => $vp) {
             background: #ffffff;
             border: 1.5px solid var(--border-color);
             border-radius: var(--radius-md);
-            padding: 14px;
-            transition: border-color 0.2s;
+            padding: 12px 14px;
+            margin-bottom: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+            transition: border-color 0.2s, box-shadow 0.2s;
         }
         .item-delivery-card:hover {
             border-color: #cbd5e1;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.04);
+        }
+        .item-delivery-card.item-vehicle-extra-card {
+            border-left: 4px solid #2563eb !important;
+            background: #fafbff;
+        }
+
+        .item-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 10px;
+            margin-bottom: 8px;
+        }
+        .item-card-title-group {
+            flex: 1 1 auto;
+            min-width: 0;
+        }
+        .item-card-title {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+        .item-product-name {
+            font-size: 15px;
+            color: #0f172a;
+            font-weight: 700;
+            line-height: 1.3;
+            word-break: break-word;
+        }
+        .badge-vehicle-stock {
+            font-size: 10px;
+            font-weight: 800;
+            color: #1e40af;
+            background: #dbeafe;
+            padding: 2px 7px;
+            border-radius: 4px;
+            letter-spacing: 0.3px;
+            white-space: nowrap;
+        }
+        .item-loaded-info {
+            font-size: 11px;
+            color: #64748b;
+            margin-top: 2px;
+        }
+        .item-card-total-group {
+            text-align: right;
+            flex-shrink: 0;
+        }
+        .item-line-total {
+            font-size: 16px;
+            font-weight: 800;
+            color: #0f172a;
+            line-height: 1.2;
+        }
+        .btn-remove-item {
+            background: none;
+            border: none;
+            color: #ef4444;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            padding: 3px 0;
+            display: inline-flex;
+            align-items: center;
+            gap: 3px;
+            transition: color 0.15s ease;
+        }
+        .btn-remove-item:hover {
+            color: #b91c1c;
+        }
+
+        .item-card-rate-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-bottom: 10px;
+            padding: 6px 0;
+            border-top: 1px dashed #f1f5f9;
+        }
+        .item-rate-input-wrap {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+        .item-rate-label {
+            font-size: 12px;
+            font-weight: 700;
+            color: #475569;
+            margin: 0;
+            white-space: nowrap;
+        }
+        .item-rate-input-box {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+        }
+        .item-rate-input-box .currency-prefix {
+            position: absolute;
+            left: 8px;
+            font-size: 13px;
+            font-weight: 700;
+            color: #64748b;
+            pointer-events: none;
+        }
+        .item-rate-input-box input.item-rate {
+            width: 105px;
+            padding: 5px 8px 5px 20px;
+            font-size: 13px;
+            font-weight: 700;
+            color: #0f172a;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+        }
+        .item-rate-unit {
+            font-size: 12px;
+            color: #64748b;
+            font-weight: 500;
+        }
+        .item-calc-text {
+            font-size: 11px;
+            color: #64748b;
+            font-weight: 600;
+        }
+
+        .item-card-qty-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            background: #f8fafc;
+            padding: 8px 12px;
+            border-radius: 8px;
+            border: 1px solid #f1f5f9;
+        }
+        .item-qty-label {
+            font-size: 12px;
+            font-weight: 700;
+            color: #334155;
+            white-space: nowrap;
         }
 
         /* Quantity Stepper for Touch */
@@ -952,10 +1098,10 @@ foreach ($vehicle_products as $pid => $vp) {
         }
 
         .btn-stepper {
-            width: 38px;
-            height: 38px;
+            width: 36px;
+            height: 36px;
             border-radius: 8px;
-            background: #f1f5f9;
+            background: #ffffff;
             border: 1px solid var(--border-color);
             color: #1e293b;
             font-size: 18px;
@@ -966,9 +1112,13 @@ foreach ($vehicle_products as $pid => $vp) {
             cursor: pointer;
             user-select: none;
             flex-shrink: 0;
-            transition: all 0.1s;
+            transition: all 0.15s ease;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.03);
         }
-
+        .btn-stepper:hover {
+            background: #f1f5f9;
+            border-color: #94a3b8;
+        }
         .btn-stepper:active {
             background: #e2e8f0;
             transform: scale(0.95);
@@ -977,9 +1127,43 @@ foreach ($vehicle_products as $pid => $vp) {
         .stepper-input {
             text-align: center;
             font-weight: 800;
-            font-size: 16px;
-            width: 80px;
-            padding: 6px;
+            font-size: 15px;
+            width: 60px;
+            height: 36px;
+            padding: 4px;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            background: #ffffff;
+        }
+
+        @media (max-width: 480px) {
+            .item-delivery-card {
+                padding: 10px 12px;
+            }
+            .item-card-rate-row {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 5px;
+            }
+            .item-rate-input-wrap {
+                width: 100%;
+                justify-content: space-between;
+            }
+            .item-rate-input-box input.item-rate {
+                width: 95px;
+            }
+            .item-card-qty-row {
+                padding: 6px 10px;
+            }
+            .btn-stepper {
+                width: 34px;
+                height: 34px;
+            }
+            .stepper-input {
+                width: 52px;
+                height: 34px;
+                font-size: 14px;
+            }
         }
 
         /* Fast Payment Selectors */
@@ -1363,7 +1547,7 @@ foreach ($vehicle_products as $pid => $vp) {
                         $netContentStr = !empty($it['net_content']) ? (float)$it['net_content'] . ' ' . htmlspecialchars($it['net_content_unit'] ?? '') : '';
                         $maxCases = (int)($it['max_cases'] ?? ($vehicle_products[$pid]['available_cases'] ?? 999));
                     ?>
-                    <div class="item-delivery-card item-regular-card <?= $isExtra ? 'item-vehicle-extra-card' : '' ?>" id="itemRow_<?= $idx ?>" data-idx="<?= $idx ?>" style="<?= $isExtra ? 'border-left: 4px solid #2563eb;' : '' ?>">
+                    <div class="item-delivery-card item-regular-card <?= $isExtra ? 'item-vehicle-extra-card' : '' ?>" id="itemRow_<?= $idx ?>" data-idx="<?= $idx ?>">
                         <input type="hidden" name="items[<?= $idx ?>][product_id]" value="<?= $pid ?>" class="item-pid">
                         <input type="hidden" name="items[<?= $idx ?>][original_rate]" value="<?= $rate ?>" class="item-original-rate">
                         <input type="hidden" name="items[<?= $idx ?>][is_extra]" value="<?= $isExtra ? '1' : '0' ?>" class="item-is-extra">
@@ -1371,51 +1555,56 @@ foreach ($vehicle_products as $pid => $vp) {
                             <input type="hidden" name="items[<?= $idx ?>][max_cases]" value="<?= $maxCases ?>" class="item-max-cases">
                         <?php endif; ?>
                         
-                        <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; margin-bottom: 10px;">
-                            <div>
-                                <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
-                                    <strong style="font-size: 15px; color: #0f172a;"><?= $pName ?></strong>
+                        <!-- Top Header: Product Name, Badge & Total / Remove -->
+                        <div class="item-card-header">
+                            <div class="item-card-title-group">
+                                <div class="item-card-title">
+                                    <strong class="item-product-name"><?= $pName ?></strong>
                                     <?php if ($isExtra): ?>
-                                        <span style="font-size: 11px; font-weight: 700; color: #1e40af; background: #dbeafe; padding: 2px 7px; border-radius: 4px;">VEHICLE STOCK</span>
+                                        <span class="badge-vehicle-stock">VEHICLE STOCK</span>
                                     <?php endif; ?>
                                 </div>
                                 <?php if ($isExtra): ?>
-                                    <div style="font-size: 11px; color: #64748b; margin-top: 2px;">
+                                    <div class="item-loaded-info">
                                         Loaded in vehicle: <strong><?= $maxCases ?> cases</strong>
                                     </div>
                                 <?php endif; ?>
-                                <div style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #475569; margin-top: 4px;">
-                                   <label style="font-size: 12px; font-weight: 700; color: #475569;">
-    Rate per case (₹)
-</label>
-
-<input
-    type="number"
-    name="items[<?= $idx ?>][rate]"
-    value="<?= htmlspecialchars((string)(int)$rate, ENT_QUOTES, 'UTF-8') ?>"
-    class="form-control item-rate"
-    min="0"
-    step="1"
-    required
-    style="width: 120px; padding: 6px 10px; font-size: 14px; font-weight: 700;"
-    oninput="recalculate()"
->
-                                    <span>/ case</span>
-                                </div>
-                                <div class="item-calc-text" style="font-size: 12px; color: #64748b; font-weight: 600; margin-top: 3px;">
-                                    Rate × Qty: ₹<span class="calc-rate-val"><?= number_format($rate, 2) ?></span> × <span class="calc-qty-val"><?= $qty ?></span> cs = ₹<span class="calc-sub-val"><?= number_format($lineTotal, 2) ?></span>
-                                </div>
                             </div>
-                            <div style="text-align: right;">
-                                <div class="item-line-total" style="font-size: 16px; font-weight: 800; color: #0f172a;"><?= formatCurrency($lineTotal) ?></div>
-                                <button type="button" onclick="removeItemRow(this)" style="background: none; border: none; color: #dc2626; font-size: 12px; cursor: pointer; padding: 3px 0; display: inline-flex; align-items: center; gap: 2px;" title="Remove this product from delivery">
+                            <div class="item-card-total-group">
+                                <div class="item-line-total"><?= formatCurrency($lineTotal) ?></div>
+                                <button type="button" class="btn-remove-item" onclick="removeItemRow(this)" title="Remove this product from delivery">
                                     <i class='bx bx-trash'></i> Remove
                                 </button>
                             </div>
                         </div>
 
-                        <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; background: #f8fafc; padding: 8px 12px; border-radius: 8px;">
-                            <span style="font-size: 11px; font-weight: 600; color: #475569;">Delivered Cases:</span>
+                        <!-- Rate & Calculation Row -->
+                        <div class="item-card-rate-row">
+                            <div class="item-rate-input-wrap">
+                                <label class="item-rate-label">Rate / Case:</label>
+                                <div class="item-rate-input-box">
+                                    <span class="currency-prefix">₹</span>
+                                    <input
+                                        type="number"
+                                        name="items[<?= $idx ?>][rate]"
+                                        value="<?= htmlspecialchars((string)(int)$rate, ENT_QUOTES, 'UTF-8') ?>"
+                                        class="form-control item-rate"
+                                        min="0"
+                                        step="1"
+                                        required
+                                        oninput="recalculate()"
+                                    >
+                                </div>
+                                <span class="item-rate-unit">/ case</span>
+                            </div>
+                            <div class="item-calc-text">
+                                Rate × Qty: ₹<span class="calc-rate-val"><?= number_format($rate, 2) ?></span> × <span class="calc-qty-val"><?= $qty ?></span> cs = ₹<span class="calc-sub-val"><?= number_format($lineTotal, 2) ?></span>
+                            </div>
+                        </div>
+
+                        <!-- Stepper / Delivered Cases Row -->
+                        <div class="item-card-qty-row">
+                            <span class="item-qty-label">Delivered Cases:</span>
                             <div class="stepper-box">
                                 <button type="button" class="btn-stepper" onclick="stepItemQty(this, -1)" aria-label="Decrease">&minus;</button>
                                 <input type="text" min="0" <?= $isExtra ? 'max="' . $maxCases . '"' : '' ?> name="items[<?= $idx ?>][quantity]" value="<?= $qty ?>" class="form-control stepper-input item-qty-input" required oninput="checkMaxCases(this); recalculate()">
@@ -1889,55 +2078,57 @@ foreach ($vehicle_products as $pid => $vp) {
             div.className = 'item-delivery-card item-regular-card' + (inVehicle ? ' item-vehicle-extra-card' : '');
             div.id = 'itemRow_' + idx;
             div.setAttribute('data-idx', idx);
-            if (inVehicle) {
-                div.style.borderLeft = '4px solid #2563eb';
-            }
             div.innerHTML = `
                 <input type="hidden" name="items[${idx}][product_id]" value="${pid}" class="item-pid">
                 <input type="hidden" name="items[${idx}][original_rate]" value="${price}" class="item-original-rate">
                 <input type="hidden" name="items[${idx}][is_extra]" value="${inVehicle ? '1' : '0'}" class="item-is-extra">
                 <input type="hidden" name="items[${idx}][max_cases]" value="${maxCases}" class="item-max-cases">
                 
-                <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; margin-bottom: 10px;">
-                    <div>
-                        <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
-                            <strong style="font-size: 15px; color: #0f172a;">${name}</strong>
-                            ${inVehicle ? `<span style="font-size: 11px; font-weight: 700; color: #1e40af; background: #dbeafe; padding: 2px 7px; border-radius: 4px;">VEHICLE STOCK</span>` : ''}
+                <!-- Top Header: Product Name, Badge & Total / Remove -->
+                <div class="item-card-header">
+                    <div class="item-card-title-group">
+                        <div class="item-card-title">
+                            <strong class="item-product-name">${name}</strong>
+                            ${inVehicle ? `<span class="badge-vehicle-stock">VEHICLE STOCK</span>` : ''}
                             ${contentHtml}
                         </div>
-                        ${inVehicle ? `<div style="font-size: 11px; color: #64748b; margin-top: 2px;">Loaded in vehicle: <strong>${maxCases} cases</strong></div>` : ''}
-                        <div style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #475569; margin-top: 4px;">
-                            <label style="font-size: 12px; font-weight: 700; color: #475569;">
-    Rate per case (₹)
-</label>
-
-<input
-    type="number"
-    name="items[${idx}][rate]"
-    value="${price.toFixed(2)}"
-    class="form-control item-rate"
-    min="0"
-    step="1"
-    required
-    style="width: 120px; padding: 6px 10px; font-size: 14px; font-weight: 700;"
-    oninput="recalculate()"
->
-                            <span>/ case</span>
-                        </div>
-                        <div class="item-calc-text" style="font-size: 12px; color: #64748b; font-weight: 600; margin-top: 3px;">
-                            Rate × Qty: ₹<span class="calc-rate-val">${price.toFixed(2)}</span> × <span class="calc-qty-val">${addQty}</span> cs = ₹<span class="calc-sub-val">${(price * addQty).toFixed(2)}</span>
-                        </div>
+                        ${inVehicle ? `<div class="item-loaded-info">Loaded in vehicle: <strong>${maxCases} cases</strong></div>` : ''}
                     </div>
-                    <div style="text-align: right;">
-                        <div class="item-line-total" style="font-size: 16px; font-weight: 800; color: #0f172a;">₹${(price * addQty).toFixed(2)}</div>
-                        <button type="button" onclick="removeItemRow(this)" style="background: none; border: none; color: #dc2626; font-size: 12px; cursor: pointer; padding: 3px 0; display: inline-flex; align-items: center; gap: 2px;" title="Remove this product from delivery">
+                    <div class="item-card-total-group">
+                        <div class="item-line-total">₹${(price * addQty).toFixed(2)}</div>
+                        <button type="button" class="btn-remove-item" onclick="removeItemRow(this)" title="Remove this product from delivery">
                             <i class='bx bx-trash'></i> Remove
                         </button>
                     </div>
                 </div>
 
-                <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; background: #f8fafc; padding: 8px 12px; border-radius: 8px;">
-                    <span style="font-size: 11px; font-weight: 600; color: #475569;">Delivered Cases:</span>
+                <!-- Rate & Calculation Row -->
+                <div class="item-card-rate-row">
+                    <div class="item-rate-input-wrap">
+                        <label class="item-rate-label">Rate / Case:</label>
+                        <div class="item-rate-input-box">
+                            <span class="currency-prefix">₹</span>
+                            <input
+                                type="number"
+                                name="items[${idx}][rate]"
+                                value="${price.toFixed(2)}"
+                                class="form-control item-rate"
+                                min="0"
+                                step="1"
+                                required
+                                oninput="recalculate()"
+                            >
+                        </div>
+                        <span class="item-rate-unit">/ case</span>
+                    </div>
+                    <div class="item-calc-text">
+                        Rate × Qty: ₹<span class="calc-rate-val">${price.toFixed(2)}</span> × <span class="calc-qty-val">${addQty}</span> cs = ₹<span class="calc-sub-val">${(price * addQty).toFixed(2)}</span>
+                    </div>
+                </div>
+
+                <!-- Stepper / Delivered Cases Row -->
+                <div class="item-card-qty-row">
+                    <span class="item-qty-label">Delivered Cases:</span>
                     <div class="stepper-box">
                         <button type="button" class="btn-stepper" onclick="stepItemQty(this, -1)" aria-label="Decrease">&minus;</button>
                         <input type="text" min="0" ${inVehicle ? `max="${maxCases}"` : ''} name="items[${idx}][quantity]" value="${addQty}" class="form-control stepper-input item-qty-input" required oninput="checkMaxCases(this); recalculate()">
