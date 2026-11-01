@@ -26,6 +26,27 @@ $current_page = $current_page ?? '';
 $current_file = basename($_SERVER['PHP_SELF']);
 $current_dir  = basename(dirname($_SERVER['PHP_SELF']));
 
+// User Role logic
+$admin_role = strtolower($_SESSION['admin_role'] ?? '');
+if (empty($admin_role) && isset($_SESSION['admin_id'], $pdo)) {
+    try {
+        $stRole = $pdo->prepare("SELECT role, username FROM admins WHERE admin_id = ?");
+        $stRole->execute([$_SESSION['admin_id']]);
+        $rowR = $stRole->fetch(PDO::FETCH_ASSOC);
+        if ($rowR) {
+            $admin_role = strtolower($rowR['role'] ?? 'superadmin');
+            $_SESSION['admin_role'] = $admin_role;
+            if (empty($_SESSION['admin_name'])) {
+                $_SESSION['admin_name'] = $rowR['username'];
+            }
+        }
+    } catch (Exception $e) {}
+}
+if (empty($admin_role)) {
+    $admin_role = 'superadmin';
+}
+$is_staff = ($admin_role === 'staff');
+
 // Badge counts
 $products_count = 0;
 $zones_count = 0;
@@ -42,23 +63,26 @@ $campaign_submissions_count = 0;
 try {
     // --- MAIN DB COUNTS ---
     if (isset($pdo)) {
-        $products_count = (int)$pdo->query("SELECT COUNT(*) FROM products WHERE status='active'")->fetchColumn();
         $zones_count = (int)$pdo->query("SELECT COUNT(*) FROM zones WHERE status='active'")->fetchColumn();
         $vehicles_count = (int)$pdo->query("SELECT COUNT(*) FROM vehicles WHERE status != 'inactive'")->fetchColumn();
         $pending_orders_count = (int)$pdo->query("SELECT COUNT(*) FROM orders WHERE status='pending'")->fetchColumn();
-        $users_count = (int)$pdo->query("SELECT COUNT(*) FROM admins")->fetchColumn();
-        $subs_count = (int)$pdo->query("SELECT COUNT(*) FROM newsletter_subscriptions WHERE status='subscribed'")->fetchColumn();
-        $ads_count = (int)$pdo->query("SELECT COUNT(*) FROM advertisements")->fetchColumn();
-        $reviews_pending_count = (int)$pdo->query("SELECT COUNT(*) FROM reviews WHERE status='pending'")->fetchColumn();
-        $social_count = (int)$pdo->query("SELECT COUNT(*) FROM social_links")->fetchColumn();
 
-        $stmtNotif = $pdo->prepare("SELECT COUNT(*) FROM notifications WHERE recipient_type='admin' AND is_read=0 AND admin_id = ?");
-        $stmtNotif->execute([$_SESSION['admin_id'] ?? 0]);
-        $notifications_count = (int)$stmtNotif->fetchColumn();
+        if (!$is_staff) {
+            $products_count = (int)$pdo->query("SELECT COUNT(*) FROM products WHERE status='active'")->fetchColumn();
+            $users_count = (int)$pdo->query("SELECT COUNT(*) FROM admins")->fetchColumn();
+            $subs_count = (int)$pdo->query("SELECT COUNT(*) FROM newsletter_subscriptions WHERE status='subscribed'")->fetchColumn();
+            $ads_count = (int)$pdo->query("SELECT COUNT(*) FROM advertisements")->fetchColumn();
+            $reviews_pending_count = (int)$pdo->query("SELECT COUNT(*) FROM reviews WHERE status='pending'")->fetchColumn();
+            $social_count = (int)$pdo->query("SELECT COUNT(*) FROM social_links")->fetchColumn();
+
+            $stmtNotif = $pdo->prepare("SELECT COUNT(*) FROM notifications WHERE recipient_type='admin' AND is_read=0 AND admin_id = ?");
+            $stmtNotif->execute([$_SESSION['admin_id'] ?? 0]);
+            $notifications_count = (int)$stmtNotif->fetchColumn();
+        }
     }
 
     // --- CAMPAIGN DB COUNTS ---
-    if (isset($pdo_campaign)) {
+    if (!$is_staff && isset($pdo_campaign)) {
         $campaign_submissions_count = (int)$pdo_campaign->query("SELECT COUNT(*) FROM submissions")->fetchColumn();
     }
 } catch (PDOException $e) {
@@ -137,6 +161,7 @@ $more_badge_total = $ads_count + $reviews_pending_count + $social_count + $subs_
         <span class="logo-text" style="font-size: 22px; font-weight: 800; color: #0f172a; letter-spacing: -0.5px;">Liyas</span>
     </div>
 
+    <?php if (!$is_staff): ?>
     <div class="app-switcher" style="padding: 15px; margin-bottom: 5px;">
         <div style="display: flex; gap: 4px; background: rgba(0,0,0,0.05); padding: 4px; border-radius: 10px; border: 1px solid rgba(0,0,0,0.03);">
             <a href="<?= $base_path ?>dashboard/index.php" 
@@ -151,17 +176,60 @@ $more_badge_total = $ads_count + $reviews_pending_count + $social_count + $subs_
             </a>
         </div>
     </div>
+    <?php endif; ?>
 
     <div class="search-box">
         <div class="search-wrapper">
             <i class='bx bx-search search-icon'></i>
-            <input type="text" class="search-input" placeholder="Search...">
+            <input type="text" class="search-input" id="sidebarSearchInput" placeholder="Search menu...">
         </div>
     </div>
 
     <nav class="nav-menu">
 
-        <?php if ($current_dir == 'campaigns'): ?>
+        <?php if ($is_staff): ?>
+            <!-- Staff Navigation: ONLY Vehicles, Zones, Orders, Shop Rewards -->
+            <div style="padding: 10px 20px 4px 20px; font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">
+                Staff Navigation
+            </div>
+
+            <a href="<?= $base_path ?>vehicles/index.php"
+               class="nav-item <?= ($current_dir=='vehicles'||$current_page==='vehicles')?'active':'' ?>"
+               title="Vehicles, Cases Loaded & Zones">
+                <i class='bx bxs-truck'></i>
+                <span>Vehicles</span>
+                <?php if ($vehicles_count > 0): ?>
+                    <span class="nav-badge"><?= $vehicles_count ?></span>
+                <?php endif; ?>
+            </a>
+
+            <a href="<?= $base_path ?>zones/index.php"
+               class="nav-item <?= ($current_dir=='zones'||$current_page==='zones')?'active':'' ?>">
+                <i class='bx bxs-map-pin'></i>
+                <span>Zones</span>
+                <?php if ($zones_count > 0): ?>
+                    <span class="nav-badge"><?= $zones_count ?></span>
+                <?php endif; ?>
+            </a>
+
+            <a href="<?= $base_path ?>orders/index.php"
+               class="nav-item <?= ($current_dir=='orders'||$current_page==='orders')?'active':'' ?>">
+                <i class='bx bxs-cart'></i>
+                <span>Orders</span>
+                <?php if ($pending_orders_count > 0): ?>
+                    <span class="badge-count" style="background:#ef4444; color:#fff !important; font-weight:600; border-radius:12px; padding:2px 8px; font-size:11px; display:inline-flex; align-items:center; gap:3px;">
+                         <?= $pending_orders_count ?>
+                    </span>
+                <?php endif; ?>
+            </a>
+
+            <a href="<?= $base_path ?>shop-rewards/index.php"
+               class="nav-item <?= ($current_dir==='shop-rewards' || $current_page==='shop-rewards')?'active':'' ?>">
+                <i class='bx bxs-gift'></i>
+                <span>Shop Rewards</span>
+            </a>
+
+        <?php elseif ($current_dir == 'campaigns'): ?>
             <div style="padding: 10px 25px; font-size: 11px; font-weight: 700; color: #0f172a; text-transform: uppercase; letter-spacing: 0.5px;">Campaign Engine</div>
             
             <a href="<?= $base_path ?>campaigns/index.php" class="nav-item <?= ($current_file=='index.php')?'active':'' ?>">
@@ -327,6 +395,14 @@ $more_badge_total = $ads_count + $reviews_pending_count + $social_count + $subs_
     </nav>
 
     <div class="sidebar-footer">
+        <div style="padding: 8px 16px; margin-bottom: 4px; font-size: 11px; color: #64748b; border-bottom: 1px solid rgba(0,0,0,0.06); display: flex; align-items: center; justify-content: space-between;">
+            <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 120px;">
+                <i class='bx bx-user' style="vertical-align: middle;"></i> <strong><?= htmlspecialchars($_SESSION['admin_name'] ?? 'User') ?></strong>
+            </span>
+            <span style="font-size: 10px; font-weight: 700; text-transform: uppercase; padding: 2px 6px; border-radius: 4px; background: <?= $is_staff ? '#ecfdf5; color: #065f46;' : '#fef3c7; color: #92400e;' ?>">
+                <?= htmlspecialchars($admin_role) ?>
+            </span>
+        </div>
         <a href="<?= $base_path ?>logout.php" class="nav-item">
             <i class='bx bxs-log-out'></i>
             <span>Logout</span>
@@ -357,6 +433,23 @@ $more_badge_total = $ads_count + $reviews_pending_count + $social_count + $subs_
             if (arrow) {
                 arrow.style.transform = isOpen ? 'rotate(0deg)' : 'rotate(180deg)';
             }
+        });
+    }
+
+    // Sidebar search filter
+    const searchInput = document.getElementById('sidebarSearchInput');
+    if (searchInput) {
+        searchInput.addEventListener('input', function () {
+            const query = this.value.toLowerCase().trim();
+            const navItems = document.querySelectorAll('.sidebar .nav-menu .nav-item');
+            navItems.forEach(item => {
+                const text = item.textContent.toLowerCase();
+                if (!query || text.includes(query)) {
+                    item.style.display = '';
+                } else {
+                    item.style.display = 'none';
+                }
+            });
         });
     }
 })();

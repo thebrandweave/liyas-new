@@ -85,6 +85,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_admin'])) {
                         <div class="form-group" style="margin-bottom: 2rem;">
                             <label>Role *</label>
                             <select name="role" class="form-select">
+                                <option value="staff" <?= $admin['role'] == 'staff' ? 'selected' : '' ?>>Staff (Vehicles, Zones, Orders, Shop Rewards only)</option>
                                 <option value="editor" <?= $admin['role'] == 'editor' ? 'selected' : '' ?>>Editor</option>
                                 <option value="moderator" <?= $admin['role'] == 'moderator' ? 'selected' : '' ?>>Moderator</option>
                                 <option value="superadmin" <?= $admin['role'] == 'superadmin' ? 'selected' : '' ?>>Super Admin</option>

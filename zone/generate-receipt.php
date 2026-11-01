@@ -222,6 +222,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['generate_receipt'])) 
     $enable_credit   = isset($_POST['enable_credit']);
     $credited_amount = $enable_credit ? (float)($_POST['credited_amount'] ?? 0) : 0.00;
 
+    $enable_due      = isset($_POST['enable_due']);
+    $due_input       = $enable_due ? (float)($_POST['due_amount_input'] ?? 0) : 0.00;
+
+    $manual_prior_due        = max(0, (float)($_POST['manual_prior_due'] ?? 0));
+    $manual_prior_due_action = trim($_POST['manual_prior_due_action'] ?? 'carry_forward');
+    $manual_prior_due_notes  = trim($_POST['manual_prior_due_notes'] ?? '');
+
+
+
     // Process submitted delivered items: $_POST['items']
     $processed_items = [];
     $total_delivered_cases = 0;
@@ -310,14 +319,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['generate_receipt'])) 
         }
         $total_amount = max(0, $base_subtotal - $discount);
 
-        // Validation: Cash + Credit cannot exceed Total
+        // Balance payments with respect to Due input if provided
+        if ($enable_due && $due_input > 0) {
+            if (!$enable_cash && !$enable_credit) {
+                $cash_amount = max(0, $total_amount - $due_input);
+            }
+        }
+
+        // Validation: Cash + Credit cannot exceed Total, and Due cannot exceed Total
         if (($cash_amount + $credited_amount) > ($total_amount + 0.01)) {
             $error = "Payment error: Cash (" . formatCurrency($cash_amount) . ") + Credited (" . formatCurrency($credited_amount) . ") exceeds Total Amount (" . formatCurrency($total_amount) . ").";
+        } elseif ($enable_due && $due_input > ($total_amount + 0.01)) {
+            $error = "Payment error: Due amount (" . formatCurrency($due_input) . ") cannot exceed Total Amount (" . formatCurrency($total_amount) . ").";
         } else {
             $due_amount = max(0, $total_amount - $cash_amount - $credited_amount);
+            if ($enable_due && $due_input > 0 && ($cash_amount + $credited_amount + $due_input <= $total_amount + 0.01)) {
+                $due_amount = $due_input;
+            }
+            if ($manual_prior_due > 0 && $manual_prior_due_action === 'carry_forward') {
+                $due_amount += $manual_prior_due;
+            }
 
             // Determine payment type
-            if ($cash_amount > 0 && $credited_amount > 0) {
+            if ($due_amount >= $total_amount && $total_amount > 0) {
+                $payment_type = 'Pending';
+            } elseif ($cash_amount > 0 && $credited_amount > 0) {
                 $payment_type = 'Cash + Credited';
             } elseif ($cash_amount > 0) {
                 $payment_type = 'Cash';
@@ -586,6 +612,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['generate_receipt'])) 
                     $clearedSummary = "Cleared ₹" . number_format($settleResult['total_cleared'], 2) . " earlier due (" . ucfirst($prior_due_mode) . ") from " . implode(', ', array_map(fn($c) => 'Bill #' . $c['bill_number'], $settleResult['cleared_receipts']));
                     $receipt_notes = !empty($receipt_notes) ? ($receipt_notes . " | " . $clearedSummary) : $clearedSummary;
                 }
+
+                if ($manual_prior_due > 0) {
+                    if ($manual_prior_due_action === 'carry_forward') {
+                        $cNote = "Includes ₹" . number_format($manual_prior_due, 2) . " earlier balance carried forward" . ($manual_prior_due_notes ? " ({$manual_prior_due_notes})" : "");
+                        $receipt_notes = !empty($receipt_notes) ? ($receipt_notes . " | " . $cNote) : $cNote;
+                    } elseif ($manual_prior_due_action === 'collect_now') {
+                        $cNote = "Collected ₹" . number_format($manual_prior_due, 2) . " earlier shop due" . ($manual_prior_due_notes ? " ({$manual_prior_due_notes})" : "");
+                        $receipt_notes = !empty($receipt_notes) ? ($receipt_notes . " | " . $cNote) : $cNote;
+                    }
+                }
+
+
 
                 // Insert into receipts table
                 $insReceipt = $pdo->prepare("
@@ -940,7 +978,7 @@ foreach ($vehicle_products as $pid => $vp) {
             text-align: center;
             font-weight: 800;
             font-size: 16px;
-            width: 65px;
+            width: 80px;
             padding: 6px;
         }
 
@@ -967,16 +1005,19 @@ foreach ($vehicle_products as $pid => $vp) {
 
         .btn-fast-cash { color: #047857; }
         .btn-fast-cash:hover { background: #ecfdf5; border-color: #a7f3d0; }
+        .btn-fast-cash.active { background: #059669; color: #ffffff; border-color: #059669; box-shadow: 0 2px 4px rgba(5, 150, 105, 0.25); }
 
         .btn-fast-credit { color: #b45309; }
         .btn-fast-credit:hover { background: #fffbeb; border-color: #fde68a; }
+        .btn-fast-credit.active { background: #d97706; color: #ffffff; border-color: #d97706; box-shadow: 0 2px 4px rgba(217, 119, 6, 0.25); }
 
         .btn-fast-due { color: #dc2626; }
         .btn-fast-due:hover { background: #fef2f2; border-color: #fecaca; }
+        .btn-fast-due.active { background: #dc2626; color: #ffffff; border-color: #dc2626; box-shadow: 0 2px 4px rgba(220, 38, 38, 0.25); }
 
         /* Payment Toggle Cards */
         .payment-card {
-            background: #f8fafc;
+            background: #ffffff;
             border: 1.5px solid var(--border-color);
             border-radius: var(--radius-md);
             padding: 12px 14px;
@@ -987,6 +1028,21 @@ foreach ($vehicle_products as $pid => $vp) {
         .payment-card.active {
             background: #eff6ff;
             border-color: #93c5fd;
+        }
+
+        #cardCash.active {
+            background: #f0fdf4;
+            border-color: #86efac;
+        }
+
+        #cardCredit.active {
+            background: #fffbeb;
+            border-color: #fde68a;
+        }
+
+        #cardDue.active {
+            background: #fef2f2;
+            border-color: #fca5a5;
         }
 
         .chk-label {
@@ -1336,7 +1392,7 @@ foreach ($vehicle_products as $pid => $vp) {
 <input
     type="number"
     name="items[<?= $idx ?>][rate]"
-    value="<?= htmlspecialchars((string)$rate, ENT_QUOTES, 'UTF-8') ?>"
+    value="<?= htmlspecialchars((string)(int)$rate, ENT_QUOTES, 'UTF-8') ?>"
     class="form-control item-rate"
     min="0"
     step="1"
@@ -1432,17 +1488,17 @@ foreach ($vehicle_products as $pid => $vp) {
                                     <label class="form-label" style="font-size: 12px; margin-bottom: 4px;">Amount of Earlier Due to Clear (₹):</label>
                                     <div style="display: flex; gap: 8px; align-items: center;">
                                         <input
-    type="text"
-    step="1"
-    min="0"
-    max="<?= (float)($priorDues['total_due'] ?? 0) ?>"
-    name="prior_due_amount"
-    id="prior_due_amount"
-    class="form-control"
-    style="font-weight: 700; font-size: 15px;"
-    value="<?= htmlspecialchars($_POST['prior_due_amount'] ?? ($priorDues['total_due'] ?? 0)) ?>"
-    oninput="recalculate()"
->
+                                            type="text"
+                                            step="1"
+                                            min="0"
+                                            max="<?= (float)($priorDues['total_due'] ?? 0) ?>"
+                                            name="prior_due_amount"
+                                            id="prior_due_amount"
+                                            class="form-control"
+                                            style="font-weight: 700; font-size: 15px;"
+                                            value="<?= htmlspecialchars($_POST['prior_due_amount'] ?? ($priorDues['total_due'] ?? 0)) ?>"
+                                            oninput="recalculate()"
+                                        >
                                         <button type="button" onclick="setPriorDueFull()" style="background: #e0f2fe; color: #0284c7; border: 1px solid #bae6fd; padding: 8px 12px; border-radius: 8px; font-size: 12px; font-weight: 700; cursor: pointer; white-space: nowrap;">
                                             Full Due
                                         </button>
@@ -1467,46 +1523,127 @@ foreach ($vehicle_products as $pid => $vp) {
                     </div>
                 </div>
 
+                <!-- Previous / Earlier Due Option (For shops with balance) -->
+                <div id="manualPriorDueSection" style="margin-bottom: 20px;">
+                    <div style="display: flex; justify-content: flex-end; margin-bottom: 6px;">
+                        <button type="button" id="btnToggleManualPrior" onclick="toggleManualPriorDueCard()" style="background: #fff1f2; color: #e11d48; border: 1.5px dashed #f43f5e; padding: 8px 14px; border-radius: 8px; font-size: 12px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; transition: all 0.15s ease;">
+                            <i class='bx bx-history' style="font-size: 16px;"></i>
+                            <span id="btnToggleManualPriorText"><?= !empty($_POST['manual_prior_due']) ? 'Hide Previous Due Input' : 'Shop has previous pending balance? [ Enter Due ]' ?></span>
+                        </button>
+                    </div>
+
+                    <div id="manualPriorDueCard" style="<?= !empty($_POST['manual_prior_due']) ? 'display: block;' : 'display: none;' ?> background: #fff5f5; border: 1.5px solid #fecaca; border-radius: var(--radius-md); padding: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                            <div style="display: flex; align-items: center; gap: 6px;">
+                                <i class='bx bx-wallet' style="color: #dc2626; font-size: 18px;"></i>
+                                <strong style="font-size: 13px; color: #991b1b;">Add Shop's Previous / Ledger Due</strong>
+                            </div>
+                            <button type="button" onclick="cancelManualPriorDue()" style="background: none; border: none; color: #94a3b8; font-size: 18px; line-height: 1; cursor: pointer; padding: 0 4px;" title="Close and clear">&times;</button>
+                        </div>
+
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                            <div>
+                                <label class="form-label" style="font-size: 11px; margin-bottom: 3px; font-weight: 700; color: #7f1d1d;">Earlier Pending Amount (₹):</label>
+                                <div style="position: relative;">
+                                    <span style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); font-weight: 700; color: #dc2626;">₹</span>
+                                    <input type="text" min="0" step="1" name="manual_prior_due" id="manual_prior_due" class="form-control" placeholder="0" value="<?= htmlspecialchars($_POST['manual_prior_due'] ?? '') ?>" style="font-weight: 700; color: #dc2626; padding-left: 24px;" oninput="recalculate()">
+                                </div>
+                            </div>
+                            <div>
+                                <label class="form-label" style="font-size: 11px; margin-bottom: 3px; font-weight: 700; color: #7f1d1d;">Action for this Earlier Due:</label>
+                                <select name="manual_prior_due_action" id="manual_prior_due_action" class="form-control" style="font-size: 12px; font-weight: 600;" onchange="recalculate()">
+                                    <option value="carry_forward" <?= ($_POST['manual_prior_due_action'] ?? '') === 'carry_forward' ? 'selected' : '' ?>>Carry Forward (Keep as Outstanding)</option>
+                                    <option value="collect_now" <?= ($_POST['manual_prior_due_action'] ?? '') === 'collect_now' ? 'selected' : '' ?>>Collect / Clear Today</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div style="margin-top: 8px;">
+                            <input type="text" name="manual_prior_due_notes" id="manual_prior_due_notes" class="form-control" placeholder="Optional reference note (e.g. Old ledger balance, unpaid order last week)" style="font-size: 12px;" value="<?= htmlspecialchars($_POST['manual_prior_due_notes'] ?? '') ?>">
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Payment Settlement -->
-                 <div>
-                <div style="font-size:14px; font-weight: 800; color: #383635; text-align:center; text-transform: uppercase; ">
-                    <i class='bx bx-wallet' style="color: #d97706;"></i> <span style="margin-top: 8px; margin-bottom: 6px;">Payment Collection</span
+                <div style="font-size:14px; font-weight: 800; color: #383635; text-align:center; text-transform: uppercase; margin-bottom: 6px;">
+                    <i class='bx bx-wallet' style="color: #d97706;"></i> <span>Payment Collection</span>
                 </div>
 
                 <!-- 1-Tap Fast Settlement Shortcuts -->
                 <div class="fast-pay-buttons">
-                    <button type="button" class="btn-fast-pay btn-fast-cash" id="btnFastCash">
-                        💵 Cash
+                    <button type="button" class="btn-fast-pay btn-fast-cash" id="btnFastCash" title="Set full amount paid in Cash">
+                        💵 Full Cash
                     </button>
-                    <button type="button" class="btn-fast-pay btn-fast-credit" id="btnFastCredit">
-                        💳 Credit
+                    <button type="button" class="btn-fast-pay btn-fast-credit" id="btnFastCredit" title="Set full amount paid via Credit/Online">
+                        💳 Online Payment
                     </button>
-                    <button type="button" class="btn-fast-pay btn-fast-due" id="btnFastDue">
-                        ⏳ Unpaid
+                    <button type="button" class="btn-fast-pay btn-fast-due" id="btnFastDue" title="Set full bill as Unpaid / Due">
+                        ⏳ Full Due
                     </button>
                 </div>
 
                 <!-- Cash Card -->
                 <div class="payment-card" id="cardCash">
-                    <label class="chk-label" for="enable_cash">
-                        <input type="checkbox" name="enable_cash" id="enable_cash" class="chk-input" <?= (isset($_POST['enable_cash']) || empty($_POST)) ? 'checked' : '' ?>>
-                        <span>Cash Received</span>
-                    </label>
+                    <div style="display: flex; align-items: center; justify-content: space-between;">
+                        <label class="chk-label" for="enable_cash" style="color: #065f46; margin: 0;">
+                            <input type="checkbox" name="enable_cash" id="enable_cash" class="chk-input" style="accent-color: #059669;" <?= (isset($_POST['enable_cash']) || empty($_POST)) ? 'checked' : '' ?>>
+                            <span>💵 Cash Received</span>
+                        </label>
+                        <span id="badgeCashMode" style="font-size: 11px; font-weight: 800; color: #047857; background: #d1fae5; padding: 2px 8px; border-radius: 6px; display: none;">CASH</span>
+                    </div>
                     <div class="amount-input-box visible" id="boxCash">
-                        <label class="form-label" style="font-size: 12px; margin-top: 8px;">Cash Amount (₹):</label>
-                        <input type="text" step="1" min="0" name="cash_amount" id="cash_amount" class="form-control" placeholder="Enter cash collected" value="<?= htmlspecialchars($_POST['cash_amount'] ?? '') ?>">
+                        <label class="form-label" style="font-size: 12px; margin-top: 8px; color: #064e3b; font-weight: 700;">Cash Amount (₹):</label>
+                        <div style="position: relative;">
+                            <span style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); font-weight: 800; color: #059669; font-size: 16px;">₹</span>
+                            <input type="text" step="1" min="0" name="cash_amount" id="cash_amount" class="form-control" placeholder="Enter cash collected" value="<?= htmlspecialchars($_POST['cash_amount'] ?? '') ?>" style="font-weight: 800; font-size: 16px; color: #059669; border-color: #86efac; padding-left: 28px;">
+                        </div>
                     </div>
                 </div>
 
                 <!-- Credit Card -->
                 <div class="payment-card" id="cardCredit">
-                    <label class="chk-label" for="enable_credit">
-                        <input type="checkbox" name="enable_credit" id="enable_credit" class="chk-input" <?= isset($_POST['enable_credit']) ? 'checked' : '' ?>>
-                        <span>Credited Amount</span>
-                    </label>
+                    <div style="display: flex; align-items: center; justify-content: space-between;">
+                        <label class="chk-label" for="enable_credit" style="color: #92400e; margin: 0;">
+                            <input type="checkbox" name="enable_credit" id="enable_credit" class="chk-input" style="accent-color: #d97706;" <?= isset($_POST['enable_credit']) ? 'checked' : '' ?>>
+                            <span>💳 Credited Amount</span>
+                        </label>
+                        <span id="badgeCreditMode" style="font-size: 11px; font-weight: 800; color: #b45309; background: #fef3c7; padding: 2px 8px; border-radius: 6px; display: none;">CREDIT</span>
+                    </div>
                     <div class="amount-input-box" id="boxCredit">
-                        <label class="form-label" style="font-size: 12px; margin-top: 8px;">Credited Amount (₹):</label>
-                        <input type="text" step="1" min="0" name="credited_amount" id="credited_amount" class="form-control" placeholder="Enter credit amount" value="<?= htmlspecialchars($_POST['credited_amount'] ?? '') ?>">
+                        <label class="form-label" style="font-size: 12px; margin-top: 8px; color: #78350f; font-weight: 700;">Credited Amount (₹):</label>
+                        <div style="position: relative;">
+                            <span style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); font-weight: 800; color: #d97706; font-size: 16px;">₹</span>
+                            <input type="text" step="1" min="0" name="credited_amount" id="credited_amount" class="form-control" placeholder="Enter credit amount" value="<?= htmlspecialchars($_POST['credited_amount'] ?? '') ?>" style="font-weight: 800; font-size: 16px; color: #d97706; border-color: #fde68a; padding-left: 28px;">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Due Card -->
+                <div class="payment-card" id="cardDue">
+                    <div style="display: flex; align-items: center; justify-content: space-between;">
+                        <label class="chk-label" for="enable_due" style="color: #991b1b; margin: 0;">
+                            <input type="checkbox" name="enable_due" id="enable_due" class="chk-input" style="accent-color: #dc2626;" <?= isset($_POST['enable_due']) ? 'checked' : '' ?>>
+                            <span>⏳ Due / Pending Amount</span>
+                        </label>
+                        <span id="badgeDueMode" style="font-size: 11px; font-weight: 800; color: #b91c1c; background: #fee2e2; padding: 2px 8px; border-radius: 6px; display: none;">UNPAID</span>
+                    </div>
+                    <div class="amount-input-box" id="boxDue">
+                        <label class="form-label" style="font-size: 12px; margin-top: 8px; color: #7f1d1d; font-weight: 700;">Due / Remaining Amount on this Bill (₹):</label>
+                        <div style="display: flex; gap: 8px; align-items: center;">
+                            <div style="position: relative; flex: 1;">
+                                <span style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); font-weight: 800; color: #dc2626; font-size: 16px;">₹</span>
+                                <input type="text" step="1" min="0" name="due_amount_input" id="due_amount_input" class="form-control" placeholder="0.00" value="<?= htmlspecialchars($_POST['due_amount_input'] ?? '') ?>" style="font-weight: 800; font-size: 16px; color: #dc2626; border-color: #fca5a5; padding-left: 28px;">
+                            </div>
+                            <button type="button" onclick="setDueFull()" style="background: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5; padding: 9px 12px; border-radius: 8px; font-size: 12px; font-weight: 800; cursor: pointer; white-space: nowrap;">
+                                Full Bill Due
+                            </button>
+                            <button type="button" onclick="clearDue()" style="background: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; padding: 9px 10px; border-radius: 8px; font-size: 12px; font-weight: 700; cursor: pointer; white-space: nowrap;">
+                                Clear
+                            </button>
+                        </div>
+                        <div id="dueHintText" style="font-size: 11px; color: #991b1b; font-weight: 600; margin-top: 5px;">
+                            Amount left unpaid on this delivery. Will be added to shop's pending balance.
+                        </div>
                     </div>
                 </div>
 
@@ -1590,6 +1727,11 @@ foreach ($vehicle_products as $pid => $vp) {
         const creditInput = document.getElementById('credited_amount');
         const boxCredit = document.getElementById('boxCredit');
         const cardCredit = document.getElementById('cardCredit');
+
+        const enableDue = document.getElementById('enable_due');
+        const dueInput = document.getElementById('due_amount_input');
+        const boxDue = document.getElementById('boxDue');
+        const cardDue = document.getElementById('cardDue');
 
         const btnFastCash = document.getElementById('btnFastCash');
         const btnFastCredit = document.getElementById('btnFastCredit');
@@ -1859,6 +2001,15 @@ foreach ($vehicle_products as $pid => $vp) {
                 cardCredit.classList.remove('active');
                 creditInput.value = '';
             }
+
+            if (enableDue.checked) {
+                boxDue.classList.add('visible');
+                cardDue.classList.add('active');
+            } else {
+                boxDue.classList.remove('visible');
+                cardDue.classList.remove('active');
+                dueInput.value = '';
+            }
         }
 
         function calculateValues() {
@@ -1908,8 +2059,43 @@ foreach ($vehicle_products as $pid => $vp) {
 
             const cashVal = enableCash.checked ? (parseFloat(cashInput.value) || 0) : 0;
             const creditVal = enableCredit.checked ? (parseFloat(creditInput.value) || 0) : 0;
+
+            let dueVal = 0;
+            if (enableDue.checked) {
+                dueVal = parseFloat(dueInput.value) || 0;
+            } else {
+                dueVal = Math.max(0, total - cashVal - creditVal);
+            }
+
             const paidSum = cashVal + creditVal;
-            const due = Math.max(0, total - paidSum);
+
+            // Highlight 1-tap shortcut buttons
+            btnFastCash.classList.toggle('active', enableCash.checked && !enableCredit.checked && !enableDue.checked && Math.abs(cashVal - total) < 0.01 && total > 0);
+            btnFastCredit.classList.toggle('active', enableCredit.checked && !enableCash.checked && !enableDue.checked && Math.abs(creditVal - total) < 0.01 && total > 0);
+            btnFastDue.classList.toggle('active', enableDue.checked && !enableCash.checked && !enableCredit.checked && Math.abs(dueVal - total) < 0.01 && total > 0);
+
+            // Badges & feedback
+            const badgeCash = document.getElementById('badgeCashMode');
+            if (badgeCash) {
+                badgeCash.style.display = (cashVal > 0) ? 'inline-block' : 'none';
+            }
+            const badgeCredit = document.getElementById('badgeCreditMode');
+            if (badgeCredit) {
+                badgeCredit.style.display = (creditVal > 0) ? 'inline-block' : 'none';
+            }
+            const badgeDue = document.getElementById('badgeDueMode');
+            if (badgeDue) {
+                badgeDue.style.display = (dueVal > 0) ? 'inline-block' : 'none';
+                badgeDue.textContent = (dueVal >= total && total > 0) ? 'FULL DUE' : ('DUE: ₹' + dueVal.toFixed(0));
+            }
+            const dueHint = document.getElementById('dueHintText');
+            if (dueHint) {
+                if (dueVal > 0) {
+                    dueHint.textContent = `₹${dueVal.toFixed(2)} will remain as unpaid balance on this shop's account.`;
+                } else {
+                    dueHint.textContent = `Bill is fully settled (₹0.00 due).`;
+                }
+            }
 
             if (dispTotalCases) {
                 if (extraCases > 0) {
@@ -1933,17 +2119,31 @@ foreach ($vehicle_products as $pid => $vp) {
             if (dispTotal) dispTotal.textContent = '₹' + total.toFixed(2);
             if (dispCash) dispCash.textContent = '₹' + cashVal.toFixed(2);
             if (dispCredit) dispCredit.textContent = '₹' + creditVal.toFixed(2);
-            if (dispDue) dispDue.textContent = '₹' + due.toFixed(2);
+            if (dispDue) {
+                dispDue.textContent = '₹' + dueVal.toFixed(2);
+                dispDue.style.color = (dueVal === 0 && total > 0) ? '#059669' : '#dc2626';
+            }
 
-            // Prior due calculations
+            // Prior due calculations (Database unpaid bills + Manual earlier due)
             const sectionPrior = document.getElementById('priorDueSection');
             const collectPriorDue = document.getElementById('collect_prior_due');
             const priorDueInput = document.getElementById('prior_due_amount');
-            const totalPriorDue = sectionPrior ? (parseFloat(sectionPrior.dataset.totalDue) || 0) : 0;
-            const isCollectingPrior = collectPriorDue ? collectPriorDue.checked : false;
-            const priorCleared = isCollectingPrior ? Math.min(totalPriorDue, Math.max(0, parseFloat(priorDueInput ? priorDueInput.value : 0) || 0)) : 0;
-            const remainingPrior = Math.max(0, totalPriorDue - priorCleared);
-            const grandTotal = total + priorCleared;
+            const manualPriorInput = document.getElementById('manual_prior_due');
+            const manualPriorAction = document.getElementById('manual_prior_due_action');
+
+            const dbPriorDue = sectionPrior ? (parseFloat(sectionPrior.dataset.totalDue) || 0) : 0;
+            const manualPriorDue = parseFloat(manualPriorInput ? manualPriorInput.value : 0) || 0;
+            const manualAction = manualPriorAction ? manualPriorAction.value : 'carry_forward';
+
+            const isCollectingDbPrior = collectPriorDue ? collectPriorDue.checked : false;
+            const dbPriorCleared = isCollectingDbPrior ? Math.min(dbPriorDue, Math.max(0, parseFloat(priorDueInput ? priorDueInput.value : 0) || 0)) : 0;
+
+            const manualCleared = (manualAction === 'collect_now') ? manualPriorDue : 0;
+            const manualOutstanding = (manualAction === 'carry_forward') ? manualPriorDue : 0;
+
+            const totalPriorCleared = dbPriorCleared + manualCleared;
+            const totalRemainingPrior = Math.max(0, dbPriorDue - dbPriorCleared) + manualOutstanding;
+            const grandTotal = total + totalPriorCleared;
 
             const rowPrior = document.getElementById('rowPriorDueCollected');
             const rowGrand = document.getElementById('rowGrandTotal');
@@ -1953,16 +2153,16 @@ foreach ($vehicle_products as $pid => $vp) {
             const dispRemainingPrior = document.getElementById('dispRemainingPriorDue');
 
             if (rowPrior && dispPriorCollected) {
-                if (priorCleared > 0) {
+                if (totalPriorCleared > 0) {
                     rowPrior.style.display = 'flex';
-                    dispPriorCollected.textContent = '+ ₹' + priorCleared.toFixed(2);
+                    dispPriorCollected.textContent = '+ ₹' + totalPriorCleared.toFixed(2);
                 } else {
                     rowPrior.style.display = 'none';
                 }
             }
 
             if (rowGrand && dispGrand) {
-                if (priorCleared > 0) {
+                if (totalPriorCleared > 0) {
                     rowGrand.style.display = 'flex';
                     dispGrand.textContent = '₹' + grandTotal.toFixed(2);
                 } else {
@@ -1971,30 +2171,30 @@ foreach ($vehicle_products as $pid => $vp) {
             }
 
             if (rowRemaining && dispRemainingPrior) {
-                if (totalPriorDue > 0) {
+                if (dbPriorDue > 0 || manualPriorDue > 0) {
                     rowRemaining.style.display = 'flex';
-                    if (remainingPrior === 0) {
+                    if (totalRemainingPrior === 0) {
                         dispRemainingPrior.style.color = '#059669';
                         dispRemainingPrior.textContent = '₹0.00 (Fully Cleared)';
                     } else {
                         dispRemainingPrior.style.color = '#dc2626';
-                        dispRemainingPrior.textContent = '₹' + remainingPrior.toFixed(2);
+                        dispRemainingPrior.textContent = '₹' + totalRemainingPrior.toFixed(2);
                     }
                 } else {
                     rowRemaining.style.display = 'none';
                 }
             }
 
-            if (due === 0 && total > 0) {
-                dispDue.style.color = '#059669';
-            } else {
-                dispDue.style.color = '#dc2626';
-            }
-
             // Payment Sum Validation
             if (paidSum > total + 0.01) {
                 liveError.style.display = 'block';
-                liveError.textContent = `Payment Error: Cash (₹${cashVal.toFixed(2)}) + Credit (₹${creditVal.toFixed(2)}) exceeds Net Total (₹${total.toFixed(2)})!`;
+                liveError.textContent = `Payment Error: Cash (₹${cashVal.toFixed(2)}) + Credit (₹${creditVal.toFixed(2)}) exceeds Total (₹${total.toFixed(2)})!`;
+                submitBtn.disabled = true;
+                submitBtn.style.opacity = '0.5';
+                submitBtn.style.cursor = 'not-allowed';
+            } else if (enableDue.checked && dueVal > total + 0.01) {
+                liveError.style.display = 'block';
+                liveError.textContent = `Due amount (₹${dueVal.toFixed(2)}) cannot exceed Net Total (₹${total.toFixed(2)})!`;
                 submitBtn.disabled = true;
                 submitBtn.style.opacity = '0.5';
                 submitBtn.style.cursor = 'not-allowed';
@@ -2012,21 +2212,21 @@ foreach ($vehicle_products as $pid => $vp) {
             }
         }
 
-       function togglePriorDueBox(checked) {
-    const box = document.getElementById('priorDueInputFields');
-    const amountInput = document.getElementById('prior_due_amount');
+        function togglePriorDueBox(checked) {
+            const box = document.getElementById('priorDueInputFields');
+            const amountInput = document.getElementById('prior_due_amount');
 
-    if (box) {
-        box.style.display = checked ? 'block' : 'none';
-    }
+            if (box) {
+                box.style.display = checked ? 'block' : 'none';
+            }
 
-    if (amountInput) {
-        amountInput.disabled = !checked;
-        amountInput.required = checked;
-    }
+            if (amountInput) {
+                amountInput.disabled = !checked;
+                amountInput.required = checked;
+            }
 
-    recalculate();
-}
+            recalculate();
+        }
 
         function setPriorDueFull() {
             const sectionPrior = document.getElementById('priorDueSection');
@@ -2036,6 +2236,33 @@ foreach ($vehicle_products as $pid => $vp) {
                 pInput.value = totalPriorDue.toFixed(2);
                 recalculate();
             }
+        }
+
+        function toggleManualPriorDueCard() {
+            const card = document.getElementById('manualPriorDueCard');
+            const btnText = document.getElementById('btnToggleManualPriorText');
+            if (!card) return;
+            const isHidden = card.style.display === 'none' || !card.style.display;
+            card.style.display = isHidden ? 'block' : 'none';
+            if (btnText) {
+                btnText.textContent = isHidden ? 'Hide Previous Due Input' : 'Shop has previous pending balance? [ Enter Due ]';
+            }
+            if (isHidden) {
+                document.getElementById('manual_prior_due')?.focus();
+            }
+            recalculate();
+        }
+
+        function cancelManualPriorDue() {
+            const card = document.getElementById('manualPriorDueCard');
+            const input = document.getElementById('manual_prior_due');
+            const notes = document.getElementById('manual_prior_due_notes');
+            const btnText = document.getElementById('btnToggleManualPriorText');
+            if (input) input.value = '';
+            if (notes) notes.value = '';
+            if (card) card.style.display = 'none';
+            if (btnText) btnText.textContent = 'Shop has previous pending balance? [ Enter Due ]';
+            recalculate();
         }
 
         function checkShopDuesAjax() {
@@ -2048,6 +2275,7 @@ foreach ($vehicle_products as $pid => $vp) {
                 .then(res => res.json())
                 .then(data => {
                     const section = document.getElementById('priorDueSection');
+                    const tableBox = document.getElementById('priorDueBillsTableBox');
                     if (!section) return;
                     if (data && data.has_due && data.total_due > 0) {
                         section.style.display = 'block';
@@ -2057,6 +2285,7 @@ foreach ($vehicle_products as $pid => $vp) {
                         
                         const tbody = document.getElementById('priorDueTableBody');
                         if (tbody && data.receipts) {
+                            if (tableBox) tableBox.style.display = 'block';
                             tbody.innerHTML = data.receipts.map(r => `
                                 <tr style="border-bottom: 1px solid #f8fafc;">
                                     <td style="padding: 6px 10px; font-weight: 700; color: #0f172a;">Bill #${r.bill_number} <span style="font-size: 10px; color: #64748b;">(Order #${r.order_number})</span></td>
@@ -2085,6 +2314,29 @@ foreach ($vehicle_products as $pid => $vp) {
         document.getElementById('shop_name')?.addEventListener('blur', checkShopDuesAjax);
         document.getElementById('phone')?.addEventListener('blur', checkShopDuesAjax);
 
+        // Due Card Helper Functions
+        function setDueFull() {
+            const { total } = calculateValues();
+            enableDue.checked = true;
+            dueInput.value = total.toFixed(2);
+            enableCash.checked = false;
+            cashInput.value = '';
+            enableCredit.checked = false;
+            creditInput.value = '';
+            recalculate();
+        }
+
+        function clearDue() {
+            const { total } = calculateValues();
+            dueInput.value = '';
+            enableDue.checked = false;
+            if (enableCash.checked) {
+                const creditVal = enableCredit.checked ? (parseFloat(creditInput.value) || 0) : 0;
+                cashInput.value = Math.max(0, total - creditVal).toFixed(2);
+            }
+            recalculate();
+        }
+
         // Fast pay shortcut buttons
         btnFastCash.addEventListener('click', function() {
             const { total } = calculateValues();
@@ -2092,6 +2344,8 @@ foreach ($vehicle_products as $pid => $vp) {
             cashInput.value = total.toFixed(2);
             enableCredit.checked = false;
             creditInput.value = '';
+            enableDue.checked = false;
+            dueInput.value = '';
             recalculate();
         });
 
@@ -2101,51 +2355,109 @@ foreach ($vehicle_products as $pid => $vp) {
             creditInput.value = total.toFixed(2);
             enableCash.checked = false;
             cashInput.value = '';
+            enableDue.checked = false;
+            dueInput.value = '';
             recalculate();
         });
 
         btnFastDue.addEventListener('click', function() {
-            enableCash.checked = false;
-            cashInput.value = '';
-            enableCredit.checked = false;
-            creditInput.value = '';
-            recalculate();
+            setDueFull();
         });
 
         enableCash.addEventListener('change', function() {
+            const { total } = calculateValues();
             if (this.checked && !cashInput.value) {
-                const { total } = calculateValues();
                 const creditVal = enableCredit.checked ? (parseFloat(creditInput.value) || 0) : 0;
-                cashInput.value = Math.max(0, total - creditVal).toFixed(2);
+                const dueVal = enableDue.checked ? (parseFloat(dueInput.value) || 0) : 0;
+                cashInput.value = Math.max(0, total - creditVal - dueVal).toFixed(2);
             }
             recalculate();
         });
 
         enableCredit.addEventListener('change', function() {
+            const { total } = calculateValues();
             if (this.checked && !creditInput.value) {
-                const { total } = calculateValues();
                 const cashVal = enableCash.checked ? (parseFloat(cashInput.value) || 0) : 0;
-                creditInput.value = Math.max(0, total - cashVal).toFixed(2);
+                const dueVal = enableDue.checked ? (parseFloat(dueInput.value) || 0) : 0;
+                creditInput.value = Math.max(0, total - cashVal - dueVal).toFixed(2);
             }
             recalculate();
         });
 
-        cashInput.addEventListener('input', recalculate);
-        creditInput.addEventListener('input', recalculate);
-// Keep prior due validation synchronized with visibility on page load
-const collectPriorCheckbox = document.getElementById('collect_prior_due');
-const priorDueAmountInput = document.getElementById('prior_due_amount');
-const priorDueFields = document.getElementById('priorDueInputFields');
+        enableDue.addEventListener('change', function() {
+            const { total } = calculateValues();
+            if (this.checked) {
+                const cashVal = enableCash.checked ? (parseFloat(cashInput.value) || 0) : 0;
+                const creditVal = enableCredit.checked ? (parseFloat(creditInput.value) || 0) : 0;
+                const remaining = Math.max(0, total - cashVal - creditVal);
+                dueInput.value = remaining > 0 ? remaining.toFixed(2) : total.toFixed(2);
+                if (remaining <= 0 && enableCash.checked) {
+                    cashInput.value = '0.00';
+                }
+            } else {
+                dueInput.value = '';
+                if (enableCash.checked) {
+                    const creditVal = enableCredit.checked ? (parseFloat(creditInput.value) || 0) : 0;
+                    cashInput.value = Math.max(0, total - creditVal).toFixed(2);
+                }
+            }
+            recalculate();
+        });
 
-if (collectPriorCheckbox && priorDueAmountInput && priorDueFields) {
-    priorDueAmountInput.disabled = !collectPriorCheckbox.checked;
-    priorDueAmountInput.required = collectPriorCheckbox.checked;
+        dueInput.addEventListener('input', function() {
+            const { total } = calculateValues();
+            let d = parseFloat(this.value) || 0;
+            if (d < 0) { d = 0; this.value = '0'; }
+            if (d > total) { d = total; this.value = total.toFixed(2); }
 
-    priorDueFields.style.display =
-        collectPriorCheckbox.checked ? 'block' : 'none';
-}
-        // Initial calculation
-        if (enableCash.checked && !cashInput.value) {
+            const creditVal = enableCredit.checked ? (parseFloat(creditInput.value) || 0) : 0;
+            if (enableCash.checked) {
+                cashInput.value = Math.max(0, total - d - creditVal).toFixed(2);
+            } else if (enableCredit.checked) {
+                creditInput.value = Math.max(0, total - d).toFixed(2);
+            } else if (d < total) {
+                enableCash.checked = true;
+                cashInput.value = Math.max(0, total - d).toFixed(2);
+            }
+            recalculate();
+        });
+
+        cashInput.addEventListener('input', function() {
+            if (enableDue.checked) {
+                const { total } = calculateValues();
+                const c = parseFloat(this.value) || 0;
+                const creditVal = enableCredit.checked ? (parseFloat(creditInput.value) || 0) : 0;
+                dueInput.value = Math.max(0, total - c - creditVal).toFixed(2);
+            }
+            recalculate();
+        });
+
+        creditInput.addEventListener('input', function() {
+            if (enableDue.checked) {
+                const { total } = calculateValues();
+                const cr = parseFloat(this.value) || 0;
+                const cashVal = enableCash.checked ? (parseFloat(cashInput.value) || 0) : 0;
+                dueInput.value = Math.max(0, total - cashVal - cr).toFixed(2);
+            }
+            recalculate();
+        });
+
+        // Keep prior due validation synchronized with visibility on page load
+        const collectPriorCheckbox = document.getElementById('collect_prior_due');
+        const priorDueAmountInput = document.getElementById('prior_due_amount');
+        const priorDueFields = document.getElementById('priorDueInputFields');
+
+        if (collectPriorCheckbox && priorDueAmountInput && priorDueFields) {
+            priorDueAmountInput.disabled = !collectPriorCheckbox.checked;
+            priorDueAmountInput.required = collectPriorCheckbox.checked;
+            priorDueFields.style.display = collectPriorCheckbox.checked ? 'block' : 'none';
+        }
+
+        // Initial calculation on page load
+        if (enableDue.checked && !dueInput.value) {
+            const { total } = calculateValues();
+            dueInput.value = total.toFixed(2);
+        } else if (enableCash.checked && !cashInput.value) {
             const { total } = calculateValues();
             cashInput.value = total.toFixed(2);
         }
@@ -2229,7 +2541,7 @@ if (collectPriorCheckbox && priorDueAmountInput && priorDueFields) {
 
             const cashVal = enableCash && enableCash.checked ? (parseFloat(cashInput ? cashInput.value : 0) || 0) : 0;
             const creditVal = enableCredit && enableCredit.checked ? (parseFloat(creditInput ? creditInput.value : 0) || 0) : 0;
-            const dueVal = Math.max(0, total - (cashVal + creditVal));
+            const dueVal = enableDue && enableDue.checked ? (parseFloat(dueInput ? dueInput.value : 0) || 0) : Math.max(0, total - (cashVal + creditVal));
 
             // Validate cash + credit doesn't exceed total
             if ((cashVal + creditVal) > (total + 0.01)) {

@@ -1690,10 +1690,10 @@ if (!empty($searchQuery)) {
                     <i class='bx bx-plus-circle'></i>
                     <span> Load Product</span>
                 </button>
-                <button type="button" class="btn-header btn-header-primary" onclick="openAddVehicleModal()" title="Register a new delivery vehicle">
+                <!-- <button type="button" class="btn-header btn-header-primary" onclick="openAddVehicleModal()" title="Register a new delivery vehicle">
                     <i class='bx bxs-truck'></i>
                     <span> Add Vehicle</span>
-                </button>
+                </button> -->
                 <div class="stats-menu-wrap">
                 <button type="button" class="btn-header stats-menu-toggle" id="statsMenuToggle"
                         aria-label="Open fleet statistics" aria-expanded="false" aria-controls="statsDropdown"
@@ -1969,38 +1969,83 @@ if (!empty($searchQuery)) {
 
                 <!-- Multi-Product Table -->
                 <div style="margin-top: 8px; margin-bottom: 14px;">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 8px;">
                         <label class="form-label" style="margin-bottom: 0;">
-                            <i class='bx bx-package' style="color: #059669; font-size: 14px;"></i> Products to Load *
+                            <i class='bx bx-package' style="color: #059669; font-size: 14px;"></i> Products to Load
                         </label>
-                        <!-- <span style="font-size: 11px; color: #64748b;">Add one or multiple catalog products below</span> -->
+                        <div style="position: relative;">
+                            <!-- <i class='bx bx-search' style="position: absolute; left: 8px; top: 50%; transform: translateY(-50%); color: #94a3b8; font-size: 13px;"></i> -->
+                            <!-- <input type="text" id="loadProductSearchInput" placeholder="Search product..." oninput="filterLoadProductRows(this.value)" style="padding: 4px 8px 4px 26px; font-size: 12px; border: 1px solid #cbd5e1; border-radius: 6px; width: 180px; outline: none;"> -->
+                        </div>
                     </div>
 
-                    <div style="max-height: 280px; overflow-y: auto; overflow-x: auto; border: 1px solid #e2e8f0; border-radius: 10px; background: #ffffff;">
-                        <table style="width: 100%; border-collapse: collapse; min-width: 580px;">
+                    <div style="max-height: 320px; overflow-y: auto; overflow-x: auto; border: 1px solid #e2e8f0; border-radius: 10px; background: #ffffff;">
+                        <table style="width: 100%; border-collapse: collapse;">
                             <thead>
-                                <tr style="border-bottom: 2px solid #e2e8f0; text-align: left; font-size: 11px; text-transform: uppercase; color: #64748b; font-weight: 700; background: #f8fafc;">
-                                    <th style="padding: 8px 10px;">Product</th>
-                                    <!-- <th style="padding: 8px 10px; width: 120px;">Whse Stock</th> -->
-                                    <th style="padding: 8px 10px; width: 95px;">Rate (₹)</th>
-                                    <th style="padding: 8px 10px; width: 125px;">Cases *</th>
-                                    <th style="padding: 8px 10px; width: 105px; text-align: right;">Subtotal</th>
-                                    <th style="padding: 8px 6px; width: 36px; text-align: center;"></th>
+                                <tr style="border-bottom: 2px solid #e2e8f0; text-align: left; font-size: 11px; text-transform: uppercase; color: #64748b; font-weight: 700; background: #f8fafc; position: sticky; top: 0; z-index: 2;">
+                                    <th style="padding: 8px 12px;">Product</th>
+                                    <th style="padding: 8px 12px; width: 130px; text-align: right;">Count (Cases)</th>
                                 </tr>
                             </thead>
                             <tbody id="loadProductTableBody">
-                                <!-- Dynamic rows inserted by JavaScript -->
+                                <?php if (!empty($catalogProducts)): ?>
+                                    <?php foreach ($catalogProducts as $idx => $p): 
+                                        $pId = (int)$p['product_id'];
+                                        $pName = $p['product_name'] ?: ($p['name'] ?: 'Product');
+                                        $content = $p['net_content'] ? ((float)$p['net_content'] . ' ' . ($p['net_content_unit'] ?? '')) : '';
+                                        $displayName = $pName . ($content ? " ({$content})" : "");
+                                        $rate = (float)($p['case_price'] ?: ($p['price'] ?: 0));
+                                        $availStock = (int)($p['available_stock'] ?? 0);
+                                    ?>
+                                        <tr class="load-prod-row" 
+                                            data-product-id="<?= $pId ?>" 
+                                            data-rate="<?= $rate ?>" 
+                                            data-stock="<?= $availStock ?>" 
+                                            data-name="<?= htmlspecialchars(strtolower($displayName)) ?>" 
+                                            style="border-bottom: 1px solid #f1f5f9;">
+                                            <td style="padding: 8px 12px; vertical-align: middle;">
+                                                <input type="hidden" name="items[<?= $idx ?>][product_id]" value="<?= $pId ?>">
+                                                <div style="font-weight: 600; font-size: 13px; color: #0f172a; line-height: 1.3;">
+                                                    <?= htmlspecialchars($pName) ?>
+                                                </div>
+                                                <?php if ($content): ?>
+                                                    <div style="font-size: 11px; color: #64748b; margin-top: 1px;"><?= htmlspecialchars($content) ?></div>
+                                                <?php endif; ?>
+                                            </td>
+                                            <td style="padding: 8px 12px; vertical-align: middle; text-align: right;">
+                                                <input
+                                                    type="text"
+                                                    name="items[<?= $idx ?>][cases]"
+                                                    class="form-control load-prod-cases"
+                                                    inputmode="numeric"
+                                                    maxlength="4"
+                                                    pattern="[0-9]{1,4}"
+                                                    placeholder="0"
+                                                    value=""
+                                                    oninput="this.value = this.value.replace(/[^0-9]/g, '').slice(0, 4); calculateLoadTotals()"
+                                                    style="width: 90px; padding: 6px 10px; font-size: 13px; font-weight: 700; text-align: center; border-radius: 6px; border: 1px solid #cbd5e1; display: inline-block;"
+                                                >
+                                            </td>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                <?php else: ?>
+                                    <tr>
+                                        <td colspan="2" style="padding: 20px; text-align: center; color: #64748b; font-size: 13px;">
+                                            No products available in catalog.
+                                        </td>
+                                    </tr>
+                                <?php endif; ?>
                             </tbody>
                         </table>
                     </div>
 
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px; flex-wrap: wrap; gap: 8px;">
-                        <button type="button" class="btn-card-action" onclick="addLoadProductRow()" style="font-size: 12px; font-weight: 700; color: #059669; background: #ecfdf5; border: 1px solid #a7f3d0; cursor: pointer; padding: 6px 14px; border-radius: 8px; display: inline-flex; align-items: center; gap: 4px;">
-                            <i class='bx bx-plus'></i> Add Another Product
-                        </button>
                         <div style="font-size: 12px; color: #64748b;">
-                            Total Products: <strong id="loadTotalProductsCount" style="color: #0f172a;">0</strong>
+                            Products entered: <strong id="loadTotalProductsCount" style="color: #059669;">0</strong> / <?= count($catalogProducts) ?>
                         </div>
+                        <button type="button" onclick="clearAllLoadCounts()" style="font-size: 11px; color: #64748b; background: none; border: none; cursor: pointer; text-decoration: underline;">
+                            Clear All Counts
+                        </button>
                     </div>
                 </div>
 
@@ -2013,10 +2058,10 @@ if (!empty($searchQuery)) {
                                 <span id="loadTotalCasesSum">0</span> <span style="font-size: 12px; font-weight: 600; color: #64748b;">Cases</span>
                             </div>
                         </div>
-                        <div style="text-align: right;">
+                        <!-- <div style="text-align: right;">
                             <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #64748b;">Estimated Value</div>
                             <div id="loadTotalValueSum" style="font-size: 18px; font-weight: 800; color: #059669; margin-top: 2px;">₹0.00</div>
-                        </div>
+                        </div> -->
                     </div>
 
                  
@@ -2349,161 +2394,32 @@ if (!empty($searchQuery)) {
 
         let loadProductRowCounter = 0;
 
-        function getLoadProductOptionsHtml(selectedPid = 0) {
-            let html = '<option value="">-- Choose Product --</option>';
-            AOP_PRODUCTS.forEach(p => {
-                const pid = parseInt(p.product_id);
-                const pName = p.product_name || p.name || 'Product';
-                const rate = parseFloat(p.case_price || p.price || 0);
-                const content = p.net_content ? (parseFloat(p.net_content) + ' ' + (p.net_content_unit || '')) : '';
-                const displayName = pName + (content ? ` (${content})` : '');
-                const stock = Math.max(0, parseInt(p.available_stock !== null && p.available_stock !== undefined ? p.available_stock : (p.case_stock || p.stock || 0)));
-                const sel = (pid === parseInt(selectedPid)) ? 'selected' : '';
+        function addLoadProductRow() {
+            // Backward-compatibility stub
+        }
 
-                if (stock <= 0) {
-                    html += `<option value="${pid}" data-rate="${rate}" data-stock="0" data-name="${displayName}" ${sel} style="color: #94a3b8;">${displayName} &bull; ₹${rate.toFixed(2)}/cs (0 cs)</option>`;
+        function removeLoadProductRow() {
+            // Backward-compatibility stub
+        }
+
+        function filterLoadProductRows(query) {
+            const q = (query || '').toLowerCase().trim();
+            const rows = document.querySelectorAll('#loadProductTableBody tr.load-prod-row');
+            rows.forEach(r => {
+                const name = r.getAttribute('data-name') || '';
+                if (!q || name.includes(q)) {
+                    r.style.display = '';
                 } else {
-                    html += `<option value="${pid}" data-rate="${rate}" data-stock="${stock}" data-name="${displayName}" ${sel}>${displayName} &bull; ₹${rate.toFixed(2)}/cs (${stock} cs)</option>`;
+                    r.style.display = 'none';
                 }
             });
-            return html;
         }
 
-        function addLoadProductRow(selectedPid = 0, defaultCases = '') {
-            const tbody = document.getElementById('loadProductTableBody');
-            if (!tbody) return;
-
-            loadProductRowCounter++;
-            const rowId = loadProductRowCounter;
-
-            const tr = document.createElement('tr');
-            tr.className = 'load-prod-row';
-            tr.setAttribute('data-row-id', rowId);
-            tr.style.borderBottom = '1px solid #f1f5f9';
-            tr.innerHTML = `
-                <td style="padding: 6px 2px;width:10%; ">
-                    <select name="items[${rowId}][product_id]" class="form-control load-prod-select" required onchange="handleLoadProdChange(this)" style="font-size: 13px; padding: 6px 8px;">
-                        ${getLoadProductOptionsHtml(selectedPid)}
-                    </select>
-                </td>
-          
-                <td style="padding: 6px 8px; vertical-align: middle;">
-                    <span class="load-prod-rate" style="font-size: 12px; font-weight: 600; color: #334155;">₹0.00</span>
-                </td>
-                <td style="padding: 6px 8px; vertical-align: middle;">
-                    <div style="display: flex; gap: 4px; align-items: center;">
-                        <input
-    type="text"
-    name="items[${rowId}][cases]"
-    class="form-control load-prod-cases"
-    inputmode="numeric"
-    maxlength="4"
-    pattern="[0-9]{1,4}"
-    placeholder="Add Count"
-    value="${defaultCases}"
-    required
-    oninput="this.value = this.value.replace(/[^0-9]/g, '').slice(0, 4); calculateLoadTotals()"
-    style="width: 102px; padding: 5px 4px; font-size: 11px; font-weight: 700;"
->
-                       
-                    </div>
-                </td>
-                <td style="padding: 6px 8px; text-align: right; vertical-align: middle; font-weight: 700; color: #0f172a; font-size: 13px;">
-                    <span class="load-prod-subtotal">₹0.00</span>
-                </td>
-                <td style="padding: 6px 4px; text-align: center; vertical-align: middle;">
-                    <button type="button" class="btn-crud-mini btn-crud-del" onclick="removeLoadProductRow(this)" title="Remove item" style="background: none; border: 1px solid #fee2e2; color: #ef4444; border-radius: 6px; width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer;">
-                        <i class='bx bx-trash' style="font-size: 14px;"></i>
-                    </button>
-                </td>
-            `;
-            tbody.appendChild(tr);
-
-            const sel = tr.querySelector('.load-prod-select');
-            if (sel && selectedPid) {
-                handleLoadProdChange(sel);
-            }
+        function clearAllLoadCounts() {
+            document.querySelectorAll('#loadProductTableBody .load-prod-cases').forEach(inp => {
+                inp.value = '';
+            });
             calculateLoadTotals();
-        }
-
-        function removeLoadProductRow(btn) {
-            const row = btn.closest('tr');
-            const tbody = document.getElementById('loadProductTableBody');
-            if (row) row.remove();
-            if (tbody && tbody.children.length === 0) {
-                addLoadProductRow();
-            }
-            calculateLoadTotals();
-        }
-
-        function handleLoadProdChange(selectElem) {
-            const row = selectElem.closest('tr');
-            if (!row) return;
-
-            const opt = selectElem.options[selectElem.selectedIndex];
-            const badge = row.querySelector('.load-prod-stock-badge');
-            const rateSpan = row.querySelector('.load-prod-rate');
-            const btnMax = row.querySelector('.btn-fill-max');
-
-            if (!opt || !opt.value) {
-                if (badge) {
-                    badge.textContent = '--';
-                    badge.style.background = '#f1f5f9';
-                    badge.style.color = '#64748b';
-                    badge.style.border = 'none';
-                }
-                if (rateSpan) rateSpan.textContent = '₹0.00';
-                if (btnMax) btnMax.style.display = 'none';
-                calculateLoadTotals();
-                return;
-            }
-
-            const stock = parseInt(opt.getAttribute('data-stock') || '0', 10);
-            const rate = parseFloat(opt.getAttribute('data-rate') || '0');
-
-            if (rateSpan) rateSpan.textContent = `₹${rate.toFixed(2)}`;
-
-            if (badge) {
-                if (stock > 20) {
-                    badge.textContent = `${stock} cs`;
-                    badge.style.background = '#ecfdf5';
-                    badge.style.color = '#065f46';
-                    badge.style.border = '1px solid #a7f3d0';
-                } else if (stock > 0) {
-                    badge.textContent = `${stock} cs`;
-                    badge.style.background = '#fffbeb';
-                    badge.style.color = '#92400e';
-                    badge.style.border = '1px solid #fde68a';
-                } else {
-                    badge.textContent = 'Out (0)';
-                    badge.style.background = '#fef2f2';
-                    badge.style.color = '#991b1b';
-                    badge.style.border = '1px solid #fecaca';
-                }
-            }
-
-            if (btnMax) {
-                btnMax.style.display = (stock > 0) ? 'inline-block' : 'none';
-            }
-
-            calculateLoadTotals();
-        }
-
-        function fillRowMaxStock(btn) {
-            const row = btn.closest('tr');
-            if (!row) return;
-            const sel = row.querySelector('.load-prod-select');
-            const casesInput = row.querySelector('.load-prod-cases');
-            if (!sel || !casesInput) return;
-
-            const opt = sel.options[sel.selectedIndex];
-            if (opt && opt.value) {
-                const stock = parseInt(opt.getAttribute('data-stock') || '0', 10);
-                if (stock > 0) {
-                    casesInput.value = stock;
-                    calculateLoadTotals();
-                }
-            }
         }
 
         function calculateLoadTotals() {
@@ -2512,49 +2428,24 @@ if (!empty($searchQuery)) {
             const totalCasesSpan = document.getElementById('loadTotalCasesSum');
             const totalValSpan = document.getElementById('loadTotalValueSum');
             const totalCountSpan = document.getElementById('loadTotalProductsCount');
-            const warnStockBox = document.getElementById('loadStockWarningNotice');
-            const warnStockText = document.getElementById('loadStockWarningText');
             const warnOverloadBox = document.getElementById('loadVehicleOverloadNotice');
             const warnOverloadText = document.getElementById('loadVehicleOverloadText');
 
             let grandCases = 0;
             let grandValue = 0;
             let validItemsCount = 0;
-            let productTotals = {};
 
             if (tbody) {
                 const rows = tbody.querySelectorAll('tr.load-prod-row');
                 rows.forEach(r => {
-                    const sel = r.querySelector('.load-prod-select');
                     const casesInput = r.querySelector('.load-prod-cases');
-                    const subtotalSpan = r.querySelector('.load-prod-subtotal');
-
-                    const pid = parseInt(sel ? sel.value : 0);
                     const cases = parseInt(casesInput ? casesInput.value : 0) || 0;
-                    const opt = sel && sel.selectedIndex >= 0 ? sel.options[sel.selectedIndex] : null;
+                    const rate = parseFloat(r.getAttribute('data-rate') || 0);
 
-                    if (pid > 0 && opt) {
-                        const rate = parseFloat(opt.getAttribute('data-rate') || 0);
-                        const stock = parseInt(opt.getAttribute('data-stock') || 0);
-                        const prodName = opt.getAttribute('data-name') || ('Product #' + pid);
-                        const lineTotal = cases * rate;
-
-                        if (subtotalSpan) {
-                            subtotalSpan.textContent = `₹${lineTotal.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
-                        }
-
-                        if (cases > 0) {
-                            grandCases += cases;
-                            grandValue += lineTotal;
-                            validItemsCount++;
-
-                            if (!productTotals[pid]) {
-                                productTotals[pid] = { name: prodName, cases: 0, stock: stock };
-                            }
-                            productTotals[pid].cases += cases;
-                        }
-                    } else {
-                        if (subtotalSpan) subtotalSpan.textContent = '₹0.00';
+                    if (cases > 0) {
+                        grandCases += cases;
+                        grandValue += (cases * rate);
+                        validItemsCount++;
                     }
                 });
             }
@@ -2563,41 +2454,23 @@ if (!empty($searchQuery)) {
             if (totalValSpan) totalValSpan.textContent = `₹${grandValue.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
             if (totalCountSpan) totalCountSpan.textContent = validItemsCount;
 
-            // Check warehouse stock overage
-            let stockOverageMsgs = [];
-            for (let pid in productTotals) {
-                const pt = productTotals[pid];
-                if (pt.cases > pt.stock) {
-                    stockOverageMsgs.push(`${pt.name} (${pt.cases} cs requested vs ${pt.stock} cs available)`);
-                }
-            }
-
-            if (warnStockBox && warnStockText) {
-                if (stockOverageMsgs.length > 0) {
-                    warnStockText.innerHTML = ``;
-                    warnStockBox.style.display = 'block';
-                } else {
-                    warnStockBox.style.display = 'none';
-                }
-            }
-
             // Check vehicle fleet capacity
-            if (warnOverloadBox && warnOverloadText && vSel) {
-                const opt = vSel.options[vSel.selectedIndex];
-                if (opt && opt.value) {
-                    const cap = parseInt(opt.getAttribute('data-capacity') || '100', 10);
-                    const loaded = parseInt(opt.getAttribute('data-loaded') || '0', 10);
-                    const rem = Math.max(0, cap - loaded);
-                    if (grandCases > rem) {
-                        warnOverloadText.innerHTML = `<strong>Stock Warning:</strong> No ${grandCases} cases Available, Remaining (${rem} cs) `;
-                        warnOverloadBox.style.display = 'block';
-                    } else {
-                        warnOverloadBox.style.display = 'none';
-                    }
-                } else {
-                    warnOverloadBox.style.display = 'none';
-                }
-            }
+            // if (warnOverloadBox && warnOverloadText && vSel) {
+            //     const opt = vSel.options[vSel.selectedIndex];
+            //     if (opt && opt.value) {
+            //         const cap = parseInt(opt.getAttribute('data-capacity') || '100', 10);
+            //         const loaded = parseInt(opt.getAttribute('data-loaded') || '0', 10);
+            //         const rem = Math.max(0, cap - loaded);
+            //         if (grandCases > rem) {
+            //             warnOverloadText.innerHTML = `<strong>Capacity Warning:</strong> ${grandCases} cases to load exceeds remaining vehicle capacity (${rem} cs space available).`;
+            //             warnOverloadBox.style.display = 'block';
+            //         } else {
+            //             warnOverloadBox.style.display = 'none';
+            //         }
+            //     } else {
+            //         warnOverloadBox.style.display = 'none';
+            //     }
+            // }
         }
 
         function validateLoadProductForm(form) {
@@ -2614,47 +2487,21 @@ if (!empty($searchQuery)) {
             if (!tbody) return false;
 
             const rows = tbody.querySelectorAll('tr.load-prod-row');
-            if (rows.length === 0) {
-                alert('Please add at least one product to load.');
-                return false;
-            }
-
             let validCount = 0;
-            let hasInvalidRow = false;
+            let totalCases = 0;
 
             rows.forEach(r => {
-                const sel = r.querySelector('.load-prod-select');
                 const casesInput = r.querySelector('.load-prod-cases');
-                const pid = parseInt(sel ? sel.value : 0);
-                const cases = parseInt(casesInput ? casesInput.value : 0);
-
-                if (pid > 0 && cases > 0) {
+                const cases = parseInt(casesInput ? casesInput.value : 0) || 0;
+                if (cases > 0) {
                     validCount++;
-                } else if (pid > 0 && (!cases || cases <= 0)) {
-                    alert('Please enter a positive number of cases (at least 1 case) for all selected products.');
-                    if (casesInput) casesInput.focus();
-                    hasInvalidRow = true;
-                    return false;
-                } else if (pid <= 0 && cases > 0) {
-                    alert('Please choose a product from the catalog for all entered rows.');
-                    if (sel) sel.focus();
-                    hasInvalidRow = true;
-                    return false;
+                    totalCases += cases;
                 }
             });
 
-            if (hasInvalidRow) return false;
-
-            if (validCount === 0) {
-                alert('Please add at least one product with a valid number of cases (minimum 1 case).');
+            if (validCount === 0 || totalCases <= 0) {
+                alert('Please enter a count (at least 1 case) for at least one product.');
                 return false;
-            }
-
-            const warnStockBox = document.getElementById('loadStockWarningNotice');
-            if (warnStockBox && warnStockBox.style.display !== 'none') {
-                if (!confirm("Notice: One or more selected items exceed warehouse available stock. Do you still want to proceed with loading?")) {
-                    return false;
-                }
             }
 
             return true;
@@ -2681,9 +2528,11 @@ if (!empty($searchQuery)) {
                 title.textContent = 'Load Products onto Vehicle';
             }
 
-            const tbody = document.getElementById('loadProductTableBody');
-            if (tbody && tbody.children.length === 0) {
-                addLoadProductRow();
+            // Reset search filter
+            const sInput = document.getElementById('loadProductSearchInput');
+            if (sInput) {
+                sInput.value = '';
+                filterLoadProductRows('');
             }
 
             updateVehicleCapacityHint();

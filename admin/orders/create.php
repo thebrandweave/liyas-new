@@ -39,6 +39,16 @@ if (isset($_GET['action']) && $_GET['action'] === 'get_live_stock') {
     exit;
 }
 
+// Quick AJAX endpoint to check prior pending dues for a shop or phone
+if (isset($_GET['action']) && $_GET['action'] === 'check_prior_due') {
+    header('Content-Type: application/json');
+    $checkShop = trim($_GET['shop'] ?? '');
+    $checkPhone = trim($_GET['phone'] ?? '');
+    $dues = getShopPendingDueDetails($pdo, $checkShop, $checkPhone, 0, null);
+    echo json_encode($dues);
+    exit;
+}
+
 // Load active zones dynamically
 $zones_stmt = $pdo->query("SELECT id, name, slug FROM zones WHERE status = 'active' ORDER BY name ASC");
 $zones = $zones_stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -616,6 +626,14 @@ if (empty($form_items)) {
                                 <label class="form-label" for="address">Full Address <span style="color: #94a3b8; font-weight: 400; font-size: 12px;">(Optional)</span></label>
                                 <input type="text" name="address" id="address" class="form-control" placeholder="Street, Building, Landmark..." value="<?= htmlspecialchars($_POST['address'] ?? '') ?>">
                             </div> -->
+                        </div>
+
+                        <!-- Prior Due Notice Alert -->
+                        <div id="shopDueAlert" style="display: none; background: #fffaf0; border: 1.5px solid #fed7d7; border-radius: 8px; padding: 10px 14px; margin-top: 8px; margin-bottom: 8px;">
+                            <span style="font-size: 13px; font-weight: 700; color: #b91c1c; display: flex; align-items: center; gap: 6px;">
+                                <i class='bx bx-error-circle' style="font-size: 18px;"></i>
+                                Notice: This shop has an outstanding pending due of <span id="dispShopDueVal" style="font-weight: 800;">₹0.00</span> (<span id="dispShopDueCount">0</span> unpaid bills).
+                            </span>
                         </div>
 
                         <!-- Multi-Product Repeater Section -->
@@ -1218,7 +1236,36 @@ if (empty($form_items)) {
             setInterval(() => {
                 refreshLiveStocks(false);
             }, 15000);
+
+            // Initial check for prior dues if shop or phone is prefilled
+            checkAdminShopDues();
         }
+
+        function checkAdminShopDues() {
+            const shop = (document.getElementById('shop_name')?.value || '').trim();
+            const phone = (document.getElementById('phone')?.value || '').trim();
+            const alertBox = document.getElementById('shopDueAlert');
+            if (!alertBox) return;
+            if (!shop && !phone) {
+                alertBox.style.display = 'none';
+                return;
+            }
+            fetch('create.php?action=check_prior_due&shop=' + encodeURIComponent(shop) + '&phone=' + encodeURIComponent(phone))
+                .then(res => res.json())
+                .then(data => {
+                    if (data && data.has_due && data.total_due > 0) {
+                        alertBox.style.display = 'block';
+                        document.getElementById('dispShopDueVal').textContent = '₹' + parseFloat(data.total_due).toFixed(2);
+                        document.getElementById('dispShopDueCount').textContent = data.due_count;
+                    } else {
+                        alertBox.style.display = 'none';
+                    }
+                })
+                .catch(() => {});
+        }
+
+        document.getElementById('shop_name')?.addEventListener('blur', checkAdminShopDues);
+        document.getElementById('phone')?.addEventListener('blur', checkAdminShopDues);
 
         if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', initPage);

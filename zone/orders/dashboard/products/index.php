@@ -737,10 +737,10 @@ $total_available_stock = max(0, $total_raw_stock - (int)$orderTotals['total_vehi
             </a>
 
             <div class="header-actions">
-                <a href="<?= BASE_URL ?>/zone/orders/dashboard/" class="btn-header" title="Go back to Live Multi-Zone Orders Hub">
+                <!-- <a href="<?= BASE_URL ?>/zone/orders/dashboard/" class="btn-header" title="Go back to Live Multi-Zone Orders Hub">
                     <i class='bx bx-shopping-bag'></i>
                     <span>Orders Dashboard</span>
-                </a>
+                </a> -->
                 <a href="<?= BASE_URL ?>/zone/orders/dashboard/vehicles/" class="btn-header" style="color: #1e40af; background: #eff6ff; border-color: #bfdbfe; font-weight: 700;" title="Vehicles & Line-Sale Loading">
                     <i class='bx bxs-truck' style="color: #2563eb; font-size: 16px;"></i>
                     <span>Vehicles</span>

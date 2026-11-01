@@ -44,4 +44,35 @@ try {
     header("Location: " . $loginUrl);
     exit;
 }
+
+// Ensure session has role and name
+if (!isset($_SESSION['admin_role'])) {
+    $roleStmt = $pdo->prepare("SELECT role, username FROM admins WHERE admin_id = ?");
+    $roleStmt->execute([$admin_id]);
+    $adminData = $roleStmt->fetch(PDO::FETCH_ASSOC);
+    if ($adminData) {
+        $_SESSION['admin_role'] = $adminData['role'] ?? 'superadmin';
+        $_SESSION['admin_name'] = $adminData['username'] ?? 'Admin';
+    }
+}
+
+// Enforce role-based access control for staff
+$userRole = strtolower($_SESSION['admin_role'] ?? 'superadmin');
+if ($userRole === 'staff') {
+    $currentAdminDir = basename(dirname($_SERVER['SCRIPT_FILENAME']));
+    $currentAdminFile = basename($_SERVER['SCRIPT_FILENAME']);
+    $allowedStaffDirs = ['vehicles', 'zones', 'orders', 'shop-rewards'];
+
+    if ($currentAdminDir !== 'admin') {
+        if (!in_array($currentAdminDir, $allowedStaffDirs)) {
+            header("Location: " . BASE_URL . "/admin/orders/index.php");
+            exit;
+        }
+    } else {
+        if (!in_array($currentAdminFile, ['logout.php', 'login.php', 'index.php'])) {
+            header("Location: " . BASE_URL . "/admin/orders/index.php");
+            exit;
+        }
+    }
+}
 ?>

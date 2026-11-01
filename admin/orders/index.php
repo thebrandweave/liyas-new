@@ -227,6 +227,22 @@ $orders_query = "
         p.net_content_unit,
         u.name as web_user_name,
         r.bill_number,
+        r.cash_amount as receipt_cash,
+        r.credited_amount as receipt_credit,
+        r.due_amount as receipt_due,
+        r.payment_type as receipt_payment_type,
+        (SELECT COALESCE(SUM(r2.due_amount), 0)
+         FROM receipts r2
+         JOIN orders o2 ON r2.order_id = o2.order_id
+         WHERE r2.due_amount > 0
+           AND o2.status != 'cancelled'
+           AND o2.order_id != o.order_id
+           AND (
+               (TRIM(LOWER(o2.shop_name)) = TRIM(LOWER(o.shop_name)) AND TRIM(o.shop_name) != '')
+               OR (TRIM(LOWER(o2.customer_name)) = TRIM(LOWER(o.customer_name)) AND TRIM(o.customer_name) != '')
+               OR (o.phone != '' AND LENGTH(o.phone) >= 7 AND (o2.phone = o.phone OR o2.phone LIKE CONCAT('%', RIGHT(o.phone, 10))))
+           )
+        ) AS prior_due_amount,
         COALESCE(o.vehicle_id, (SELECT vl.vehicle_id FROM vehicle_loads vl WHERE vl.order_id = o.order_id AND vl.is_active = 1 LIMIT 1)) AS resolved_vehicle_id,
         veh.vehicle_number AS assigned_vehicle_number,
         veh.vehicle_name AS assigned_vehicle_name,
@@ -322,8 +338,13 @@ function renderOrdersTbodyRows(array $orders, string $status_filter = 'all', str
                     <?php endif; ?>
                 </td>
                 <td>
-                    <div style="font-weight: 600; color: #1e293b;">
-                        <?= $shopName ?>
+                    <div style="font-weight: 600; color: #1e293b; display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                        <span><?= $shopName ?></span>
+                        <?php if ((float)($order['prior_due_amount'] ?? 0) > 0): ?>
+                            <span style="background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 4px; display: inline-flex; align-items: center; gap: 3px;" title="Shop has prior pending due from earlier deliveries">
+                                <i class='bx bxs-error-circle'></i> Prior Due: <?= formatCurrency($order['prior_due_amount']) ?>
+                            </span>
+                        <?php endif; ?>
                     </div>
                   <?php if (!empty($order['location'])): ?>
     <div style="font-size: 12px; color: #64748b;">
@@ -398,6 +419,24 @@ function renderOrdersTbodyRows(array $orders, string $status_filter = 'all', str
                     <?php if ((float)$order['discount'] > 0): ?>
                         <div style="font-size: 11px; color: #ef4444;">
                             - <?= formatCurrency($order['discount']) ?> off
+                        </div>
+                    <?php endif; ?>
+                    <?php 
+                    $adminCash = (float)($order['receipt_cash'] ?? 0);
+                    $adminDue = (float)($order['receipt_due'] ?? 0);
+                    $adminCredit = (float)($order['receipt_credit'] ?? 0);
+                    ?>
+                    <?php if (!empty($order['bill_number'])): ?>
+                        <div style="margin-top: 4px; display: flex; flex-direction: column; gap: 2px;">
+                            <?php if ($adminCash > 0): ?>
+                                <span style="font-size: 11px; color: #059669; font-weight: 600;">Cash: <?= formatCurrency($adminCash) ?></span>
+                            <?php endif; ?>
+                            <?php if ($adminCredit > 0): ?>
+                                <span style="font-size: 11px; color: #d97706; font-weight: 600;">Credit: <?= formatCurrency($adminCredit) ?></span>
+                            <?php endif; ?>
+                            <?php if ($adminDue > 0): ?>
+                                <span style="font-size: 11px; color: #dc2626; font-weight: 700; background: #fee2e2; padding: 1px 5px; border-radius: 3px; display: inline-block; width: fit-content;" title="Outstanding Due on this bill">Due: <?= formatCurrency($adminDue) ?></span>
+                            <?php endif; ?>
                         </div>
                     <?php endif; ?>
                 </td>

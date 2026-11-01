@@ -73,6 +73,7 @@ try {
         .role-badge.superadmin { background: #fef3c7; color: #92400e; }
         .role-badge.editor { background: #e0f2fe; color: #0369a1; }
         .role-badge.moderator { background: #e0e7ff; color: #3730a3; }
+        .role-badge.staff { background: #ecfdf5; color: #065f46; font-weight: 600; }
         .current-user { background: #f0f9ff; }
     </style>
 </head>

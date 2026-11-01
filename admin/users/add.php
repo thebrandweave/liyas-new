@@ -77,6 +77,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_admin'])) {
                         <div class="form-group" style="margin-bottom: 2rem;">
                             <label>Role *</label>
                             <select name="role" class="form-select" required>
+                                <option value="staff">Staff (Vehicles, Zones, Orders, Shop Rewards only)</option>
                                 <option value="editor">Editor</option>
                                 <option value="moderator">Moderator</option>
                                 <option value="superadmin">Super Admin</option>
