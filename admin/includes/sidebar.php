@@ -18,7 +18,8 @@ $base_path = (in_array($current_dir_name, [
     'social-links',
     'campaigns',
     'revenue',
-    'vehicles'
+    'vehicles',
+    'shops'
 ])) ? '../' : './';
 
 // Current page logic
@@ -51,6 +52,7 @@ $is_staff = ($admin_role === 'staff');
 $products_count = 0;
 $zones_count = 0;
 $vehicles_count = 0;
+$shops_count = 0;
 $pending_orders_count = 0;
 $users_count = 0;
 $notifications_count = 0;
@@ -65,6 +67,9 @@ try {
     if (isset($pdo)) {
         $zones_count = (int)$pdo->query("SELECT COUNT(*) FROM zones WHERE status='active'")->fetchColumn();
         $vehicles_count = (int)$pdo->query("SELECT COUNT(*) FROM vehicles WHERE status != 'inactive'")->fetchColumn();
+        try {
+            $shops_count = (int)$pdo->query("SELECT COUNT(*) FROM shops")->fetchColumn();
+        } catch (Exception $e) { $shops_count = 0; }
         $pending_orders_count = (int)$pdo->query("SELECT COUNT(*) FROM orders WHERE status='pending'")->fetchColumn();
 
         if (!$is_staff) {
@@ -223,6 +228,15 @@ $more_badge_total = $ads_count + $reviews_pending_count + $social_count + $subs_
                 <?php endif; ?>
             </a>
 
+            <a href="<?= $base_path ?>shops/index.php"
+               class="nav-item <?= ($current_dir==='shops' || $current_page==='shops')?'active':'' ?>">
+                <i class='bx bxs-store-alt'></i>
+                <span>Shops</span>
+                <?php if ($shops_count > 0): ?>
+                    <span class="nav-badge"><?= $shops_count ?></span>
+                <?php endif; ?>
+            </a>
+
             <a href="<?= $base_path ?>shop-rewards/index.php"
                class="nav-item <?= ($current_dir==='shop-rewards' || $current_page==='shop-rewards')?'active':'' ?>">
                 <i class='bx bxs-gift'></i>
@@ -279,6 +293,15 @@ $more_badge_total = $ads_count + $reviews_pending_count + $social_count + $subs_
                 <span>Vehicles</span>
                 <?php if ($vehicles_count > 0): ?>
                     <span class="nav-badge"><?= $vehicles_count ?></span>
+                <?php endif; ?>
+            </a>
+
+            <a href="<?= $base_path ?>shops/index.php"
+               class="nav-item <?= ($current_dir==='shops' || $current_page==='shops')?'active':'' ?>">
+                <i class='bx bxs-store-alt'></i>
+                <span>Shops</span>
+                <?php if ($shops_count > 0): ?>
+                    <span class="nav-badge"><?= $shops_count ?></span>
                 <?php endif; ?>
             </a>
 

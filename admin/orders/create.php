@@ -91,6 +91,12 @@ foreach ($products as $p) {
     ];
 }
 
+// Load registered shops for autocomplete
+$allShops = [];
+try {
+    $allShops = $pdo->query("SELECT id, shop_name, location, phone, zone_id, vehicle_id FROM shops ORDER BY shop_name ASC")->fetchAll(PDO::FETCH_ASSOC);
+} catch (Exception $e) {}
+
 // Initial items state for form rendering
 $form_items = [];
 $reorder_id = (int)($_GET['reorder_id'] ?? ($_POST['reorder_id'] ?? 0));
@@ -573,7 +579,12 @@ if (empty($form_items)) {
                         <div class="grid-2">
                             <div class="form-group">
                                 <label class="form-label" for="shop_name">Shop Name / Customer Name <span style="color: #ef4444;">*</span></label>
-                                <input type="text" name="shop_name" id="shop_name" class="form-control" placeholder="e.g. ABC Supermarket" required value="<?= htmlspecialchars($_POST['shop_name'] ?? '') ?>" autofocus>
+                                <input type="text" name="shop_name" id="shop_name" list="adminShopsList" class="form-control" placeholder="e.g. ABC Supermarket" required value="<?= htmlspecialchars($_POST['shop_name'] ?? '') ?>" autofocus autocomplete="off">
+                                <datalist id="adminShopsList">
+                                    <?php foreach ($allShops as $sh): ?>
+                                        <option value="<?= htmlspecialchars($sh['shop_name']) ?>"><?= htmlspecialchars(!empty($sh['location']) ? $sh['location'] : '') ?></option>
+                                    <?php endforeach; ?>
+                                </datalist>
                             </div>
                             <div class="form-group">
                                 <label class="form-label" for="location">Location / Area <span style="color: #ef4444;">*</span></label>
@@ -1266,6 +1277,30 @@ if (empty($form_items)) {
 
         document.getElementById('shop_name')?.addEventListener('blur', checkAdminShopDues);
         document.getElementById('phone')?.addEventListener('blur', checkAdminShopDues);
+
+        // Auto-fill location, zone, and vehicle on shop selection
+        const registeredAdminShops = <?= json_encode($allShops) ?>;
+        document.getElementById('shop_name')?.addEventListener('input', function() {
+            const val = this.value.trim().toLowerCase();
+            const match = registeredAdminShops.find(s => s.shop_name.toLowerCase() === val);
+            if (match) {
+                const locInp = document.getElementById('location');
+                const phoneInp = document.getElementById('phone');
+                const zoneSel = document.getElementById('zone_id');
+                const vehSel = document.getElementById('vehicle_id');
+
+                if (locInp && match.location) locInp.value = match.location;
+                if (phoneInp && match.phone && !phoneInp.value) phoneInp.value = match.phone;
+                if (zoneSel && match.zone_id) {
+                    zoneSel.value = match.zone_id;
+                    handleZoneChange(match.zone_id);
+                }
+                if (vehSel && match.vehicle_id) {
+                    setTimeout(() => { vehSel.value = match.vehicle_id; }, 100);
+                }
+                checkAdminShopDues();
+            }
+        });
 
         if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', initPage);

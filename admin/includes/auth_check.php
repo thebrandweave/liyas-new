@@ -61,7 +61,7 @@ $userRole = strtolower($_SESSION['admin_role'] ?? 'superadmin');
 if ($userRole === 'staff') {
     $currentAdminDir = basename(dirname($_SERVER['SCRIPT_FILENAME']));
     $currentAdminFile = basename($_SERVER['SCRIPT_FILENAME']);
-    $allowedStaffDirs = ['vehicles', 'zones', 'orders', 'shop-rewards'];
+    $allowedStaffDirs = ['vehicles', 'zones', 'orders', 'shop-rewards', 'shops'];
 
     if ($currentAdminDir !== 'admin') {
         if (!in_array($currentAdminDir, $allowedStaffDirs)) {

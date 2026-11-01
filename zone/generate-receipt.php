@@ -691,6 +691,18 @@ $def_discount   = ($reorder_id > 0) ? 0.00 : (float)($order['discount'] ?? 0);
 // Load prior pending dues for this shop/phone
 $priorDues = getShopPendingDueDetails($pdo, $def_shop ?: $def_customer, $def_phone, $order_id, $zone_id);
 
+// Load registered shops for autocomplete in this zone
+$zoneShopsList = [];
+try {
+    if (!empty($zone_id)) {
+        $shStmt = $pdo->prepare("SELECT id, shop_name, location, phone FROM shops WHERE zone_id = ? OR zone_id IS NULL OR zone_id = 0 ORDER BY shop_name ASC");
+        $shStmt->execute([(int)$zone_id]);
+    } else {
+        $shStmt = $pdo->query("SELECT id, shop_name, location, phone FROM shops ORDER BY shop_name ASC");
+    }
+    $zoneShopsList = $shStmt->fetchAll(PDO::FETCH_ASSOC);
+} catch (Exception $e) {}
+
 // Categorize items into regular billed items
 $regular_items = [];
 
@@ -1437,7 +1449,12 @@ foreach ($vehicle_products as $pid => $vp) {
 
                 <div class="form-group">
                     <label class="form-label" for="shop_name">Shop / Customer Name <span style="color: #ef4444;">*</span></label>
-                    <input type="text" name="shop_name" id="shop_name" class="form-control" required value="<?= htmlspecialchars($_POST['shop_name'] ?? $def_shop) ?>" placeholder="e.g. Metro Supermarket">
+                    <input type="text" name="shop_name" id="shop_name" list="shopsDatalist" class="form-control" required value="<?= htmlspecialchars($_POST['shop_name'] ?? $def_shop) ?>" placeholder="e.g. Metro Supermarket" autocomplete="off">
+                    <datalist id="shopsDatalist">
+                        <?php foreach ($zoneShopsList as $zs): ?>
+                            <option value="<?= htmlspecialchars($zs['shop_name']) ?>"><?= htmlspecialchars(!empty($zs['location']) ? "{$zs['location']}" : '') ?></option>
+                        <?php endforeach; ?>
+                    </datalist>
                 </div>
 
                 <div class="grid-2">
@@ -2504,6 +2521,20 @@ foreach ($vehicle_products as $pid => $vp) {
 
         document.getElementById('shop_name')?.addEventListener('blur', checkShopDuesAjax);
         document.getElementById('phone')?.addEventListener('blur', checkShopDuesAjax);
+
+        // Auto-fill location and phone when shop is selected from datalist
+        const registeredZoneShops = <?= json_encode($zoneShopsList) ?>;
+        document.getElementById('shop_name')?.addEventListener('input', function() {
+            const val = this.value.trim().toLowerCase();
+            const match = registeredZoneShops.find(s => s.shop_name.toLowerCase() === val);
+            if (match) {
+                const placeInp = document.getElementById('place');
+                const phoneInp = document.getElementById('phone');
+                if (placeInp && match.location) placeInp.value = match.location;
+                if (phoneInp && match.phone && !phoneInp.value) phoneInp.value = match.phone;
+                checkShopDuesAjax();
+            }
+        });
 
         // Due Card Helper Functions
         function setDueFull() {
