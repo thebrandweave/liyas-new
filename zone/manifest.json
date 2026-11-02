@@ -1,0 +1,23 @@
+{
+  "name": "Liyas Zone Portal",
+  "short_name": "Liyas Zone",
+  "description": "Liyas Mineral Water - Delivery Zone Portal & Offline Receipt System",
+  "start_url": "./login.php",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0b1329",
+  "theme_color": "#2563eb",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "../assets/images/logo/logo-bg.jpg",
+      "sizes": "192x192",
+      "type": "image/jpeg"
+    },
+    {
+      "src": "../assets/images/logo/logo-bg.jpg",
+      "sizes": "512x512",
+      "type": "image/jpeg"
+    }
+  ]
+}
