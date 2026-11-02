@@ -154,8 +154,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // 1. One-Time Device Authorization Submission
     if (isset($_POST['authorize_device'])) {
         $enteredMasterPin = trim((string)($_POST['master_pin'] ?? ''));
-        $deviceName = trim((string)($_POST['device_name'] ?? 'Staff Mobile Phone'));
-        if (empty($deviceName)) $deviceName = 'Staff Mobile Phone';
+        $deviceName = 'Authorized Staff Phone';
 
         if ($enteredMasterPin === $masterPin || strcasecmp($enteredMasterPin, 'ZONE2026') === 0) {
             $newToken = 'DEV-' . bin2hex(random_bytes(16));
@@ -172,7 +171,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $_SESSION['liyas_device_token'] = $newToken;
             $deviceToken = $newToken;
             $isDeviceAuthorized = true;
-            $successMsg = "Device '{$deviceName}' authorized permanently! Now enter your 4-digit Zone Access Code.";
+            $successMsg = "Phone authorized permanently! Now enter your 4-digit Zone Access Code.";
         } else {
             $error = "Invalid Admin Master Setup PIN. This device is not authorized.";
         }
@@ -619,10 +618,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <!-- STEP 1: ONE-TIME ADMIN MASTER PIN FORM -->
                 <form action="<?= $dynamicBaseUrl ?>/zone/login.php" method="POST" autocomplete="off">
                     <input type="hidden" name="authorize_device" value="1">
-                    <div class="form-group">
-                        <label class="form-label" for="device_name">Phone / Staff Name</label>
-                        <input type="text" name="device_name" id="device_name" class="input-field" placeholder="e.g. Driver Abbas Phone" required>
-                    </div>
                     <div class="form-group">
                         <label class="form-label" for="master_pin">Admin Master Setup PIN</label>
                         <input type="password" name="master_pin" id="master_pin" class="input-field" inputmode="numeric" placeholder="Enter Admin Master PIN..." required autofocus style="text-align: center; letter-spacing: 0.2em; font-size: 20px;">
