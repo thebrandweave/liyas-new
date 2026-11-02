@@ -94,9 +94,76 @@ foreach ($products as $p) {
 // Load registered shops for autocomplete
 $allShops = [];
 try {
-    $allShops = $pdo->query("SELECT id, shop_name, location, phone, zone_id, vehicle_id FROM shops ORDER BY shop_name ASC")->fetchAll(PDO::FETCH_ASSOC);
-} catch (Exception $e) {}
+    $zoneNameMap = [];
+    foreach ($zones as $z) {
+        $zoneNameMap[(int)$z['id']] = $z['name'];
+    }
 
+    $seenShops = [];
+    $shRows = $pdo->query("
+        SELECT s.id, s.shop_name, s.location, s.phone, s.zone_id, s.vehicle_id, z.name as zone_name
+        FROM shops s
+        LEFT JOIN zones z ON s.zone_id = z.id
+        ORDER BY s.shop_name ASC
+    ")->fetchAll(PDO::FETCH_ASSOC);
+
+    foreach ($shRows as $s) {
+        $nameTrim = trim($s['shop_name'] ?? '');
+        if ($nameTrim !== '') {
+            $key = strtolower($nameTrim);
+            if (!isset($seenShops[$key])) {
+                $seenShops[$key] = true;
+                $allShops[] = [
+                    'id'         => (int)$s['id'],
+                    'shop_name'  => $nameTrim,
+                    'location'   => trim($s['location'] ?? ''),
+                    'phone'      => trim($s['phone'] ?? ''),
+                    'zone_id'    => (int)($s['zone_id'] ?? 0),
+                    'zone_name'  => trim($s['zone_name'] ?? ($zoneNameMap[(int)($s['zone_id'] ?? 0)] ?? '')),
+                    'vehicle_id' => (int)($s['vehicle_id'] ?? 0)
+                ];
+            }
+        }
+    }
+
+    $orderShops = $pdo->query("
+        SELECT 
+            DISTINCT TRIM(COALESCE(NULLIF(shop_name, ''), customer_name)) as shop_name,
+            MAX(location) as location,
+            MAX(phone) as phone,
+            MAX(zone_id) as zone_id,
+            MAX(vehicle_id) as vehicle_id
+        FROM orders
+        WHERE (shop_name IS NOT NULL AND TRIM(shop_name) != '')
+           OR (customer_name IS NOT NULL AND TRIM(customer_name) != '')
+        GROUP BY TRIM(COALESCE(NULLIF(shop_name, ''), customer_name))
+        ORDER BY shop_name ASC
+    ")->fetchAll(PDO::FETCH_ASSOC);
+
+    foreach ($orderShops as $os) {
+        $nameTrim = trim($os['shop_name'] ?? '');
+        if ($nameTrim !== '') {
+            $key = strtolower($nameTrim);
+            if (!isset($seenShops[$key])) {
+                $seenShops[$key] = true;
+                $zid = (int)($os['zone_id'] ?? 0);
+                $allShops[] = [
+                    'id'         => 0,
+                    'shop_name'  => $nameTrim,
+                    'location'   => trim($os['location'] ?? ''),
+                    'phone'      => trim($os['phone'] ?? ''),
+                    'zone_id'    => $zid,
+                    'zone_name'  => $zoneNameMap[$zid] ?? '',
+                    'vehicle_id' => (int)($os['vehicle_id'] ?? 0)
+                ];
+            }
+        }
+    }
+
+    usort($allShops, function($a, $b) {
+        return strcasecmp($a['shop_name'], $b['shop_name']);
+    });
+} catch (Exception $e) {}
 // Initial items state for form rendering
 $form_items = [];
 $reorder_id = (int)($_GET['reorder_id'] ?? ($_POST['reorder_id'] ?? 0));
@@ -451,6 +518,148 @@ if (empty($form_items)) {
         .badge-stock.low-stock { background: #fef3c7; color: #b45309; }
         .badge-stock.out-of-stock { background: #fee2e2; color: #b91c1c; }
 
+        /* Searchable Shop Dropdown (Combobox) */
+        .searchable-combobox-wrap {
+            position: relative;
+            width: 100%;
+        }
+        .shop-search-dropdown {
+            position: absolute;
+            top: calc(100% + 4px);
+            left: 0;
+            right: 0;
+            background: #ffffff;
+            border: 1.5px solid #cbd5e1;
+            border-radius: 12px;
+            box-shadow: 0 14px 30px -4px rgba(15, 23, 42, 0.18), 0 4px 10px -2px rgba(15, 23, 42, 0.08);
+            z-index: 99999;
+            max-height: 330px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            animation: fadeInSlideDown 0.15s ease-out;
+        }
+        @keyframes fadeInSlideDown {
+            from { opacity: 0; transform: translateY(-6px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .shop-dropdown-search-box {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            background: #f8fafc;
+            border-bottom: 1px solid #e2e8f0;
+            position: sticky;
+            top: 0;
+            z-index: 2;
+        }
+        .shop-dropdown-search-box input {
+            flex: 1;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            padding: 6px 10px;
+            font-size: 12.5px;
+            outline: none;
+            background: #ffffff;
+            color: #0f172a;
+        }
+        .shop-dropdown-search-box input:focus {
+            border-color: #2563eb;
+            box-shadow: 0 0 0 2px rgba(37,99,235,0.1);
+        }
+        .shop-count-badge {
+            font-size: 11px;
+            font-weight: 700;
+            background: #e2e8f0;
+            color: #475569;
+            padding: 2px 7px;
+            border-radius: 6px;
+            white-space: nowrap;
+        }
+        .shop-dropdown-list {
+            overflow-y: auto;
+            max-height: 270px;
+            padding: 4px 0;
+        }
+        .shop-dropdown-item {
+            padding: 10px 14px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            border-bottom: 1px solid #f1f5f9;
+            transition: background 0.12s ease;
+        }
+        .shop-dropdown-item:last-child {
+            border-bottom: none;
+        }
+        .shop-dropdown-item:hover, .shop-dropdown-item.active {
+            background: #eff6ff;
+        }
+        .shop-item-info {
+            flex: 1;
+            min-width: 0;
+        }
+        .shop-item-name {
+            font-size: 13.5px;
+            font-weight: 700;
+            color: #0f172a;
+            line-height: 1.3;
+        }
+        .shop-item-meta {
+            font-size: 11.5px;
+            color: #64748b;
+            margin-top: 3px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .shop-item-meta span {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .shop-item-badges {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 4px;
+            flex-shrink: 0;
+        }
+        .shop-zone-pill {
+            font-size: 10px;
+            font-weight: 800;
+            padding: 2px 6px;
+            border-radius: 4px;
+            background: #e0f2fe;
+            color: #0369a1;
+            text-transform: uppercase;
+        }
+        .shop-dropdown-empty {
+            padding: 16px 14px;
+            text-align: center;
+            color: #64748b;
+            font-size: 12.5px;
+        }
+        .shop-dropdown-new-option {
+            padding: 10px 14px;
+            background: #f0fdf4;
+            border-bottom: 1.5px solid #bbf7d0;
+            color: #15803d;
+            font-size: 12.5px;
+            font-weight: 700;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .shop-dropdown-new-option:hover {
+            background: #dcfce7;
+        }
+
         .btn-add-product-row {
             display: inline-flex;
             align-items: center;
@@ -577,14 +786,34 @@ if (empty($form_items)) {
                         </div>
 
                         <div class="grid-2">
-                            <div class="form-group">
-                                <label class="form-label" for="shop_name">Shop Name / Customer Name <span style="color: #ef4444;">*</span></label>
-                                <input type="text" name="shop_name" id="shop_name" list="adminShopsList" class="form-control" placeholder="e.g. ABC Supermarket" required value="<?= htmlspecialchars($_POST['shop_name'] ?? '') ?>" autofocus autocomplete="off">
-                                <datalist id="adminShopsList">
-                                    <?php foreach ($allShops as $sh): ?>
-                                        <option value="<?= htmlspecialchars($sh['shop_name']) ?>"><?= htmlspecialchars(!empty($sh['location']) ? $sh['location'] : '') ?></option>
-                                    <?php endforeach; ?>
-                                </datalist>
+                            <div class="form-group" style="position: relative;">
+                                <label class="form-label" for="shop_name" style="display: flex; justify-content: space-between; align-items: center;">
+                                    <span>Shop Name / Customer Name <span style="color: #ef4444;">*</span></span>
+                                    <span class="shop-badge-hint" onclick="toggleAdminShopDropdown()" style="font-size: 11px; font-weight: 700; color: #2563eb; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;" title="Click to browse registered shops">
+                                        <i class='bx bx-list-ul'></i> Browse (<span id="adminShopsTotalCount"><?= count($allShops) ?></span>)
+                                    </span>
+                                </label>
+                                <div class="searchable-combobox-wrap" style="position: relative;">
+                                    <input type="text" name="shop_name" id="shop_name" class="form-control" placeholder="Type or click to search shop..." required value="<?= htmlspecialchars($_POST['shop_name'] ?? '') ?>" autofocus autocomplete="off" style="padding-right: 60px;">
+                                    <div style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); display: flex; align-items: center; gap: 4px; z-index: 5;">
+                                        <button type="button" id="btnClearAdminShop" onclick="clearAdminShopSelection()" style="display: <?= !empty($_POST['shop_name']) ? 'inline-flex' : 'none' ?>; background: #e2e8f0; border: none; border-radius: 50%; width: 20px; height: 20px; color: #475569; font-size: 13px; font-weight: bold; cursor: pointer; align-items: center; justify-content: center; line-height: 1;" title="Clear">&times;</button>
+                                        <button type="button" id="btnToggleAdminShop" onclick="toggleAdminShopDropdown()" style="background: none; border: none; color: #64748b; font-size: 20px; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 2px;" title="Select from dropdown">
+                                            <i class='bx bx-chevron-down' id="adminShopChevron"></i>
+                                        </button>
+                                    </div>
+
+                                    <!-- Searchable Dropdown Popup -->
+                                    <div id="adminShopSearchDropdown" class="shop-search-dropdown" style="display: none;">
+                                        <div class="shop-dropdown-search-box">
+                                            <i class='bx bx-search' style="color: #64748b; font-size: 16px;"></i>
+                                            <input type="text" id="adminShopFilterInput" placeholder="Search shop name, area or phone..." autocomplete="off">
+                                            <span id="adminShopFilteredCount" class="shop-count-badge"><?= count($allShops) ?> shops</span>
+                                        </div>
+                                        <div id="adminShopDropdownList" class="shop-dropdown-list">
+                                            <!-- Dynamically filled by JS -->
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                             <div class="form-group">
                                 <label class="form-label" for="location">Location / Area <span style="color: #ef4444;">*</span></label>
@@ -1275,30 +1504,286 @@ if (empty($form_items)) {
                 .catch(() => {});
         }
 
-        document.getElementById('shop_name')?.addEventListener('blur', checkAdminShopDues);
         document.getElementById('phone')?.addEventListener('blur', checkAdminShopDues);
 
-        // Auto-fill location, zone, and vehicle on shop selection
+        // --- SEARCHABLE SHOP DROPDOWN ENGINE ---
         const registeredAdminShops = <?= json_encode($allShops) ?>;
-        document.getElementById('shop_name')?.addEventListener('input', function() {
-            const val = this.value.trim().toLowerCase();
-            const match = registeredAdminShops.find(s => s.shop_name.toLowerCase() === val);
-            if (match) {
-                const locInp = document.getElementById('location');
-                const phoneInp = document.getElementById('phone');
-                const zoneSel = document.getElementById('zone_id');
-                const vehSel = document.getElementById('vehicle_id');
+        let activeAdminShopIndex = -1;
 
-                if (locInp && match.location) locInp.value = match.location;
-                if (phoneInp && match.phone && !phoneInp.value) phoneInp.value = match.phone;
-                if (zoneSel && match.zone_id) {
-                    zoneSel.value = match.zone_id;
-                    handleZoneChange(match.zone_id);
+        function renderAdminShopDropdown(filter = '') {
+            const listEl = document.getElementById('adminShopDropdownList');
+            const countEl = document.getElementById('adminShopFilteredCount');
+            if (!listEl) return;
+
+            const q = filter.trim().toLowerCase();
+            let matches = registeredAdminShops;
+
+            if (q !== '') {
+                matches = registeredAdminShops.filter(s => {
+                    const name = (s.shop_name || '').toLowerCase();
+                    const loc = (s.location || '').toLowerCase();
+                    const ph = (s.phone || '').toLowerCase();
+                    const zn = (s.zone_name || '').toLowerCase();
+                    return name.includes(q) || loc.includes(q) || ph.includes(q) || zn.includes(q);
+                });
+            }
+
+            if (countEl) {
+                countEl.textContent = matches.length + (matches.length === 1 ? ' shop' : ' shops');
+            }
+
+            let html = '';
+
+            // If user typed something and it's not an exact match, show "Use [typed] as new shop" option
+            const hasExact = matches.some(s => (s.shop_name || '').toLowerCase() === q);
+            if (q !== '' && !hasExact) {
+                html += `
+                    <div class="shop-dropdown-new-option" onclick="selectAdminShopCustom('${escapeAdminAttr(filter.trim())}')">
+                        <i class='bx bx-plus-circle' style="font-size: 16px;"></i>
+                        <span>Use "<strong>${escapeAdminHtml(filter.trim())}</strong>" as New Shop</span>
+                    </div>
+                `;
+            }
+
+            if (matches.length === 0) {
+                if (!html) {
+                    html = `<div class="shop-dropdown-empty">No shops found matching "${escapeAdminHtml(filter)}". Type to create a new shop.</div>`;
                 }
-                if (vehSel && match.vehicle_id) {
-                    setTimeout(() => { vehSel.value = match.vehicle_id; }, 100);
+            } else {
+                // Show up to 100 shops for high performance
+                const displayShops = matches.slice(0, 100);
+                displayShops.forEach((s, idx) => {
+                    const isExactMatch = (s.shop_name || '').toLowerCase() === (document.getElementById('shop_name')?.value || '').trim().toLowerCase();
+                    html += `
+                        <div class="shop-dropdown-item ${isExactMatch ? 'active' : ''}" data-index="${idx}" onclick="selectAdminShopByIndex(${idx})">
+                            <div class="shop-item-info">
+                                <div class="shop-item-name">${highlightMatch(s.shop_name, q)}</div>
+                                <div class="shop-item-meta">
+                                    ${s.location ? `<span><i class='bx bx-map-pin' style="color:#2563eb;"></i> ${escapeAdminHtml(s.location)}</span>` : ''}
+                                    ${s.phone ? `<span><i class='bx bx-phone' style="color:#059669;"></i> ${escapeAdminHtml(s.phone)}</span>` : ''}
+                                </div>
+                            </div>
+                            <div class="shop-item-badges">
+                                ${s.zone_name ? `<span class="shop-zone-pill">${escapeAdminHtml(s.zone_name)}</span>` : ''}
+                            </div>
+                        </div>
+                    `;
+                });
+            }
+
+            listEl.innerHTML = html;
+            window._currentFilteredAdminShops = matches.slice(0, 100);
+            activeAdminShopIndex = -1;
+        }
+
+        function highlightMatch(text, query) {
+            if (!text) return '';
+            if (!query) return escapeAdminHtml(text);
+            const idx = text.toLowerCase().indexOf(query.toLowerCase());
+            if (idx === -1) return escapeAdminHtml(text);
+            const before = escapeAdminHtml(text.substring(0, idx));
+            const match = escapeAdminHtml(text.substring(idx, idx + query.length));
+            const after = escapeAdminHtml(text.substring(idx + query.length));
+            return `${before}<mark style="background:#fef08a; padding: 1px 3px; border-radius: 3px; font-weight:800;">${match}</mark>${after}`;
+        }
+
+        function escapeAdminHtml(str) {
+            if (!str) return '';
+            return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+        }
+
+        function escapeAdminAttr(str) {
+            if (!str) return '';
+            return String(str).replace(/'/g, "\\'").replace(/"/g, '&quot;');
+        }
+
+        function toggleAdminShopDropdown() {
+            const dropdown = document.getElementById('adminShopSearchDropdown');
+            const icon = document.getElementById('adminShopChevron');
+            if (!dropdown) return;
+            const isHidden = dropdown.style.display === 'none';
+            if (isHidden) {
+                dropdown.style.display = 'flex';
+                if (icon) icon.className = 'bx bx-chevron-up';
+                const mainVal = document.getElementById('shop_name')?.value || '';
+                const searchInp = document.getElementById('adminShopFilterInput');
+                if (searchInp) {
+                    searchInp.value = mainVal;
+                    renderAdminShopDropdown(mainVal);
+                    setTimeout(() => searchInp.focus(), 60);
+                } else {
+                    renderAdminShopDropdown(mainVal);
                 }
-                checkAdminShopDues();
+            } else {
+                closeAdminShopDropdown();
+            }
+        }
+
+        function closeAdminShopDropdown() {
+            const dropdown = document.getElementById('adminShopSearchDropdown');
+            const icon = document.getElementById('adminShopChevron');
+            if (dropdown) dropdown.style.display = 'none';
+            if (icon) icon.className = 'bx bx-chevron-down';
+        }
+
+        function selectAdminShopByIndex(idx) {
+            const list = window._currentFilteredAdminShops || registeredAdminShops;
+            const shop = list[idx];
+            if (!shop) return;
+
+            const shopInput = document.getElementById('shop_name');
+            const locInput = document.getElementById('location');
+            const phoneInput = document.getElementById('phone');
+            const zoneSel = document.getElementById('zone_id');
+            const vehSel = document.getElementById('vehicle_id');
+            const clearBtn = document.getElementById('btnClearAdminShop');
+
+            if (shopInput) shopInput.value = shop.shop_name;
+            if (locInput && shop.location) locInput.value = shop.location;
+            if (phoneInput && shop.phone) phoneInput.value = shop.phone;
+            if (clearBtn) clearBtn.style.display = 'inline-flex';
+
+            if (zoneSel && shop.zone_id && parseInt(shop.zone_id) > 0) {
+                zoneSel.value = shop.zone_id;
+                handleZoneChange(shop.zone_id);
+            }
+            if (vehSel && shop.vehicle_id && parseInt(shop.vehicle_id) > 0) {
+                setTimeout(() => { vehSel.value = shop.vehicle_id; }, 100);
+            }
+
+            closeAdminShopDropdown();
+            checkAdminShopDues();
+        }
+
+        function selectAdminShopCustom(customName) {
+            const shopInput = document.getElementById('shop_name');
+            const clearBtn = document.getElementById('btnClearAdminShop');
+            if (shopInput) shopInput.value = customName;
+            if (clearBtn) clearBtn.style.display = 'inline-flex';
+            closeAdminShopDropdown();
+            checkAdminShopDues();
+        }
+
+        function clearAdminShopSelection() {
+            const shopInput = document.getElementById('shop_name');
+            const locInput = document.getElementById('location');
+            const phoneInput = document.getElementById('phone');
+            const clearBtn = document.getElementById('btnClearAdminShop');
+            const alertBox = document.getElementById('shopDueAlert');
+
+            if (shopInput) {
+                shopInput.value = '';
+                shopInput.focus();
+            }
+            if (locInput) locInput.value = '';
+            if (phoneInput) phoneInput.value = '';
+            if (clearBtn) clearBtn.style.display = 'none';
+            if (alertBox) alertBox.style.display = 'none';
+
+            renderAdminShopDropdown('');
+        }
+
+        // Connect Input Event Listeners
+        const shopInp = document.getElementById('shop_name');
+        if (shopInp) {
+            shopInp.addEventListener('focus', function() {
+                const dropdown = document.getElementById('adminShopSearchDropdown');
+                if (dropdown && dropdown.style.display === 'none') {
+                    renderAdminShopDropdown(this.value);
+                    dropdown.style.display = 'flex';
+                    const icon = document.getElementById('adminShopChevron');
+                    if (icon) icon.className = 'bx bx-chevron-up';
+                }
+            });
+
+            shopInp.addEventListener('input', function() {
+                const val = this.value;
+                const clearBtn = document.getElementById('btnClearAdminShop');
+                if (clearBtn) clearBtn.style.display = val ? 'inline-flex' : 'none';
+
+                const dropdown = document.getElementById('adminShopSearchDropdown');
+                if (dropdown) {
+                    dropdown.style.display = 'flex';
+                    const icon = document.getElementById('adminShopChevron');
+                    if (icon) icon.className = 'bx bx-chevron-up';
+                }
+                const filterInp = document.getElementById('adminShopFilterInput');
+                if (filterInp) filterInp.value = val;
+                renderAdminShopDropdown(val);
+
+                // Auto match on exact full typing
+                const match = registeredAdminShops.find(s => (s.shop_name || '').toLowerCase() === val.trim().toLowerCase());
+                if (match) {
+                    const locInp = document.getElementById('location');
+                    const phoneInp = document.getElementById('phone');
+                    const zoneSel = document.getElementById('zone_id');
+                    const vehSel = document.getElementById('vehicle_id');
+
+                    if (locInp && match.location) locInp.value = match.location;
+                    if (phoneInp && match.phone && !phoneInp.value) phoneInp.value = match.phone;
+                    if (zoneSel && match.zone_id) {
+                        zoneSel.value = match.zone_id;
+                        handleZoneChange(match.zone_id);
+                    }
+                    if (vehSel && match.vehicle_id) {
+                        setTimeout(() => { vehSel.value = match.vehicle_id; }, 100);
+                    }
+                    checkAdminShopDues();
+                }
+            });
+
+            // Keyboard navigation (Down, Up, Enter, Escape)
+            shopInp.addEventListener('keydown', handleAdminDropdownKeydown);
+        }
+
+        const filterInp = document.getElementById('adminShopFilterInput');
+        if (filterInp) {
+            filterInp.addEventListener('input', function() {
+                renderAdminShopDropdown(this.value);
+            });
+            filterInp.addEventListener('keydown', handleAdminDropdownKeydown);
+        }
+
+        function handleAdminDropdownKeydown(e) {
+            const dropdown = document.getElementById('adminShopSearchDropdown');
+            if (!dropdown || dropdown.style.display === 'none') return;
+            const items = dropdown.querySelectorAll('.shop-dropdown-item');
+            if (items.length === 0) return;
+
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                activeAdminShopIndex = (activeAdminShopIndex + 1) % items.length;
+                updateActiveAdminItem(items);
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                activeAdminShopIndex = (activeAdminShopIndex - 1 + items.length) % items.length;
+                updateActiveAdminItem(items);
+            } else if (e.key === 'Enter') {
+                if (activeAdminShopIndex >= 0 && activeAdminShopIndex < items.length) {
+                    e.preventDefault();
+                    items[activeAdminShopIndex].click();
+                }
+            } else if (e.key === 'Escape') {
+                closeAdminShopDropdown();
+            }
+        }
+
+        function updateActiveAdminItem(items) {
+            items.forEach((it, i) => {
+                if (i === activeAdminShopIndex) {
+                    it.classList.add('active');
+                    it.scrollIntoView({ block: 'nearest' });
+                } else {
+                    it.classList.remove('active');
+                }
+            });
+        }
+
+        // Close dropdown when clicking outside
+        document.addEventListener('click', function(e) {
+            const wrap = document.querySelector('.searchable-combobox-wrap');
+            if (wrap && !wrap.contains(e.target)) {
+                closeAdminShopDropdown();
             }
         });
 

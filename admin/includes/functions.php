@@ -348,22 +348,81 @@ function getShopDeliveredCasesSummary(PDO $pdo, string $shop_name): array {
 }
 
 /**
- * Fetch distinct list of active shops from orders
+ * Fetch distinct list of active shops from both shops master and historical orders
  */
 function getAllShopsList(PDO $pdo): array {
 	try {
-		$stmt = $pdo->query("
+		$shopsMap = [];
+		// 1. From shops master table
+		$shRows = $pdo->query("
+			SELECT s.id, s.shop_name, s.location, s.phone, s.zone_id, s.vehicle_id, z.name as zone_name
+			FROM shops s
+			LEFT JOIN zones z ON s.zone_id = z.id
+			ORDER BY s.shop_name ASC
+		")->fetchAll(PDO::FETCH_ASSOC);
+
+		foreach ($shRows as $s) {
+			$name = trim($s['shop_name'] ?? '');
+			if ($name !== '') {
+				$k = strtolower($name);
+				if (!isset($shopsMap[$k])) {
+					$shopsMap[$k] = [
+						'shop_name'   => $name,
+						'phone'       => trim($s['phone'] ?? ''),
+						'location'    => trim($s['location'] ?? ''),
+						'zone_id'     => (int)($s['zone_id'] ?? 0),
+						'zone_name'   => trim($s['zone_name'] ?? ''),
+						'vehicle_id'  => (int)($s['vehicle_id'] ?? 0),
+						'order_count' => 0
+					];
+				}
+			}
+		}
+
+		// 2. From historical orders
+		$ordRows = $pdo->query("
 			SELECT 
 				DISTINCT TRIM(COALESCE(NULLIF(shop_name, ''), customer_name)) as shop_name,
 				MAX(phone) as phone,
+				MAX(location) as location,
+				MAX(zone_id) as zone_id,
+				MAX(vehicle_id) as vehicle_id,
 				COUNT(*) as order_count
 			FROM orders 
 			WHERE (shop_name IS NOT NULL AND TRIM(shop_name) != '') 
 			   OR (customer_name IS NOT NULL AND TRIM(customer_name) != '')
 			GROUP BY TRIM(COALESCE(NULLIF(shop_name, ''), customer_name))
 			ORDER BY shop_name ASC
-		");
-		return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+		")->fetchAll(PDO::FETCH_ASSOC);
+
+		foreach ($ordRows as $o) {
+			$name = trim($o['shop_name'] ?? '');
+			if ($name !== '') {
+				$k = strtolower($name);
+				if (isset($shopsMap[$k])) {
+					$shopsMap[$k]['order_count'] = (int)$o['order_count'];
+					if (empty($shopsMap[$k]['location']) && !empty($o['location'])) $shopsMap[$k]['location'] = trim($o['location']);
+					if (empty($shopsMap[$k]['phone']) && !empty($o['phone'])) $shopsMap[$k]['phone'] = trim($o['phone']);
+					if (empty($shopsMap[$k]['zone_id']) && !empty($o['zone_id'])) $shopsMap[$k]['zone_id'] = (int)$o['zone_id'];
+				} else {
+					$shopsMap[$k] = [
+						'shop_name'   => $name,
+						'phone'       => trim($o['phone'] ?? ''),
+						'location'    => trim($o['location'] ?? ''),
+						'zone_id'     => (int)($o['zone_id'] ?? 0),
+						'zone_name'   => '',
+						'vehicle_id'  => (int)($o['vehicle_id'] ?? 0),
+						'order_count' => (int)$o['order_count']
+					];
+				}
+			}
+		}
+
+		$result = array_values($shopsMap);
+		usort($result, function($a, $b) {
+			return strcasecmp($a['shop_name'], $b['shop_name']);
+		});
+		return $result;
 	} catch (Exception $e) {
 		return [];
 	}

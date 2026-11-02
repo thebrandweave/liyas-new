@@ -1350,6 +1350,132 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
         display:none;
     }
 }
+
+        /* Searchable Shop Dropdown (Combobox) for Reorder Modal */
+        .reorder-combobox-wrap {
+            position: relative;
+            width: 100%;
+        }
+        .reorder-shop-dropdown {
+            position: absolute;
+            top: calc(100% + 4px);
+            left: 0;
+            right: 0;
+            background: #ffffff;
+            border: 1.5px solid #cbd5e1;
+            border-radius: 12px;
+            box-shadow: 0 14px 30px -4px rgba(15, 23, 42, 0.18), 0 4px 10px -2px rgba(15, 23, 42, 0.08);
+            z-index: 999999;
+            max-height: 280px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            animation: fadeInSlideDown 0.15s ease-out;
+        }
+        .reorder-shop-dropdown-search-box {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            background: #f8fafc;
+            border-bottom: 1px solid #e2e8f0;
+            position: sticky;
+            top: 0;
+            z-index: 2;
+        }
+        .reorder-shop-dropdown-search-box input {
+            flex: 1;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            padding: 6px 10px;
+            font-size: 12.5px;
+            outline: none;
+            background: #ffffff;
+            color: #0f172a;
+        }
+        .reorder-shop-dropdown-search-box input:focus {
+            border-color: #2563eb;
+            box-shadow: 0 0 0 2px rgba(37,99,235,0.1);
+        }
+        .reorder-shop-count-badge {
+            font-size: 11px;
+            font-weight: 700;
+            background: #e2e8f0;
+            color: #475569;
+            padding: 2px 7px;
+            border-radius: 6px;
+            white-space: nowrap;
+        }
+        .reorder-shop-dropdown-list {
+            overflow-y: auto;
+            max-height: 220px;
+            padding: 4px 0;
+        }
+        .reorder-shop-item {
+            padding: 9px 12px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            border-bottom: 1px solid #f1f5f9;
+            transition: background 0.12s ease;
+        }
+        .reorder-shop-item:last-child {
+            border-bottom: none;
+        }
+        .reorder-shop-item:hover, .reorder-shop-item.active {
+            background: #eff6ff;
+        }
+        .reorder-shop-info {
+            flex: 1;
+            min-width: 0;
+        }
+        .reorder-shop-name-row {
+            font-size: 13px;
+            font-weight: 700;
+            color: #0f172a;
+            line-height: 1.3;
+        }
+        .reorder-shop-meta-row {
+            font-size: 11px;
+            color: #64748b;
+            margin-top: 2px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .reorder-shop-zone-pill {
+            font-size: 9.5px;
+            font-weight: 800;
+            padding: 2px 5px;
+            border-radius: 4px;
+            background: #e0f2fe;
+            color: #0369a1;
+            text-transform: uppercase;
+        }
+        .reorder-shop-empty {
+            padding: 14px 12px;
+            text-align: center;
+            color: #64748b;
+            font-size: 12px;
+        }
+        .reorder-shop-new-opt {
+            padding: 9px 12px;
+            background: #f0fdf4;
+            border-bottom: 1.5px solid #bbf7d0;
+            color: #15803d;
+            font-size: 12px;
+            font-weight: 700;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .reorder-shop-new-opt:hover {
+            background: #dcfce7;
+        }
     </style>
 </head>
 <body>
@@ -1966,9 +2092,34 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
                             <i class='bx bx-store-alt' style="color: #2563eb;"></i> Shop &amp; Delivery Details
                         </div>
                         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-bottom: 8px;">
-                            <div>
-                                <label style="display: block; font-size: 11px; font-weight: 700; color: #334155; margin-bottom: 4px;">Shop Name *</label>
-                                <input type="text" id="reorderShopName" name="shop_name" required class="input-field" style="width: 100%; padding: 8px 12px; font-size: 13px; font-weight: 600; border: 1.5px solid #cbd5e1; border-radius: 8px;" placeholder="e.g. Royal Bakery">
+                            <div style="position: relative;">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                                    <label style="display: block; font-size: 11px; font-weight: 700; color: #334155; margin-bottom: 0;">Shop Name *</label>
+                                    <span onclick="toggleReorderShopDropdown()" style="font-size: 10.5px; font-weight: 700; color: #2563eb; cursor: pointer; display: inline-flex; align-items: center; gap: 3px;" title="Browse all shops">
+                                        <i class='bx bx-list-ul'></i> Browse (<span id="reorderShopsTotalCount"><?= count($allShopsList) ?></span>)
+                                    </span>
+                                </div>
+                                <div class="reorder-combobox-wrap" style="position: relative;">
+                                    <input type="text" id="reorderShopName" name="shop_name" required class="input-field" style="width: 100%; padding: 8px 54px 8px 12px; font-size: 13px; font-weight: 600; border: 1.5px solid #cbd5e1; border-radius: 8px;" placeholder="Type or click to choose shop..." autocomplete="off">
+                                    <div style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); display: flex; align-items: center; gap: 3px; z-index: 5;">
+                                        <button type="button" id="btnClearReorderShop" onclick="clearReorderShopSelection()" style="display: none; background: #e2e8f0; border: none; border-radius: 50%; width: 18px; height: 18px; color: #475569; font-size: 12px; font-weight: bold; cursor: pointer; align-items: center; justify-content: center; line-height: 1;" title="Clear">&times;</button>
+                                        <button type="button" id="btnToggleReorderShop" onclick="toggleReorderShopDropdown()" style="background: none; border: none; color: #64748b; font-size: 18px; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 2px;" title="Browse registered shops">
+                                            <i class='bx bx-chevron-down' id="reorderShopChevron"></i>
+                                        </button>
+                                    </div>
+
+                                    <!-- Dropdown Menu -->
+                                    <div id="reorderShopSearchDropdown" class="reorder-shop-dropdown" style="display: none;">
+                                        <div class="reorder-shop-dropdown-search-box">
+                                            <i class='bx bx-search' style="color: #64748b; font-size: 15px;"></i>
+                                            <input type="text" id="reorderShopFilterInput" placeholder="Search shop name, area, phone..." autocomplete="off">
+                                            <span id="reorderShopFilteredCount" class="reorder-shop-count-badge"><?= count($allShopsList) ?> shops</span>
+                                        </div>
+                                        <div id="reorderShopDropdownList" class="reorder-shop-dropdown-list">
+                                            <!-- Injected by JS -->
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                             <div>
                                 <label style="display: block; font-size: 11px; font-weight: 700; color: #334155; margin-bottom: 4px;">Customer / Contact Person</label>
@@ -3181,6 +3332,9 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
                 phoneIn.value = '';
                 locIn.value = '';
                 addrIn.value = '';
+                const clearShopBtn = document.getElementById('btnClearReorderShop');
+                if (clearShopBtn) clearShopBtn.style.display = shopName ? 'inline-flex' : 'none';
+                closeReorderShopDropdown();
                 if (discIn) discIn.value = '0';
                 tbody.innerHTML = '';
 
@@ -3249,9 +3403,275 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
                 if (backdrop) backdrop.classList.add('open');
             };
 
+            // --- SEARCHABLE SHOP DROPDOWN FOR REORDER MODAL ---
+            const registeredReorderShops = <?= json_encode($allShopsList) ?>;
+            let activeReorderShopIndex = -1;
+
+            window.renderReorderShopDropdown = function(filter = '') {
+                const listEl = document.getElementById('reorderShopDropdownList');
+                const countEl = document.getElementById('reorderShopFilteredCount');
+                if (!listEl) return;
+
+                const q = filter.trim().toLowerCase();
+                let matches = registeredReorderShops;
+
+                if (q !== '') {
+                    matches = registeredReorderShops.filter(s => {
+                        const name = (s.shop_name || '').toLowerCase();
+                        const loc = (s.location || '').toLowerCase();
+                        const ph = (s.phone || '').toLowerCase();
+                        return name.includes(q) || loc.includes(q) || ph.includes(q);
+                    });
+                }
+
+                if (countEl) {
+                    countEl.textContent = matches.length + (matches.length === 1 ? ' shop' : ' shops');
+                }
+
+                let html = '';
+
+                // If user typed something and it's not an exact match, offer "Use [typed] as new shop"
+                const hasExact = matches.some(s => (s.shop_name || '').toLowerCase() === q);
+                if (q !== '' && !hasExact) {
+                    html += `
+                        <div class="reorder-shop-new-opt" onclick="selectReorderShopCustom('${escapeReorderAttr(filter.trim())}')">
+                            <i class='bx bx-plus-circle' style="font-size: 15px;"></i>
+                            <span>Use "<strong>${escapeReorderHtml(filter.trim())}</strong>" as New Shop</span>
+                        </div>
+                    `;
+                }
+
+                if (matches.length === 0) {
+                    if (!html) {
+                        html = `<div class="reorder-shop-empty">No registered shops found matching "${escapeReorderHtml(filter)}". Type freely to enter a custom shop name.</div>`;
+                    }
+                } else {
+                    const displayShops = matches.slice(0, 100);
+                    displayShops.forEach((s, idx) => {
+                        const currentVal = (document.getElementById('reorderShopName')?.value || '').trim().toLowerCase();
+                        const isExactMatch = (s.shop_name || '').toLowerCase() === currentVal;
+                        html += `
+                            <div class="reorder-shop-item ${isExactMatch ? 'active' : ''}" data-index="${idx}" onclick="selectReorderShopByIndex(${idx})">
+                                <div class="reorder-shop-info">
+                                    <div class="reorder-shop-name-row">${highlightReorderMatch(s.shop_name, q)}</div>
+                                    <div class="reorder-shop-meta-row">
+                                        ${s.location ? `<span><i class='bx bx-map-pin' style="color:#2563eb;"></i> ${escapeReorderHtml(s.location)}</span>` : ''}
+                                        ${s.phone ? `<span><i class='bx bx-phone' style="color:#059669;"></i> ${escapeReorderHtml(s.phone)}</span>` : ''}
+                                    </div>
+                                </div>
+                                <div style="display:flex; flex-direction:column; align-items:flex-end; gap:3px;">
+                                    ${s.zone_name ? `<span class="reorder-shop-zone-pill">${escapeReorderHtml(s.zone_name)}</span>` : ''}
+                                    ${(s.order_count && parseInt(s.order_count) > 0) ? `<span style="font-size: 10px; color: #94a3b8; font-weight:600;">${s.order_count} orders</span>` : ''}
+                                </div>
+                            </div>
+                        `;
+                    });
+                }
+
+                listEl.innerHTML = html;
+                window._currentFilteredReorderShops = matches.slice(0, 100);
+                activeReorderShopIndex = -1;
+            };
+
+            function highlightReorderMatch(text, query) {
+                if (!text) return '';
+                if (!query) return escapeReorderHtml(text);
+                const idx = text.toLowerCase().indexOf(query.toLowerCase());
+                if (idx === -1) return escapeReorderHtml(text);
+                const before = escapeReorderHtml(text.substring(0, idx));
+                const match = escapeReorderHtml(text.substring(idx, idx + query.length));
+                const after = escapeReorderHtml(text.substring(idx + query.length));
+                return `${before}<mark style="background:#fef08a; padding: 1px 3px; border-radius: 3px; font-weight:800;">${match}</mark>${after}`;
+            }
+
+            function escapeReorderHtml(str) {
+                if (!str) return '';
+                return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+            }
+
+            function escapeReorderAttr(str) {
+                if (!str) return '';
+                return String(str).replace(/'/g, "\\'").replace(/"/g, '&quot;');
+            }
+
+            window.toggleReorderShopDropdown = function() {
+                const dropdown = document.getElementById('reorderShopSearchDropdown');
+                const icon = document.getElementById('reorderShopChevron');
+                if (!dropdown) return;
+                const isHidden = dropdown.style.display === 'none';
+                if (isHidden) {
+                    dropdown.style.display = 'flex';
+                    if (icon) icon.className = 'bx bx-chevron-up';
+                    const mainVal = document.getElementById('reorderShopName')?.value || '';
+                    const searchInp = document.getElementById('reorderShopFilterInput');
+                    if (searchInp) {
+                        searchInp.value = mainVal;
+                        renderReorderShopDropdown(mainVal);
+                        setTimeout(() => searchInp.focus(), 60);
+                    } else {
+                        renderReorderShopDropdown(mainVal);
+                    }
+                } else {
+                    closeReorderShopDropdown();
+                }
+            };
+
+            window.closeReorderShopDropdown = function() {
+                const dropdown = document.getElementById('reorderShopSearchDropdown');
+                const icon = document.getElementById('reorderShopChevron');
+                if (dropdown) dropdown.style.display = 'none';
+                if (icon) icon.className = 'bx bx-chevron-down';
+            };
+
+            window.selectReorderShopByIndex = function(idx) {
+                const list = window._currentFilteredReorderShops || registeredReorderShops;
+                const shop = list[idx];
+                if (!shop) return;
+
+                const shopInput = document.getElementById('reorderShopName');
+                const locInput = document.getElementById('reorderLocation');
+                const phoneInput = document.getElementById('reorderPhone');
+                const zoneSel = document.getElementById('reorderZoneSelect');
+                const clearBtn = document.getElementById('btnClearReorderShop');
+
+                if (shopInput) shopInput.value = shop.shop_name;
+                if (locInput && shop.location) locInput.value = shop.location;
+                if (phoneInput && shop.phone) phoneInput.value = shop.phone;
+                if (clearBtn) clearBtn.style.display = 'inline-flex';
+
+                if (zoneSel && shop.zone_id && parseInt(shop.zone_id) > 0) {
+                    zoneSel.value = shop.zone_id;
+                }
+
+                closeReorderShopDropdown();
+            };
+
+            window.selectReorderShopCustom = function(customName) {
+                const shopInput = document.getElementById('reorderShopName');
+                const clearBtn = document.getElementById('btnClearReorderShop');
+                if (shopInput) shopInput.value = customName;
+                if (clearBtn) clearBtn.style.display = 'inline-flex';
+                closeReorderShopDropdown();
+            };
+
+            window.clearReorderShopSelection = function() {
+                const shopInput = document.getElementById('reorderShopName');
+                const locInput = document.getElementById('reorderLocation');
+                const phoneInput = document.getElementById('reorderPhone');
+                const clearBtn = document.getElementById('btnClearReorderShop');
+
+                if (shopInput) {
+                    shopInput.value = '';
+                    shopInput.focus();
+                }
+                if (locInput) locInput.value = '';
+                if (phoneInput) phoneInput.value = '';
+                if (clearBtn) clearBtn.style.display = 'none';
+
+                renderReorderShopDropdown('');
+            };
+
+            // Event listeners for shop inputs
+            const rShopInp = document.getElementById('reorderShopName');
+            if (rShopInp) {
+                rShopInp.addEventListener('focus', function() {
+                    const dropdown = document.getElementById('reorderShopSearchDropdown');
+                    if (dropdown && dropdown.style.display === 'none') {
+                        renderReorderShopDropdown(this.value);
+                        dropdown.style.display = 'flex';
+                        const icon = document.getElementById('reorderShopChevron');
+                        if (icon) icon.className = 'bx bx-chevron-up';
+                    }
+                });
+
+                rShopInp.addEventListener('input', function() {
+                    const val = this.value;
+                    const clearBtn = document.getElementById('btnClearReorderShop');
+                    if (clearBtn) clearBtn.style.display = val ? 'inline-flex' : 'none';
+
+                    const dropdown = document.getElementById('reorderShopSearchDropdown');
+                    if (dropdown) {
+                        dropdown.style.display = 'flex';
+                        const icon = document.getElementById('reorderShopChevron');
+                        if (icon) icon.className = 'bx bx-chevron-up';
+                    }
+                    const filterInp = document.getElementById('reorderShopFilterInput');
+                    if (filterInp) filterInp.value = val;
+                    renderReorderShopDropdown(val);
+
+                    // Auto match exact
+                    const match = registeredReorderShops.find(s => (s.shop_name || '').toLowerCase() === val.trim().toLowerCase());
+                    if (match) {
+                        const locInp = document.getElementById('reorderLocation');
+                        const phoneInp = document.getElementById('reorderPhone');
+                        const zoneSel = document.getElementById('reorderZoneSelect');
+
+                        if (locInp && match.location) locInp.value = match.location;
+                        if (phoneInp && match.phone && !phoneInp.value) phoneInp.value = match.phone;
+                        if (zoneSel && match.zone_id && parseInt(match.zone_id) > 0) {
+                            zoneSel.value = match.zone_id;
+                        }
+                    }
+                });
+
+                rShopInp.addEventListener('keydown', handleReorderDropdownKeydown);
+            }
+
+            const rFilterInp = document.getElementById('reorderShopFilterInput');
+            if (rFilterInp) {
+                rFilterInp.addEventListener('input', function() {
+                    renderReorderShopDropdown(this.value);
+                });
+                rFilterInp.addEventListener('keydown', handleReorderDropdownKeydown);
+            }
+
+            function handleReorderDropdownKeydown(e) {
+                const dropdown = document.getElementById('reorderShopSearchDropdown');
+                if (!dropdown || dropdown.style.display === 'none') return;
+                const items = dropdown.querySelectorAll('.reorder-shop-item');
+                if (items.length === 0) return;
+
+                if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    activeReorderShopIndex = (activeReorderShopIndex + 1) % items.length;
+                    updateActiveReorderItem(items);
+                } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    activeReorderShopIndex = (activeReorderShopIndex - 1 + items.length) % items.length;
+                    updateActiveReorderItem(items);
+                } else if (e.key === 'Enter') {
+                    if (activeReorderShopIndex >= 0 && activeReorderShopIndex < items.length) {
+                        e.preventDefault();
+                        items[activeReorderShopIndex].click();
+                    }
+                } else if (e.key === 'Escape') {
+                    closeReorderShopDropdown();
+                }
+            }
+
+            function updateActiveReorderItem(items) {
+                items.forEach((it, i) => {
+                    if (i === activeReorderShopIndex) {
+                        it.classList.add('active');
+                        it.scrollIntoView({ block: 'nearest' });
+                    } else {
+                        it.classList.remove('active');
+                    }
+                });
+            }
+
+            // Close reorder shop dropdown when clicking outside
+            document.addEventListener('click', function(e) {
+                const wrap = document.querySelector('.reorder-combobox-wrap');
+                if (wrap && !wrap.contains(e.target)) {
+                    closeReorderShopDropdown();
+                }
+            });
+
             window.closeReorderModal = function() {
                 const backdrop = document.getElementById('modalReorderBackdrop');
                 if (backdrop) backdrop.classList.remove('open');
+                closeReorderShopDropdown();
             };
 
             window.addReorderRow = function(selectedPid = 0, rate = '', qty = 1, isExtra = 0) {

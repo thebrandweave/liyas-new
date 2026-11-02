@@ -657,10 +657,7 @@ City Mart	B C Road"></textarea>
                                             <input type="radio" name="route_mode" value="auto" checked onclick="toggleForceSelect(false)">
                                             <strong>⚡ Smart Auto-Detect by Location</strong> (Recommended)
                                         </label>
-                                        <label style="font-size: 13px; display: inline-flex; align-items: center; gap: 6px; cursor: pointer;">
-                                            <input type="radio" name="route_mode" value="force" onclick="toggleForceSelect(true)">
-                                            Assign ALL rows to one vehicle:
-                                        </label>
+                                   
                                         <select name="force_vehicle_id" id="forceVehicleSelect" class="inp-clean" style="width: auto; display: none;" disabled>
                                             <?php foreach ($vehiclesList as $v): ?>
                                                 <option value="<?= $v['vehicle_id'] ?>">
