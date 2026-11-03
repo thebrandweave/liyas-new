@@ -331,6 +331,39 @@ function ensureWarehouseSchema(PDO $pdo): bool {
         }
 
         // ============================================
+        // 10B. SHOPS TABLE SCHEMA & PENDING AMOUNT
+        // ============================================
+        try {
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS `shops` (
+                    `id` INT AUTO_INCREMENT PRIMARY KEY,
+                    `shop_name` VARCHAR(255) NOT NULL,
+                    `location` VARCHAR(255) NULL,
+                    `phone` VARCHAR(20) NULL,
+                    `pending_amount` DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+                    `zone_id` INT NULL,
+                    `vehicle_id` INT NULL,
+                    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    INDEX `idx_shops_name` (`shop_name`),
+                    INDEX `idx_shops_zone` (`zone_id`),
+                    INDEX `idx_shops_vehicle` (`vehicle_id`),
+                    INDEX `idx_shops_pending` (`pending_amount`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+            ");
+
+            $shopCols = $pdo->query("SHOW COLUMNS FROM `shops`")->fetchAll(PDO::FETCH_COLUMN) ?: [];
+            if (!in_array('pending_amount', $shopCols)) {
+                try {
+                    $pdo->exec("ALTER TABLE `shops` ADD COLUMN `pending_amount` DECIMAL(10,2) NOT NULL DEFAULT 0.00 AFTER `phone`");
+                    $pdo->exec("ALTER TABLE `shops` ADD INDEX `idx_shops_pending` (`pending_amount`)");
+                } catch (Exception $e) {}
+            }
+        } catch (Exception $e) {
+            error_log("Schema sync shops error: " . $e->getMessage());
+        }
+
+        // ============================================
         // 11. PRIMARY KEY INTEGRITY CHECKER
         // Fixes phpMyAdmin "Current selection does not contain a unique column" warning
         // by ensuring all tables in the database have a valid PRIMARY KEY.
