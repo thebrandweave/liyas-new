@@ -1349,7 +1349,7 @@ function getShopPendingDueDetails(PDO $pdo, string $shopName, string $phone = ''
 					$rows[] = [
 						'receipt_id' => 0,
 						'order_id' => 0,
-						'bill_number' => 'OPENING-BALANCE',
+						'bill_number' => '',
 						'due_amount' => $masterPending,
 						'cash_amount' => 0.0,
 						'credited_amount' => 0.0,
@@ -1426,7 +1426,7 @@ function settleShopPriorDuesFifo(PDO $pdo, string $shopName, string $phone, floa
 			$clearedReceipts[] = [
 				'receipt_id' => 0,
 				'order_id' => 0,
-				'bill_number' => 'OPENING-BALANCE',
+				'bill_number' => '',
 				'order_number' => 'CREDITOR-OB',
 				'cleared_amount' => $clearThis,
 				'remaining_due' => $newDue
