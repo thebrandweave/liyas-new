@@ -580,9 +580,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'parse
                             <p>Upload your shop list. The system auto-detects vehicles (Ace, Intra, Pickup) based on locations and allows instant preview.</p>
                         </div>
                         <div style="display: flex; gap: 8px;">
-                            <a href="import.php?action=sample_csv" class="btn-secondary" title="Download formatted template">
+                            <!-- <a href="import.php?action=sample_csv" class="btn-secondary" title="Download formatted template">
                                 <i class='bx bx-download'></i> Download Sample CSV
-                            </a>
+                            </a> -->
                             <a href="index.php" class="btn-secondary">
                                 <i class='bx bx-arrow-back'></i> Back to Directory
                             </a>
@@ -596,7 +596,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'parse
                         </div>
                         <i class='bx bx-chevron-right' style="color: #94a3b8; font-size: 18px;"></i>
                         <div class="step-pill <?= $step === 2 ? 'active' : '' ?>">
-                            <span class="step-circle">2</span> Smart Auto-Detect & Preview
+                            <span class="step-circle">2</span> Auto-Detect & Preview
                         </div>
                         <i class='bx bx-chevron-right' style="color: #94a3b8; font-size: 18px;"></i>
                         <div class="step-pill">
@@ -634,7 +634,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'parse
                                     </div>
                                 </div>
 
-                                <div style="margin-top: 24px; padding-top: 20px; border-top: 1px solid #e2e8f0;">
+                                <!-- <div style="margin-top: 24px; padding-top: 20px; border-top: 1px solid #e2e8f0;">
                                     <h3 style="font-size: 15px; font-weight: 800; color: #0f172a; margin-bottom: 6px;">
                                         Option 2: Or Paste Text Directly
                                     </h3>
@@ -646,16 +646,16 @@ Madeena Super Bazar	Yenepoya
 Thokkottu Sweets	Thokkotu
 Al-Rayan Bakery	Mudipu
 City Mart	B C Road"></textarea>
-                                </div>
+                                </div> -->
 
-                                <div style="margin-top: 24px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px 18px;">
+                                <!-- <div style="margin-top: 24px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px 18px;">
                                     <label style="display: block; font-size: 13px; font-weight: 700; color: #1e293b; margin-bottom: 6px;">
                                         Territory / Route Assignment Mode:
                                     </label>
                                     <div style="display: flex; gap: 14px; align-items: center; flex-wrap: wrap;">
                                         <label style="font-size: 13px; display: inline-flex; align-items: center; gap: 6px; cursor: pointer;">
                                             <input type="radio" name="route_mode" value="auto" checked onclick="toggleForceSelect(false)">
-                                            <strong>⚡ Smart Auto-Detect by Location</strong> (Recommended)
+                                            <strong> Auto-Detect by Location</strong> (Recommended)
                                         </label>
                                    
                                         <select name="force_vehicle_id" id="forceVehicleSelect" class="inp-clean" style="width: auto; display: none;" disabled>
@@ -666,7 +666,7 @@ City Mart	B C Road"></textarea>
                                             <?php endforeach; ?>
                                         </select>
                                     </div>
-                                </div>
+                                </div> -->
 
                                 <div style="margin-top: 24px; display: flex; justify-content: flex-end;">
                                     <button type="submit" class="btn-submit">

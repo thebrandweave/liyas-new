@@ -1321,6 +1321,57 @@ function getShopPendingDueDetails(PDO $pdo, string $shopName, string $phone = ''
 		}
 		unset($r);
 
+		// Include opening balance pending amount from master shops table
+		try {
+			$shopConds = [];
+			$shopParams = [];
+			if (!empty($cleanShop)) {
+				$shopConds[] = "TRIM(LOWER(shop_name)) = ?";
+				$shopParams[] = $cleanShop;
+				$shopConds[] = "TRIM(LOWER(CONCAT(shop_name, ' ', COALESCE(location, '')))) = ?";
+				$shopParams[] = $cleanShop;
+				$shopConds[] = "TRIM(LOWER(CONCAT(shop_name, '-', COALESCE(location, '')))) = ?";
+				$shopParams[] = $cleanShop;
+			}
+			if (!empty($phone10) && strlen($phone10) >= 7) {
+				$shopConds[] = "(REPLACE(REPLACE(REPLACE(REPLACE(phone, ' ', ''), '-', ''), '+91', ''), '+', '') LIKE ? OR RIGHT(REGEXP_REPLACE(phone, '[^0-9]', ''), 10) = ?)";
+				$shopParams[] = $phoneLike;
+				$shopParams[] = $phone10;
+			}
+			if (!empty($shopConds)) {
+				$shopSql = "SELECT id, shop_name, phone, pending_amount, zone_id FROM shops WHERE pending_amount > 0 AND (" . implode(" OR ", $shopConds) . ") LIMIT 1";
+				$shopStmt = $pdo->prepare($shopSql);
+				$shopStmt->execute($shopParams);
+				$masterShop = $shopStmt->fetch(PDO::FETCH_ASSOC);
+				if ($masterShop && (float)$masterShop['pending_amount'] > 0) {
+					$masterPending = (float)$masterShop['pending_amount'];
+					$totalDue += $masterPending;
+					$rows[] = [
+						'receipt_id' => 0,
+						'order_id' => 0,
+						'bill_number' => 'OPENING-BALANCE',
+						'due_amount' => $masterPending,
+						'cash_amount' => 0.0,
+						'credited_amount' => 0.0,
+						'total_amount' => $masterPending,
+						'payment_type' => 'Opening Due',
+						'notes' => 'Opening balance pending due from creditors list',
+						'receipt_date' => date('Y-m-d H:i:s'),
+						'order_number' => 'CREDITOR-OB',
+						'shop_name' => $masterShop['shop_name'],
+						'customer_name' => $masterShop['shop_name'],
+						'phone' => $masterShop['phone'] ?? '',
+						'zone_id' => $masterShop['zone_id'] ?? null,
+						'zone_name' => '',
+						'is_master_shop_due' => true,
+						'shop_id' => (int)$masterShop['id']
+					];
+				}
+			}
+		} catch (Exception $e) {
+			error_log("Error fetching shops.pending_amount in getShopPendingDueDetails: " . $e->getMessage());
+		}
+
 		return [
 			'has_due' => ($totalDue > 0),
 			'total_due' => $totalDue,
@@ -1359,6 +1410,32 @@ function settleShopPriorDuesFifo(PDO $pdo, string $shopName, string $phone, floa
 
 		$clearThis = min($currentDue, $remainingToClear);
 		$newDue = max(0, $currentDue - $clearThis);
+
+		if (!empty($rec['is_master_shop_due']) && !empty($rec['shop_id'])) {
+			try {
+				$upShop = $pdo->prepare("UPDATE shops SET pending_amount = GREATEST(0, pending_amount - ?) WHERE id = ?");
+				$upShop->execute([$clearThis, (int)$rec['shop_id']]);
+			} catch (Exception $e) {
+				error_log("Error settling master shop pending due: " . $e->getMessage());
+			}
+
+			if (function_exists('quickLog')) {
+				quickLog($pdo, 'settle_due_fifo', 'shop', (int)$rec['shop_id'], "Cleared ₹{$clearThis} opening pending due for shop {$rec['shop_name']} via {$mode}. Remaining opening due: ₹{$newDue}");
+			}
+
+			$clearedReceipts[] = [
+				'receipt_id' => 0,
+				'order_id' => 0,
+				'bill_number' => 'OPENING-BALANCE',
+				'order_number' => 'CREDITOR-OB',
+				'cleared_amount' => $clearThis,
+				'remaining_due' => $newDue
+			];
+
+			$totalCleared += $clearThis;
+			$remainingToClear -= $clearThis;
+			continue;
+		}
 
 		$auditNote = " | Prior due of ₹" . number_format($clearThis, 2) . " settled via " . ucfirst($mode);
 		if (!empty($referenceNote)) {

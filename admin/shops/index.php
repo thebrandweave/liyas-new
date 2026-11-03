@@ -40,6 +40,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $shop_name = trim($_POST['shop_name'] ?? '');
         $location = trim($_POST['location'] ?? '');
         $phone = trim($_POST['phone'] ?? '');
+        $pending_amount = (isset($_POST['pending_amount']) && is_numeric($_POST['pending_amount']) && (float)$_POST['pending_amount'] >= 0) ? (float)$_POST['pending_amount'] : 0.00;
         $vehicle_id = !empty($_POST['vehicle_id']) ? (int)$_POST['vehicle_id'] : null;
 
         // Find matching zone_id from vehicle
@@ -58,10 +59,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             try {
                 $ins = $pdo->prepare("
-                    INSERT INTO shops (shop_name, location, phone, zone_id, vehicle_id) 
-                    VALUES (?, ?, ?, ?, ?)
+                    INSERT INTO shops (shop_name, location, phone, zone_id, vehicle_id, pending_amount) 
+                    VALUES (?, ?, ?, ?, ?, ?)
                 ");
-                $ins->execute([$shop_name, $location, $phone, $zone_id, $vehicle_id]);
+                $ins->execute([$shop_name, $location, $phone, $zone_id, $vehicle_id, $pending_amount]);
                 $newId = (int)$pdo->lastInsertId();
                 quickLog($pdo, 'create', 'shop', $newId, "Added new shop: {$shop_name} ({$location})");
                 $_SESSION['success_message'] = "Shop '{$shop_name}' added successfully!";
@@ -78,6 +79,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $shop_name = trim($_POST['shop_name'] ?? '');
         $location = trim($_POST['location'] ?? '');
         $phone = trim($_POST['phone'] ?? '');
+        $pending_amount = (isset($_POST['pending_amount']) && is_numeric($_POST['pending_amount']) && (float)$_POST['pending_amount'] >= 0) ? (float)$_POST['pending_amount'] : 0.00;
         $vehicle_id = !empty($_POST['vehicle_id']) ? (int)$_POST['vehicle_id'] : null;
 
         $zone_id = null;
@@ -96,10 +98,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             try {
                 $upd = $pdo->prepare("
                     UPDATE shops 
-                    SET shop_name = ?, location = ?, phone = ?, zone_id = ?, vehicle_id = ?, updated_at = NOW() 
+                    SET shop_name = ?, location = ?, phone = ?, zone_id = ?, vehicle_id = ?, pending_amount = ?, updated_at = NOW() 
                     WHERE id = ?
                 ");
-                $upd->execute([$shop_name, $location, $phone, $zone_id, $vehicle_id, $shop_id]);
+                $upd->execute([$shop_name, $location, $phone, $zone_id, $vehicle_id, $pending_amount, $shop_id]);
                 quickLog($pdo, 'update', 'shop', $shop_id, "Updated shop ID {$shop_id}: {$shop_name}");
                 $_SESSION['success_message'] = "Shop '{$shop_name}' updated successfully!";
             } catch (Exception $e) {
@@ -172,9 +174,13 @@ try {
 
 // Stats
 $totalShops = 0;
+$totalPendingDues = 0.0;
+$shopsWithDuesCount = 0;
 $vehicleStats = [];
 try {
     $totalShops = (int)$pdo->query("SELECT COUNT(*) FROM shops")->fetchColumn();
+    $totalPendingDues = (float)$pdo->query("SELECT COALESCE(SUM(pending_amount), 0) FROM shops")->fetchColumn();
+    $shopsWithDuesCount = (int)$pdo->query("SELECT COUNT(*) FROM shops WHERE pending_amount > 0")->fetchColumn();
     $vStatsStmt = $pdo->query("
         SELECT vehicle_id, COUNT(*) as cnt 
         FROM shops 
@@ -552,6 +558,17 @@ try {
                         </div>
                     </a>
 
+                    <!-- Outstanding Creditors / Pending Dues Summary Card -->
+                    <div class="stat-card-box" style="border-color: #fecaca; background: #fff5f5;" title="Total unpaid pending amounts across all registered shops">
+                        <div class="stat-icon" style="background: #fee2e2; color: #dc2626;">
+                            <i class='bx bx-error-circle'></i>
+                        </div>
+                        <div>
+                            <div class="stat-num" style="color: #b91c1c;">₹<?= number_format($totalPendingDues, 2) ?></div>
+                            <div class="stat-label">Pending Dues (<?= $shopsWithDuesCount ?> shops)</div>
+                        </div>
+                    </div>
+
                     <?php foreach ($vehiclesList as $v): 
                         $vId = (int)$v['vehicle_id'];
                         $vCount = $vehicleStats[$vId] ?? 0;
@@ -636,13 +653,14 @@ try {
                                     <th>Phone</th>
                                     <th>Assigned Vehicle</th>
                                     <th>Territory / Route</th>
+                                    <th style="text-align: right; width: 135px;">Pending Due</th>
                                     <th style="text-align: right; width: 110px;">Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 <?php if (empty($shops)): ?>
                                     <tr>
-                                        <td colspan="7" style="text-align: center; padding: 40px 20px; color: #64748b;">
+                                        <td colspan="8" style="text-align: center; padding: 40px 20px; color: #64748b;">
                                             <i class='bx bx-store-alt' style="font-size: 40px; color: #cbd5e1; display: block; margin-bottom: 8px;"></i>
                                             <strong>No shops found matching your criteria.</strong>
                                             <div style="margin-top: 8px;">
@@ -699,6 +717,15 @@ try {
                                                 </span>
                                             </td>
                                             <td style="text-align: right;">
+                                                <?php if ((float)($s['pending_amount'] ?? 0) > 0): ?>
+                                                    <span style="display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 6px; background: #fef2f2; color: #b91c1c; font-weight: 800; font-size: 12.5px; border: 1px solid #fecaca;" title="Unpaid pending due">
+                                                        <i class='bx bxs-error-circle'></i> ₹<?= number_format((float)$s['pending_amount'], 2) ?>
+                                                    </span>
+                                                <?php else: ?>
+                                                    <span style="color: #94a3b8; font-size: 12px; font-weight: 500;">₹0.00</span>
+                                                <?php endif; ?>
+                                            </td>
+                                            <td style="text-align: right;">
                                                 <button type="button" 
                                                         class="btn-act-outline" 
                                                         style="padding: 4px 8px; font-size: 12px;"
@@ -750,6 +777,10 @@ try {
                         <input type="text" name="phone" class="s-form-input" placeholder="e.g. 9876543210">
                     </div>
                     <div class="s-form-group">
+                        <label>Pending / Due Amount (₹)</label>
+                        <input type="number" step="0.01" min="0" name="pending_amount" class="s-form-input" placeholder="0.00" value="0.00">
+                    </div>
+                    <div class="s-form-group">
                         <label>Assigned Delivery Vehicle & Route</label>
                         <select name="vehicle_id" id="add_vehicle_id" class="s-form-select">
                             <option value="">-- Choose Vehicle / Route --</option>
@@ -793,6 +824,10 @@ try {
                         <input type="text" name="phone" id="edit_phone" class="s-form-input">
                     </div>
                     <div class="s-form-group">
+                        <label>Pending / Due Amount (₹)</label>
+                        <input type="number" step="0.01" min="0" name="pending_amount" id="edit_pending_amount" class="s-form-input" placeholder="0.00">
+                    </div>
+                    <div class="s-form-group">
                         <label>Assigned Delivery Vehicle & Route</label>
                         <select name="vehicle_id" id="edit_vehicle_id" class="s-form-select">
                             <option value="">-- Choose Vehicle / Route --</option>
@@ -824,6 +859,7 @@ try {
             document.getElementById('edit_shop_name').value = shop.shop_name || '';
             document.getElementById('edit_location').value = shop.location || '';
             document.getElementById('edit_phone').value = shop.phone || '';
+            document.getElementById('edit_pending_amount').value = shop.pending_amount || '0.00';
             document.getElementById('edit_vehicle_id').value = shop.vehicle_id || '';
             document.getElementById('editShopModal').classList.add('active');
         }
