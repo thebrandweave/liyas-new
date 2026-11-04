@@ -1483,11 +1483,6 @@ foreach ($vehicle_products as $vPid => $vp) {
             border-color: #93c5fd;
         }
 
-        .btn-submit-bill:disabled {
-    opacity: 0.7;
-    cursor: not-allowed;
-}
-
         #cardCash.active {
             background: #f0fdf4;
             border-color: #86efac;
@@ -2200,12 +2195,10 @@ foreach ($vehicle_products as $vPid => $vp) {
 
                 <!-- Submit Button -->
                 <div class="mobile-sticky-submit">
-                  <button type="submit" name="generate_receipt" id="submitBtn" class="btn-submit-bill">
-    <i class='bx bx-check-circle' style="font-size: 20px;" id="submitIcon"></i>
-    <span id="submitText">
-        <?= ($reorder_id > 0) ? 'Generate Reorder Bill &amp; Complete Delivery' : 'Generate Bill &amp; Complete Delivery' ?>
-    </span>
-</button>
+                   <button type="submit" name="generate_receipt" id="submitBtn" class="btn-submit-bill">
+                        <i class='bx bx-check-circle' style="font-size: 20px;"></i>
+                        <span><?= ($reorder_id > 0) ? 'Generate Reorder Bill &amp; Complete Delivery' : 'Generate Bill &amp; Complete Delivery' ?></span>
+                    </button> 
                 </div>
             </form>
         </div>
@@ -3512,22 +3505,6 @@ foreach ($vehicle_products as $vPid => $vp) {
                 alert("Offline receipt created: " + offlineBillNumber);
             }
         }
-
-        document.getElementById('submitBtn').addEventListener('click', function () {
-    const btn = this;
-
-    if (!btn.closest('form').checkValidity()) {
-        return;
-    }
-
-    btn.disabled = true;
-    btn.innerHTML = `
-        <i class="bx bx-loader-alt bx-spin" style="font-size: 20px;"></i>
-        <span>Generating Bill... Please Wait</span>
-    `;
-});
     </script>
-
-    
 </body>
 </html>
