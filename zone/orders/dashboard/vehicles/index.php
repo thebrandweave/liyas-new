@@ -333,6 +333,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
+// Release session lock for high-speed concurrent rendering
+if (session_status() === PHP_SESSION_ACTIVE) {
+    session_write_close();
+}
+
 // --- FETCH DATA FOR DASHBOARD ---
 $filterZone   = trim($_GET['zone'] ?? 'all');
 $searchQuery  = trim($_GET['search'] ?? '');

@@ -6,11 +6,25 @@
  * management system exist and are properly configured without manual SQL intervention.
  */
 
-function ensureWarehouseSchema(PDO $pdo): bool {
+function ensureWarehouseSchema(PDO $pdo, bool $force = false): bool {
     static $alreadyRun = false;
-    if ($alreadyRun) {
+    if ($alreadyRun && !$force) {
         return true;
     }
+
+    // High-Speed Cache Gate:
+    // If the schema was already verified and the sync file hasn't changed, skip immediately!
+    // This prevents 50+ DDL queries from executing on every single HTTP request.
+    $lockFile = __DIR__ . '/.schema_synced';
+    if (!$force && file_exists($lockFile)) {
+        $lockMtime = @filemtime($lockFile);
+        $scriptMtime = @filemtime(__FILE__);
+        if ($lockMtime && $scriptMtime && $lockMtime >= $scriptMtime) {
+            $alreadyRun = true;
+            return true;
+        }
+    }
+
     $alreadyRun = true;
 
     try {
@@ -481,6 +495,38 @@ function ensureWarehouseSchema(PDO $pdo): bool {
         } catch (Exception $e) {
             error_log("Schema sync vehicle_damaged_items error: " . $e->getMessage());
         }
+
+        // ============================================
+        // 15. PERFORMANCE INDEXES
+        // Accelerates zone portal queries, dashboard polling, and receipt generation
+        // ============================================
+        try {
+            $perfIndexes = [
+                "ALTER TABLE `orders` ADD INDEX `idx_orders_perf_zone_read` (`zone_id`, `is_zone_read`, `status`)",
+                "ALTER TABLE `orders` ADD INDEX `idx_orders_perf_zone_status` (`zone_id`, `status`, `created_at`)",
+                "ALTER TABLE `orders` ADD INDEX `idx_orders_shop` (`shop_name`(191))",
+                "ALTER TABLE `orders` ADD INDEX `idx_orders_phone` (`phone`)",
+                "ALTER TABLE `orders` ADD INDEX `idx_orders_vehicle` (`vehicle_id`)",
+                "ALTER TABLE `receipts` ADD INDEX `idx_receipts_due` (`due_amount`)",
+                "ALTER TABLE `receipts` ADD INDEX `idx_receipts_order_due` (`order_id`, `due_amount`)",
+                "ALTER TABLE `vehicle_loads` ADD INDEX `idx_vl_perf` (`vehicle_id`, `is_active`, `product_id`, `order_id`)",
+                "ALTER TABLE `vehicle_loads` ADD INDEX `idx_vl_order_perf` (`order_id`, `is_active`)",
+                "ALTER TABLE `order_items` ADD INDEX `idx_oi_order_prod` (`order_id`, `product_id`)"
+            ];
+
+            foreach ($perfIndexes as $sqlIdx) {
+                try {
+                    $pdo->exec($sqlIdx);
+                } catch (Exception $eIdx) {
+                    // Index may already exist; continue safely
+                }
+            }
+        } catch (Exception $e) {
+            error_log("Schema sync performance indexes error: " . $e->getMessage());
+        }
+
+        // Write persistent lock file to mark schema as synced and cache it
+        @file_put_contents($lockFile, date('Y-m-d H:i:s'));
 
         return true;
     } catch (Exception $e) {

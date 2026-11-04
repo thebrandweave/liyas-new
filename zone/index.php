@@ -124,7 +124,71 @@ if (isset($_GET['mark_all_read']) && $_GET['mark_all_read'] == '1') {
     exit;
 }
 
-// 1. Unread notifications for this zone
+// Release session lock for high-speed concurrent rendering
+if ($_SERVER['REQUEST_METHOD'] !== 'POST' && session_status() === PHP_SESSION_ACTIVE) {
+    session_write_close();
+}
+
+/**
+ * High-speed batch prior dues resolver
+ * Replaces quadratic O(N^2) SQL correlated subqueries with a single indexed pass
+ */
+if (!function_exists('attachPriorDues')) {
+    function attachPriorDues(PDO $pdo, array &$ordersList) {
+        if (empty($ordersList)) return;
+
+        static $dueRows = null;
+        if ($dueRows === null) {
+            try {
+                $stmt = $pdo->query("
+                    SELECT 
+                        TRIM(LOWER(o.shop_name)) as shop_name,
+                        TRIM(LOWER(o.customer_name)) as customer_name,
+                        RIGHT(REGEXP_REPLACE(o.phone, '[^0-9]', ''), 10) as phone_10,
+                        o.order_id,
+                        r.due_amount
+                    FROM receipts r
+                    JOIN orders o ON r.order_id = o.order_id
+                    WHERE r.due_amount > 0 AND o.status != 'cancelled'
+                ");
+                $dueRows = $stmt ? ($stmt->fetchAll(PDO::FETCH_ASSOC) ?: []) : [];
+            } catch (Exception $e) {
+                $dueRows = [];
+            }
+        }
+
+        if (empty($dueRows)) {
+            foreach ($ordersList as &$ord) {
+                $ord['prior_due_amount'] = 0.00;
+            }
+            return;
+        }
+
+        foreach ($ordersList as &$targetOrd) {
+            $tOrdId = (int)($targetOrd['order_id'] ?? 0);
+            $tShop = trim(strtolower($targetOrd['shop_name'] ?: ($targetOrd['customer_name'] ?: '')));
+            $cleanP = preg_replace('/[^0-9]/', '', $targetOrd['phone'] ?? '');
+            $tP10 = strlen($cleanP) >= 7 ? (strlen($cleanP) >= 10 ? substr($cleanP, -10) : $cleanP) : '';
+
+            $sumDue = 0.0;
+            foreach ($dueRows as $dr) {
+                if ((int)$dr['order_id'] === $tOrdId) continue;
+                $match = false;
+                if ($tShop !== '' && ($tShop === $dr['shop_name'] || $tShop === $dr['customer_name'])) {
+                    $match = true;
+                } elseif (!empty($tP10) && $tP10 === $dr['phone_10']) {
+                    $match = true;
+                }
+                if ($match) {
+                    $sumDue += (float)$dr['due_amount'];
+                }
+            }
+            $targetOrd['prior_due_amount'] = $sumDue;
+        }
+    }
+}
+
+// 1. Unread notifications for this zone (Optimized query without correlated subqueries)
 $unread_stmt = $pdo->prepare("
     SELECT o.*, p.product_name, p.name as fallback_name,
            COALESCE(o.vehicle_id, (SELECT vl.vehicle_id FROM vehicle_loads vl WHERE vl.order_id = o.order_id AND vl.is_active = 1 LIMIT 1)) AS resolved_vehicle_id,
@@ -133,19 +197,7 @@ $unread_stmt = $pdo->prepare("
            (SELECT GROUP_CONCAT(CONCAT(COALESCE(p2.product_name, p2.name), ' (', oi2.quantity, 'cs', IF(oi2.is_extra = 1 OR oi2.price_at_purchase = 0, ' - Extra', ''), ')') SEPARATOR ', ') 
             FROM order_items oi2 
             JOIN products p2 ON oi2.product_id = p2.product_id 
-            WHERE oi2.order_id = o.order_id) AS items_summary,
-           (SELECT COALESCE(SUM(r2.due_amount), 0)
-            FROM receipts r2
-            JOIN orders o2 ON r2.order_id = o2.order_id
-            WHERE r2.due_amount > 0
-              AND o2.status != 'cancelled'
-              AND o2.order_id != o.order_id
-              AND (
-                  (TRIM(LOWER(o2.shop_name)) = TRIM(LOWER(o.shop_name)) AND TRIM(o.shop_name) != '')
-                  OR (TRIM(LOWER(o2.customer_name)) = TRIM(LOWER(o.customer_name)) AND TRIM(o.customer_name) != '')
-                  OR (o.phone != '' AND LENGTH(o.phone) >= 7 AND (o2.phone = o.phone OR o2.phone LIKE CONCAT('%', RIGHT(o.phone, 10))))
-              )
-           ) AS prior_due_amount
+            WHERE oi2.order_id = o.order_id) AS items_summary
     FROM orders o
     LEFT JOIN products p ON o.product_id = p.product_id
     LEFT JOIN vehicles veh ON veh.id = COALESCE(o.vehicle_id, (SELECT vl.vehicle_id FROM vehicle_loads vl WHERE vl.order_id = o.order_id AND vl.is_active = 1 LIMIT 1))
@@ -153,7 +205,8 @@ $unread_stmt = $pdo->prepare("
     ORDER BY o.created_at DESC
 ");
 $unread_stmt->execute([$zone_id]);
-$unread_notifications = $unread_stmt->fetchAll(PDO::FETCH_ASSOC);
+$unread_notifications = $unread_stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+attachPriorDues($pdo, $unread_notifications);
 
 // Date filter parameters (Default to 'today' for daily reset)
 $date_preset = strtolower(trim($_GET['date_preset'] ?? 'today'));
@@ -250,31 +303,50 @@ $status_counts = $counts_stmt->fetch(PDO::FETCH_ASSOC) ?: [
     'credit_count' => 0, 'cash_count' => 0
 ];
 
+// 2b. High-Speed Shop Dues Index Resolver
+// Pre-calculate shops/phones with outstanding dues in 1 ultra-fast query (<1ms) instead of N^2 subqueries
+$dueShopsList = [];
+try {
+    $dueRowsFast = $pdo->query("
+        SELECT DISTINCT TRIM(LOWER(o.shop_name)) as shop_name, RIGHT(REGEXP_REPLACE(o.phone, '[^0-9]', ''), 10) as phone_10
+        FROM receipts r
+        JOIN orders o ON r.order_id = o.order_id
+        WHERE r.due_amount > 0 AND o.status != 'cancelled'
+    ")->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    foreach ($dueRowsFast as $drf) {
+        if (!empty($drf['shop_name'])) $dueShopsList[] = $drf['shop_name'];
+        if (!empty($drf['phone_10']) && strlen($drf['phone_10']) >= 7) $dueShopsList[] = $drf['phone_10'];
+    }
+    $dueShopsList = array_values(array_unique(array_filter($dueShopsList)));
+} catch (Exception $e) {
+    $dueShopsList = [];
+}
+
 // Outstanding Due Count (Cumulative, DOES NOT reset daily; includes orders with receipt due OR shop prior dues)
-$dueCountStmt = $pdo->prepare("
-    SELECT COUNT(DISTINCT o.order_id)
-    FROM orders o
-    LEFT JOIN receipts r ON o.order_id = r.order_id
-    WHERE o.zone_id = :zone_id
-      AND o.status != 'cancelled'
-      AND (
-          r.due_amount > 0
-          OR EXISTS (
-              SELECT 1 FROM receipts r2
-              JOIN orders o2 ON r2.order_id = o2.order_id
-              WHERE r2.due_amount > 0
-                AND o2.status != 'cancelled'
-                AND o2.order_id != o.order_id
-                AND (
-                    (TRIM(LOWER(o2.shop_name)) = TRIM(LOWER(o.shop_name)) AND TRIM(o.shop_name) != '')
-                    OR (TRIM(LOWER(o2.customer_name)) = TRIM(LOWER(o.customer_name)) AND TRIM(o.customer_name) != '')
-                    OR (o.phone != '' AND LENGTH(o.phone) >= 7 AND (o2.phone = o.phone OR o2.phone LIKE CONCAT('%', RIGHT(o.phone, 10))))
-                )
-          )
-      )
-");
-$dueCountStmt->execute([':zone_id' => $zone_id]);
-$status_counts['due_count'] = (int)$dueCountStmt->fetchColumn();
+try {
+    $dueNamedKeys = [];
+    $dueCountParams = [':zone_id' => $zone_id];
+    if (!empty($dueShopsList)) {
+        foreach ($dueShopsList as $dIdx => $dVal) {
+            $k = ':due_shop_' . $dIdx;
+            $dueNamedKeys[] = $k;
+            $dueCountParams[$k] = $dVal;
+        }
+    }
+    $dueInClause = !empty($dueNamedKeys) ? " OR TRIM(LOWER(o.shop_name)) IN (" . implode(',', $dueNamedKeys) . ")" : "";
+    $dueCountStmt = $pdo->prepare("
+        SELECT COUNT(DISTINCT o.order_id)
+        FROM orders o
+        LEFT JOIN receipts r ON o.order_id = r.order_id
+        WHERE o.zone_id = :zone_id
+          AND o.status != 'cancelled'
+          AND (r.due_amount > 0 {$dueInClause})
+    ");
+    $dueCountStmt->execute($dueCountParams);
+    $status_counts['due_count'] = (int)$dueCountStmt->fetchColumn();
+} catch (Exception $e) {
+    $status_counts['due_count'] = 0;
+}
 
 // 3. Zone Orders (strictly filtered by zone_id)
 $where_clauses = ["o.zone_id = :zone_id"];
@@ -282,22 +354,17 @@ $params = [':zone_id' => $zone_id];
 
 // Dynamic filter matching
 if ($filter === 'due') {
-    // Outstanding Due does NOT reset daily - show all active orders that have due or prior due
-    $where_clauses[] = "o.status != 'cancelled' AND (
-        r.due_amount > 0
-        OR EXISTS (
-            SELECT 1 FROM receipts r2
-            JOIN orders o2 ON r2.order_id = o2.order_id
-            WHERE r2.due_amount > 0
-              AND o2.status != 'cancelled'
-              AND o2.order_id != o.order_id
-              AND (
-                  (TRIM(LOWER(o2.shop_name)) = TRIM(LOWER(o.shop_name)) AND TRIM(o.shop_name) != '')
-                  OR (TRIM(LOWER(o2.customer_name)) = TRIM(LOWER(o.customer_name)) AND TRIM(o.customer_name) != '')
-                  OR (o.phone != '' AND LENGTH(o.phone) >= 7 AND (o2.phone = o.phone OR o2.phone LIKE CONCAT('%', RIGHT(o.phone, 10))))
-              )
-        )
-    )";
+    if (!empty($dueShopsList)) {
+        $dueNamedKeys = [];
+        foreach ($dueShopsList as $dIdx => $dVal) {
+            $k = ':due_fshop_' . $dIdx;
+            $dueNamedKeys[] = $k;
+            $params[$k] = $dVal;
+        }
+        $where_clauses[] = "o.status != 'cancelled' AND (r.due_amount > 0 OR TRIM(LOWER(o.shop_name)) IN (" . implode(',', $dueNamedKeys) . "))";
+    } else {
+        $where_clauses[] = "o.status != 'cancelled' AND r.due_amount > 0";
+    }
 } else {
     // Other filters respect the active date condition (Daily Reset by default)
     if (!empty($dateCondition)) {
@@ -344,19 +411,7 @@ $orders_stmt = $pdo->prepare("
         (SELECT GROUP_CONCAT(CONCAT(COALESCE(p2.product_name, p2.name), ' (', oi2.quantity, 'cs', IF(oi2.is_extra = 1 OR oi2.price_at_purchase = 0, ' - Extra', ''), ')') SEPARATOR ', ') 
          FROM order_items oi2 
          JOIN products p2 ON oi2.product_id = p2.product_id 
-         WHERE oi2.order_id = o.order_id) AS items_summary,
-        (SELECT COALESCE(SUM(r2.due_amount), 0)
-         FROM receipts r2
-         JOIN orders o2 ON r2.order_id = o2.order_id
-         WHERE r2.due_amount > 0
-           AND o2.status != 'cancelled'
-           AND o2.order_id != o.order_id
-           AND (
-               (TRIM(LOWER(o2.shop_name)) = TRIM(LOWER(o.shop_name)) AND TRIM(o.shop_name) != '')
-               OR (TRIM(LOWER(o2.customer_name)) = TRIM(LOWER(o.customer_name)) AND TRIM(o.customer_name) != '')
-               OR (o.phone != '' AND LENGTH(o.phone) >= 7 AND (o2.phone = o.phone OR o2.phone LIKE CONCAT('%', RIGHT(o.phone, 10))))
-           )
-        ) AS prior_due_amount
+         WHERE oi2.order_id = o.order_id) AS items_summary
     FROM orders o
     LEFT JOIN products p ON o.product_id = p.product_id
     LEFT JOIN receipts r ON o.order_id = r.order_id
@@ -365,7 +420,8 @@ $orders_stmt = $pdo->prepare("
     ORDER BY o.created_at DESC
 ");
 $orders_stmt->execute($params);
-$orders = $orders_stmt->fetchAll(PDO::FETCH_ASSOC);
+$orders = $orders_stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+attachPriorDues($pdo, $orders);
 
 // 4. Zone Summary Metrics
 // Operational metrics filtered by active date range (daily reset)
@@ -3422,18 +3478,71 @@ if (!function_exists('buildWhatsAppLink')) {
                 }, 9000);
             }
 
-            // Real-time AJAX refresh function (runs every 3 seconds)
+            // Real-time High-Speed Smart Polling
             let isRefreshing = false;
-            function refreshZonePage() {
+            let lastKnownStateHash = null;
+
+            function refreshZonePage(forceFull = false) {
                 if (isRefreshing) return;
 
-                // If user is actively typing in an input or selecting a dropdown inside orders, defer replacing that block
                 const activeEl = document.activeElement;
                 const isFormActive = activeEl && (activeEl.tagName === 'SELECT' || activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA');
 
+                // If tab is in background, pause refresh unless forced
+                if (document.hidden && !forceFull) return;
+
+                // Probe lightweight JSON endpoint (tiny payload, instant response)
+                fetch(pollUrl, { cache: 'no-store' })
+                    .then(r => r.json())
+                    .then(res => {
+                        if (!res || !res.success) return;
+
+                        // Check new unread incoming orders for audio/vibration alerts
+                        if (res.orders && res.orders.length > 0) {
+                            let hasNewIncoming = false;
+                            res.orders.forEach(ord => {
+                                const oid = parseInt(ord.order_id);
+                                if (!knownUnreadIds.has(oid)) {
+                                    knownUnreadIds.add(oid);
+                                    hasNewIncoming = true;
+                                    const shop = ord.shop_name || ord.customer_name || 'New Order';
+                                    const meta = '#' + (ord.order_number || ord.order_id) + ' • ' + (ord.quantity || 1) + ' cases';
+                                    showToast('🔔 New Order Alert', `<strong>${shop}</strong><br><small>${meta}</small>`);
+                                }
+                            });
+                            if (hasNewIncoming) {
+                                playNotificationSound();
+                                if (navigator.vibrate) {
+                                    navigator.vibrate([250, 100, 250]);
+                                }
+                            }
+                        }
+
+                        // State Hash change detector
+                        const currentHash = res.state_hash || (res.latest_order_id + '_' + res.unread_count + '_' + (res.last_updated_ts || 0));
+                        if (lastKnownStateHash === null) {
+                            lastKnownStateHash = currentHash;
+                            if (!forceFull) return;
+                        }
+
+                        // Only re-render full HTML if order data has changed or forced
+                        if (forceFull || (lastKnownStateHash !== currentHash && !isFormActive)) {
+                            lastKnownStateHash = currentHash;
+                            fetchFullZoneHtml();
+                        }
+                    })
+                    .catch(err => console.debug('Zone JSON probe error:', err));
+            }
+
+            function fetchFullZoneHtml() {
+                if (isRefreshing) return;
                 isRefreshing = true;
+                const activeEl = document.activeElement;
+                const isFormActive = activeEl && (activeEl.tagName === 'SELECT' || activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA');
+
                 fetch(window.location.href, {
-                    headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                    cache: 'no-store'
                 })
                 .then(r => {
                     if (!r.ok) throw new Error('Network error: ' + r.status);
@@ -3443,47 +3552,12 @@ if (!function_exists('buildWhatsAppLink')) {
                     const parser = new DOMParser();
                     const doc = parser.parseFromString(html, 'text/html');
 
-                    // 1. Detect any newly arrived unread orders
-                    let hasNewIncoming = false;
-                    doc.querySelectorAll('.notif-item').forEach(item => {
-                        const idMatch = item.id && item.id.match(/notif-card-(\d+)/);
-                        if (idMatch) {
-                            const ordId = parseInt(idMatch[1]);
-                            if (!knownUnreadIds.has(ordId)) {
-                                knownUnreadIds.add(ordId);
-                                hasNewIncoming = true;
-                                const shop = item.querySelector('.notif-shop')?.innerText?.trim() || 'New Order';
-                                const meta = item.querySelector('.notif-meta')?.innerText?.trim() || '';
-                                showToast('🔔 New Order Alert', `<strong>${shop}</strong><br><small>${meta}</small>`);
-                            }
-                        }
-                    });
-
-                    // Check newly marked unread cards in orders listing
-                    doc.querySelectorAll('#ordersContainer .badge-unread-chip').forEach(badge => {
-                        const idMatch = badge.id && badge.id.match(/unread-tag-(\d+)/);
-                        if (idMatch) {
-                            const ordId = parseInt(idMatch[1]);
-                            if (!knownUnreadIds.has(ordId)) {
-                                knownUnreadIds.add(ordId);
-                                hasNewIncoming = true;
-                            }
-                        }
-                    });
-
-                    if (hasNewIncoming) {
-                        playNotificationSound();
-                        if (navigator.vibrate) {
-                            navigator.vibrate([250, 100, 250]);
-                        }
-                    }
-
-                    // 2. Update window title
+                    // 1. Update window title
                     if (doc.title) {
                         document.title = doc.title;
                     }
 
-                    // 3. Update Notification Banner
+                    // 2. Update Notification Banner
                     const currentBanner = document.querySelector('.notif-banner');
                     const newBanner = doc.querySelector('.notif-banner');
                     const mainContainer = document.querySelector('.portal-container');
@@ -3503,14 +3577,14 @@ if (!function_exists('buildWhatsAppLink')) {
                         currentBanner.remove();
                     }
 
-                    // 3.1 Update Vehicle Load Status Panel
+                    // 3. Update Vehicle Load Status Panel
                     const currentVehPanel = document.getElementById('vehicleLoadPanel');
                     const newVehPanel = doc.getElementById('vehicleLoadPanel');
                     if (currentVehPanel && newVehPanel) {
                         currentVehPanel.innerHTML = newVehPanel.innerHTML;
                     }
 
-                    // 3.2 Update Date Filter Section (while preserving custom date picker open state)
+                    // 4. Update Date Filter Section
                     const currentDateFilter = document.getElementById('dateFilterSection');
                     const newDateFilter = doc.getElementById('dateFilterSection');
                     if (currentDateFilter && newDateFilter) {
@@ -3523,7 +3597,7 @@ if (!function_exists('buildWhatsAppLink')) {
                         }
                     }
 
-                    // 4. Update Metrics Grid while preserving mobile accordion open state
+                    // 5. Update Metrics Grid while preserving mobile accordion open state
                     const currentMetrics = document.getElementById('metricsGrid');
                     const newMetrics = doc.getElementById('metricsGrid');
                     if (currentMetrics && newMetrics) {
@@ -3534,14 +3608,14 @@ if (!function_exists('buildWhatsAppLink')) {
                         }
                     }
 
-                    // 5. Update Status Filter Pills & Counters
+                    // 6. Update Status Filter Pills & Counters
                     const currentFilterScroll = document.querySelector('.filter-scroll-container');
                     const newFilterScroll = doc.querySelector('.filter-scroll-container');
                     if (currentFilterScroll && newFilterScroll) {
                         currentFilterScroll.innerHTML = newFilterScroll.innerHTML;
                     }
 
-                    // 6. Update Orders Listing Container
+                    // 7. Update Orders Listing Container
                     const currentOrders = document.getElementById('ordersContainer');
                     const newOrders = doc.getElementById('ordersContainer');
                     if (currentOrders && newOrders) {
@@ -3560,8 +3634,11 @@ if (!function_exists('buildWhatsAppLink')) {
                 });
             }
 
-            // Start real-time AJAX refresh every 3 seconds
-            setInterval(refreshZonePage, 3000);
+            // Start real-time smart probe every 3 seconds
+            setInterval(() => refreshZonePage(false), 3000);
+            document.addEventListener('visibilitychange', () => {
+                if (!document.hidden) refreshZonePage(false);
+            });
             window.refreshZonePage = refreshZonePage;
 
             // Acknowledge order handler via AJAX

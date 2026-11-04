@@ -14,6 +14,11 @@ if (!isZoneOrdersAuthenticated()) {
     exit;
 }
 
+// Release session lock early for high-speed concurrent dashboard polling
+if (session_status() === PHP_SESSION_ACTIVE) {
+    session_write_close();
+}
+
 $action = $_REQUEST['action'] ?? 'poll';
 $selectedZone = trim($_REQUEST['zone'] ?? 'all'); // 'all' or zone_id or zone_slug
 
@@ -1057,6 +1062,7 @@ try {
     $latestOrderId = (int)$stmtLatest->fetchColumn();
 
     $metrics = getLiveMetrics($pdo, $selectedZone);
+    $stateHash = md5($latestOrderId . '_' . count($unreadOrders) . '_' . ($metrics['total_orders'] ?? 0) . '_' . ($metrics['pending_count'] ?? 0) . '_' . ($metrics['delivered_count'] ?? 0));
 
     echo json_encode([
         'success'         => true,
@@ -1065,6 +1071,7 @@ try {
         'latest_order_id' => $latestOrderId,
         'orders'          => $unreadOrders,
         'metrics'         => $metrics,
+        'state_hash'      => $stateHash,
         'timestamp'       => time()
     ]);
     exit;

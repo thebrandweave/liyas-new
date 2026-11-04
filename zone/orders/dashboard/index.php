@@ -8,6 +8,11 @@ require_once dirname(__DIR__) . '/auth_helper.php';
 // Enforce authentication
 requireZoneOrdersAuth();
 
+// Release session lock for high-speed concurrent rendering
+if ($_SERVER['REQUEST_METHOD'] !== 'POST' && session_status() === PHP_SESSION_ACTIVE) {
+    session_write_close();
+}
+
 // Fetch active zones for selector and filter chips
 $zonesStmt = $pdo->query("SELECT * FROM zones WHERE status = 'active' ORDER BY name ASC");
 $allZones = $zonesStmt->fetchAll(PDO::FETCH_ASSOC);
@@ -2313,24 +2318,84 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
                 }, 8000);
             }
 
-            // Real-time AJAX refresh function (runs every 3 seconds)
+            // Real-time High-Speed Smart Polling
             let isRefreshing = false;
-            function pollOrders() {
+            let lastKnownDashboardHash = null;
+
+            function pollOrders(forceFull = false) {
                 if (isRefreshing) return;
 
-                // Check if either modal is currently open
                 const modalBackdrop = document.getElementById('orderModalBackdrop');
                 const aopModalBackdrop = document.getElementById('modalAddOrderProductsBackdrop');
                 const isModalOpen = (modalBackdrop && modalBackdrop.classList.contains('open')) ||
                                     (aopModalBackdrop && aopModalBackdrop.classList.contains('open'));
 
-                // Check if user is actively interacting with an input or select
                 const activeEl = document.activeElement;
                 const isFormActive = activeEl && (activeEl.tagName === 'SELECT' || activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA');
 
+                // If tab is in background, pause polling unless forced
+                if (document.hidden && !forceFull) return;
+
+                // Probe lightweight JSON API (<2ms)
+                fetch(pollApiUrl, { cache: 'no-store' })
+                    .then(r => r.json())
+                    .then(res => {
+                        if (!res || !res.success) return;
+
+                        // Check new unread incoming orders for audio/vibration alerts
+                        if (res.orders && res.orders.length > 0) {
+                            let newIncoming = false;
+                            res.orders.forEach(ord => {
+                                const ordId = parseInt(ord.order_id);
+                                if (ordId && !knownOrderIds.has(ordId)) {
+                                    knownOrderIds.add(ordId);
+                                    newIncoming = true;
+                                    const shop = ord.shop_name || ord.customer_name || 'Customer';
+                                    const ordNum = ord.order_number || ('#' + ordId);
+                                    const amt = ord.total_amount ? ('₹' + parseFloat(ord.total_amount).toFixed(2)) : '';
+                                    showToast(`🔔 New Order Received: ${ordNum}`, `<strong>${shop}</strong> • ${amt}`);
+                                }
+                            });
+
+                            if (newIncoming) {
+                                playChime();
+                                if (navigator.vibrate) {
+                                    navigator.vibrate([200, 100, 200]);
+                                }
+                            }
+                        }
+
+                        // State Hash change detector
+                        const currentHash = res.state_hash || (res.latest_order_id + '_' + res.unread_count + '_' + (res.metrics ? res.metrics.total_orders : 0));
+                        if (lastKnownDashboardHash === null) {
+                            lastKnownDashboardHash = currentHash;
+                            if (!forceFull) return;
+                        }
+
+                        // Only re-render full HTML if order data has changed or forced
+                        if (forceFull || (lastKnownDashboardHash !== currentHash && !isFormActive && !isModalOpen)) {
+                            lastKnownDashboardHash = currentHash;
+                            fetchFullDashboardHtml();
+                        }
+                    })
+                    .catch(err => console.debug('Dashboard JSON probe error:', err));
+            }
+
+            function fetchFullDashboardHtml() {
+                if (isRefreshing) return;
                 isRefreshing = true;
+
+                const modalBackdrop = document.getElementById('orderModalBackdrop');
+                const aopModalBackdrop = document.getElementById('modalAddOrderProductsBackdrop');
+                const isModalOpen = (modalBackdrop && modalBackdrop.classList.contains('open')) ||
+                                    (aopModalBackdrop && aopModalBackdrop.classList.contains('open'));
+
+                const activeEl = document.activeElement;
+                const isFormActive = activeEl && (activeEl.tagName === 'SELECT' || activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA');
+
                 fetch(window.location.href, {
-                    headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                    cache: 'no-store'
                 })
                 .then(r => {
                     if (!r.ok) throw new Error('Network error: ' + r.status);
@@ -2340,37 +2405,12 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
                     const parser = new DOMParser();
                     const doc = parser.parseFromString(html, 'text/html');
 
-                    // 1. Detect any newly arrived incoming orders
-                    const newCards = doc.querySelectorAll('#ordersFeed .order-card');
-                    let newIncoming = false;
-
-                    newCards.forEach(card => {
-                        const ordId = parseInt(card.getAttribute('data-order-id'));
-                        if (ordId && !knownOrderIds.has(ordId)) {
-                            knownOrderIds.add(ordId);
-                            if (card.classList.contains('unread') || card.querySelector('.badge-unread')) {
-                                newIncoming = true;
-                                const shop = card.querySelector('.shop-name span')?.innerText?.trim() || 'Customer';
-                                const ordNum = card.querySelector('.order-num')?.innerText?.trim() || ('#' + ordId);
-                                const amt = card.querySelector('.order-total-amount')?.innerText?.trim() || '';
-                                showToast(`🔔 New Order Received: ${ordNum}`, `<strong>${shop}</strong> • ${amt}`);
-                            }
-                        }
-                    });
-
-                    if (newIncoming) {
-                        playChime();
-                        if (navigator.vibrate) {
-                            navigator.vibrate([200, 100, 200]);
-                        }
-                    }
-
-                    // 2. Update window title
+                    // 1. Update window title
                     if (doc.title) {
                         document.title = doc.title;
                     }
 
-                    // 3. Update Unread Notification Banner
+                    // 2. Update Unread Notification Banner
                     const currentBanner = document.getElementById('unreadNotifBanner');
                     const newBanner = doc.getElementById('unreadNotifBanner');
                     const mainContainer = document.querySelector('.portal-container');
@@ -2390,7 +2430,7 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
                         currentBanner.remove();
                     }
 
-                    // 4. Update Metrics Grid
+                    // 3. Update Metrics Grid
                     const currentMetrics = document.getElementById('metricsGrid');
                     const newMetrics = doc.getElementById('metricsGrid');
                     if (currentMetrics && newMetrics) {
@@ -2401,7 +2441,7 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
                         }
                     }
 
-                    // 5. Update Zone Pills & Filter Chips
+                    // 4. Update Zone Pills & Filter Chips
                     const currentZonePills = document.querySelector('.zone-pills-row');
                     const newZonePills = doc.querySelector('.zone-pills-row');
                     if (currentZonePills && newZonePills) {
@@ -2414,7 +2454,7 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
                         currentStatusChips.innerHTML = newStatusChips.innerHTML;
                     }
 
-                    // 6. Update Orders Feed (if modal is not open and no active select inside feed)
+                    // 5. Update Orders Feed
                     const currentFeed = document.getElementById('ordersFeed');
                     const newFeed = doc.getElementById('ordersFeed');
                     if (currentFeed && newFeed && !isModalOpen) {
@@ -2431,7 +2471,10 @@ function getZoneWhatsAppLink($phone, $shop, $orderNum, $amount, $zoneName = '') 
             }
 
             // Start polling timer every 3 seconds
-            setInterval(pollOrders, 3000);
+            setInterval(() => pollOrders(false), 3000);
+            document.addEventListener('visibilitychange', () => {
+                if (!document.hidden) pollOrders(false);
+            });
             window.pollOrders = pollOrders;
 
             // Unlock audio on first user touch / click

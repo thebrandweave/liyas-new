@@ -1,6 +1,11 @@
 <?php
 require_once __DIR__ . '/zone_context.php';
 
+// Release session lock for instant parallel rendering
+if (session_status() === PHP_SESSION_ACTIVE) {
+    session_write_close();
+}
+
 $order_id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
 
 // Enforce zone isolation: WHERE o.order_id = ? AND o.zone_id = ?

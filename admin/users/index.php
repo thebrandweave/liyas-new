@@ -46,6 +46,31 @@ $page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
 $per_page = 20;
 $offset = ($page - 1) * $per_page;
 
+// Auto-migrate schema on live server if 'staff' role or 'shops' table is missing
+try {
+    $colRow = $pdo->query("SHOW COLUMNS FROM admins LIKE 'role'")->fetch(PDO::FETCH_ASSOC);
+    if ($colRow && strpos($colRow['Type'], "'staff'") === false) {
+        $pdo->exec("ALTER TABLE admins MODIFY COLUMN role ENUM('superadmin','editor','moderator','staff') NOT NULL DEFAULT 'staff'");
+    }
+    // Auto-fix any blank roles for staff accounts
+    $pdo->exec("UPDATE admins SET role = 'staff' WHERE (role IS NULL OR role = '' OR role NOT IN ('superadmin','editor','moderator','staff')) AND (username LIKE '%staff%' OR email LIKE '%staff%')");
+    
+    // Auto-ensure shops table exists
+    $pdo->exec("CREATE TABLE IF NOT EXISTS shops (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        shop_name VARCHAR(255) NOT NULL,
+        location VARCHAR(255) NULL,
+        phone VARCHAR(20) NULL,
+        zone_id INT NULL,
+        vehicle_id INT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_shop_name (shop_name),
+        INDEX idx_zone_id (zone_id),
+        INDEX idx_vehicle_id (vehicle_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+} catch (Exception $e) {}
+
 try {
     $search_param = "%$search%";
     $count_stmt = $pdo->prepare("SELECT COUNT(*) FROM admins WHERE username LIKE ? OR email LIKE ?");

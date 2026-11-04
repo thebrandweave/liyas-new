@@ -14,6 +14,11 @@ if (!isZoneOrdersAuthenticated() && empty($_SESSION['delivery_zone_id']) && empt
     exit;
 }
 
+// Release session lock for high-speed AJAX execution
+if (session_status() === PHP_SESSION_ACTIVE) {
+    session_write_close();
+}
+
 $action = trim($_REQUEST['action'] ?? '');
 
 /**

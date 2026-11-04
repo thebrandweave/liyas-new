@@ -4,6 +4,11 @@
  */
 require_once __DIR__ . '/zone_context.php';
 
+// Free session lock immediately for high-speed concurrent execution
+if (session_status() === PHP_SESSION_ACTIVE) {
+    session_write_close();
+}
+
 header('Content-Type: application/json');
 
 // Handle single order acknowledgment / mark-as-read via AJAX
@@ -94,14 +99,23 @@ try {
         $latest_order_id = (int)$unread_orders[0]['order_id'];
     }
 
+    $lastUpdatedStmt = $pdo->prepare("SELECT UNIX_TIMESTAMP(MAX(updated_at)) as max_ts, COUNT(*) as total_active FROM orders WHERE zone_id = ? AND status != 'cancelled'");
+    $lastUpdatedStmt->execute([$zone_id]);
+    $lastUpdatedRow = $lastUpdatedStmt->fetch(PDO::FETCH_ASSOC);
+    $lastUpdatedTs = (int)($lastUpdatedRow['max_ts'] ?? 0);
+    $totalActiveCount = (int)($lastUpdatedRow['total_active'] ?? 0);
+
     echo json_encode([
-        'success'         => true,
-        'zone_id'         => $zone_id,
-        'zone_slug'       => $zone_slug,
-        'zone_name'       => $zone_name,
-        'unread_count'    => count($unread_orders),
-        'latest_order_id' => $latest_order_id,
-        'orders'          => $unread_orders
+        'success'            => true,
+        'zone_id'            => $zone_id,
+        'zone_slug'          => $zone_slug,
+        'zone_name'          => $zone_name,
+        'unread_count'       => count($unread_orders),
+        'latest_order_id'    => $latest_order_id,
+        'last_updated_ts'    => $lastUpdatedTs,
+        'total_active_count' => $totalActiveCount,
+        'state_hash'         => md5($latest_order_id . '_' . count($unread_orders) . '_' . $lastUpdatedTs . '_' . $totalActiveCount),
+        'orders'             => $unread_orders
     ]);
 } catch (Exception $e) {
     http_response_code(500);

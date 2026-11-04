@@ -46,12 +46,12 @@ try {
 }
 
 // Ensure session has role and name
-if (!isset($_SESSION['admin_role'])) {
+if (!isset($_SESSION['admin_role']) || empty($_SESSION['admin_role'])) {
     $roleStmt = $pdo->prepare("SELECT role, username FROM admins WHERE admin_id = ?");
     $roleStmt->execute([$admin_id]);
     $adminData = $roleStmt->fetch(PDO::FETCH_ASSOC);
     if ($adminData) {
-        $_SESSION['admin_role'] = $adminData['role'] ?? 'superadmin';
+        $_SESSION['admin_role'] = !empty($adminData['role']) ? strtolower($adminData['role']) : 'staff';
         $_SESSION['admin_name'] = $adminData['username'] ?? 'Admin';
     }
 }

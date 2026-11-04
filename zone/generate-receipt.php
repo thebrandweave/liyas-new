@@ -3,6 +3,9 @@ require_once __DIR__ . '/zone_context.php';
 
 // Quick AJAX endpoint to check prior pending dues for a shop or phone
 if (isset($_GET['action']) && $_GET['action'] === 'check_prior_due') {
+    if (session_status() === PHP_SESSION_ACTIVE) {
+        session_write_close();
+    }
     header('Content-Type: application/json');
     $checkShop = trim($_GET['shop'] ?? '');
     $checkPhone = trim($_GET['phone'] ?? '');
@@ -10,6 +13,10 @@ if (isset($_GET['action']) && $_GET['action'] === 'check_prior_due') {
     $dues = getShopPendingDueDetails($pdo, $checkShop, $checkPhone, $exId, null);
     echo json_encode($dues);
     exit;
+}
+
+if ($_SERVER['REQUEST_METHOD'] !== 'POST' && session_status() === PHP_SESSION_ACTIVE) {
+    session_write_close();
 }
 
 $order_id = isset($_GET['order_id']) ? (int)$_GET['order_id'] : (isset($_POST['order_id']) ? (int)$_POST['order_id'] : 0);

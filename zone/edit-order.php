@@ -58,6 +58,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_discount'])) {
     }
 }
 
+// Release session lock for fast rendering
+if (session_status() === PHP_SESSION_ACTIVE) {
+    session_write_close();
+}
+
 $displayOrderNum = $order['order_number'] ?: ('#' . $order['order_id']);
 $shopName = htmlspecialchars($order['shop_name'] ?: ($order['customer_name'] ?: 'Customer'));
 $prodName = htmlspecialchars($order['product_name'] ?: ($order['fallback_name'] ?: 'Water'));

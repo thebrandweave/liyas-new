@@ -29,6 +29,15 @@ $dynamicBaseUrl = (stripos(__DIR__, 'xampp') !== false)
  * and ensure every zone has a unique 4-digit access code.
  */
 function initZoneSecurityAndCodes(PDO $pdo): array {
+    static $alreadyInit = false;
+    if ($alreadyInit) return [];
+
+    $lockFile = dirname(__DIR__) . '/config/.zone_sec_synced';
+    if (file_exists($lockFile)) {
+        $alreadyInit = true;
+        return [];
+    }
+
     try {
         // 1. Authorized Devices table
         $pdo->exec("
@@ -91,6 +100,8 @@ function initZoneSecurityAndCodes(PDO $pdo): array {
         }
         unset($z);
 
+        @touch($lockFile);
+        $alreadyInit = true;
         return $zones;
     } catch (Exception $e) {
         return [];

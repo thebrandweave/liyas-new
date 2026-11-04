@@ -18,6 +18,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_admin'])) {
     $role = trim($_POST['role'] ?? 'editor');
 
     try {
+        $colRow = $pdo->query("SHOW COLUMNS FROM admins LIKE 'role'")->fetch(PDO::FETCH_ASSOC);
+        if ($colRow && strpos($colRow['Type'], "'staff'") === false) {
+            $pdo->exec("ALTER TABLE admins MODIFY COLUMN role ENUM('superadmin','editor','moderator','staff') NOT NULL DEFAULT 'staff'");
+        }
+    } catch (Exception $e) {}
+
+    try {
         if (!empty($password)) {
             $stmt = $pdo->prepare("UPDATE admins SET username = ?, email = ?, password_hash = ?, role = ? WHERE admin_id = ?");
             $stmt->execute([$username, $email, password_hash($password, PASSWORD_DEFAULT), $role, $id]);

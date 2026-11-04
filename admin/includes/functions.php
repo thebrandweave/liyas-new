@@ -63,14 +63,16 @@ function sanitizeZoneSlug($name) {
  * Get setting value from system_settings
  */
 function getSystemSetting($pdo, $key, $default = '') {
-	try {
-		$stmt = $pdo->prepare("SELECT setting_value FROM system_settings WHERE setting_key = ?");
-		$stmt->execute([$key]);
-		$val = $stmt->fetchColumn();
-		return ($val !== false) ? $val : $default;
-	} catch (Exception $e) {
-		return $default;
+	static $settingsCache = null;
+	if ($settingsCache === null) {
+		try {
+			$stmt = $pdo->query("SELECT setting_key, setting_value FROM system_settings");
+			$settingsCache = $stmt ? ($stmt->fetchAll(PDO::FETCH_KEY_PAIR) ?: []) : [];
+		} catch (Exception $e) {
+			$settingsCache = [];
+		}
 	}
+	return $settingsCache[$key] ?? $default;
 }
 
 /**
@@ -351,6 +353,15 @@ function getShopDeliveredCasesSummary(PDO $pdo, string $shop_name): array {
  * Fetch distinct list of active shops from both shops master and historical orders
  */
 function getAllShopsList(PDO $pdo): array {
+	static $cachedShops = null;
+	if ($cachedShops !== null) {
+		return $cachedShops;
+	}
+	if (isset($_SESSION['all_shops_cache']) && ($_SESSION['all_shops_cache']['ts'] ?? 0) > (time() - 120)) {
+		$cachedShops = $_SESSION['all_shops_cache']['data'];
+		return $cachedShops;
+	}
+
 	try {
 		$shopsMap = [];
 		// 1. From shops master table
@@ -422,6 +433,8 @@ function getAllShopsList(PDO $pdo): array {
 		usort($result, function($a, $b) {
 			return strcasecmp($a['shop_name'], $b['shop_name']);
 		});
+		$cachedShops = $result;
+		$_SESSION['all_shops_cache'] = ['data' => $result, 'ts' => time()];
 		return $result;
 	} catch (Exception $e) {
 		return [];
@@ -894,6 +907,10 @@ function getVehicleDeliveredOrdersDetails(PDO $pdo, int $vehicleId, string $date
  */
 function getVehicleLoadedProductsWithCounts(PDO $pdo, int $vehicleId): array {
 	if ($vehicleId <= 0) return [];
+	static $vCache = [];
+	if (isset($vCache[$vehicleId])) {
+		return $vCache[$vehicleId];
+	}
 	try {
 		$result = [];
 
@@ -1010,6 +1027,7 @@ function getVehicleLoadedProductsWithCounts(PDO $pdo, int $vehicleId): array {
 			];
 		}
 
+		$vCache[$vehicleId] = $result;
 		return $result;
 	} catch (Exception $e) {
 		error_log("Error in getVehicleLoadedProductsWithCounts: " . $e->getMessage());

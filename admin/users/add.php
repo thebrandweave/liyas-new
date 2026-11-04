@@ -14,6 +14,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_admin'])) {
         $form_error = "All fields are required.";
     } else {
         try {
+            $colRow = $pdo->query("SHOW COLUMNS FROM admins LIKE 'role'")->fetch(PDO::FETCH_ASSOC);
+            if ($colRow && strpos($colRow['Type'], "'staff'") === false) {
+                $pdo->exec("ALTER TABLE admins MODIFY COLUMN role ENUM('superadmin','editor','moderator','staff') NOT NULL DEFAULT 'staff'");
+            }
+        } catch (Exception $e) {}
+
+        try {
             $stmt = $pdo->prepare("INSERT INTO admins (username, email, password_hash, role) VALUES (?, ?, ?, ?)");
             $stmt->execute([$username, $email, password_hash($password, PASSWORD_DEFAULT), $role]);
             quickLog($pdo, 'create', 'user', $pdo->lastInsertId(), "Created admin: $username");
