@@ -200,7 +200,7 @@ $unread_stmt = $pdo->prepare("
             WHERE oi2.order_id = o.order_id) AS items_summary
     FROM orders o
     LEFT JOIN products p ON o.product_id = p.product_id
-    LEFT JOIN vehicles veh ON veh.id = COALESCE(o.vehicle_id, (SELECT vl.vehicle_id FROM vehicle_loads vl WHERE vl.order_id = o.order_id AND vl.is_active = 1 LIMIT 1))
+    LEFT JOIN vehicles veh ON veh.id = o.vehicle_id
     WHERE o.zone_id = ? AND o.is_zone_read = 0 AND o.status != 'cancelled'
     ORDER BY o.created_at DESC
 ");
@@ -404,12 +404,7 @@ $orders_stmt = $pdo->prepare("
         r.credited_amount as receipt_credit,
         r.due_amount as receipt_due,
         r.payment_type as receipt_pay_type,
-        COALESCE(
-            o.vehicle_id, 
-            (SELECT vl.vehicle_id FROM vehicle_loads vl WHERE vl.order_id = o.order_id ORDER BY vl.id DESC LIMIT 1),
-            (SELECT s.vehicle_id FROM shops s WHERE TRIM(LOWER(s.shop_name)) = TRIM(LOWER(o.shop_name)) AND s.vehicle_id IS NOT NULL AND s.vehicle_id > 0 LIMIT 1),
-            (SELECT vz.id FROM vehicles vz WHERE vz.zone_id = o.zone_id AND vz.status != 'inactive' ORDER BY vz.id ASC LIMIT 1)
-        ) AS resolved_vehicle_id,
+        o.vehicle_id AS resolved_vehicle_id,
         veh.vehicle_number AS assigned_vehicle_number,
         veh.vehicle_name AS assigned_vehicle_name,
         (SELECT COUNT(*) FROM order_items oi WHERE oi.order_id = o.order_id) AS items_count,
@@ -420,12 +415,7 @@ $orders_stmt = $pdo->prepare("
     FROM orders o
     LEFT JOIN products p ON o.product_id = p.product_id
     LEFT JOIN receipts r ON o.order_id = r.order_id
-    LEFT JOIN vehicles veh ON veh.id = COALESCE(
-        o.vehicle_id, 
-        (SELECT vl.vehicle_id FROM vehicle_loads vl WHERE vl.order_id = o.order_id ORDER BY vl.id DESC LIMIT 1),
-        (SELECT s.vehicle_id FROM shops s WHERE TRIM(LOWER(s.shop_name)) = TRIM(LOWER(o.shop_name)) AND s.vehicle_id IS NOT NULL AND s.vehicle_id > 0 LIMIT 1),
-        (SELECT vz.id FROM vehicles vz WHERE vz.zone_id = o.zone_id AND vz.status != 'inactive' ORDER BY vz.id ASC LIMIT 1)
-    )
+    LEFT JOIN vehicles veh ON veh.id = o.vehicle_id
     WHERE $where_sql
     ORDER BY o.created_at DESC
 ");
@@ -543,6 +533,33 @@ foreach ($orders as $ord) {
         ];
     }
 }
+
+// Resolve any unassigned order vehicles dynamically in PHP (zero SQL correlated subquery overhead)
+$zoneDefaultVeh = !empty($zoneVehicles) ? $zoneVehicles[0] : null;
+foreach ($orders as &$ord) {
+    if (empty($ord['assigned_vehicle_number'])) {
+        $ovId = (int)($ord['resolved_vehicle_id'] ?? ($ord['vehicle_id'] ?? 0));
+        if ($ovId > 0 && isset($vehiclesLoadMap[$ovId])) {
+            $ord['assigned_vehicle_number'] = $vehiclesLoadMap[$ovId]['vehicle']['vehicle_number'];
+            $ord['assigned_vehicle_name']   = $vehiclesLoadMap[$ovId]['vehicle']['vehicle_name'] ?? '';
+            $ord['resolved_vehicle_id']     = $ovId;
+        } elseif ($zoneDefaultVeh) {
+            $ord['assigned_vehicle_number'] = $zoneDefaultVeh['vehicle_number'];
+            $ord['assigned_vehicle_name']   = $zoneDefaultVeh['vehicle_name'] ?? '';
+            $ord['resolved_vehicle_id']     = (int)$zoneDefaultVeh['id'];
+        }
+    }
+}
+unset($ord);
+
+foreach ($unread_notifications as &$unr) {
+    if (empty($unr['assigned_vehicle_number']) && $zoneDefaultVeh) {
+        $unr['assigned_vehicle_number'] = $zoneDefaultVeh['vehicle_number'];
+        $unr['assigned_vehicle_name']   = $zoneDefaultVeh['vehicle_name'] ?? '';
+        $unr['resolved_vehicle_id']     = (int)$zoneDefaultVeh['id'];
+    }
+}
+unset($unr);
 
 // Active catalog products for damaged items reporting
 $allProductsList = $pdo->query("SELECT product_id, COALESCE(product_name, name) as name, case_price, net_content, net_content_unit FROM products WHERE status = 'active' ORDER BY name ASC")->fetchAll(PDO::FETCH_ASSOC) ?: [];

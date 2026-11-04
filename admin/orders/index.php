@@ -256,7 +256,7 @@ $orders_query = "
     LEFT JOIN products p ON o.product_id = p.product_id
     LEFT JOIN users u ON o.user_id = u.user_id
     LEFT JOIN receipts r ON o.order_id = r.order_id
-    LEFT JOIN vehicles veh ON veh.id = COALESCE(o.vehicle_id, (SELECT vl.vehicle_id FROM vehicle_loads vl WHERE vl.order_id = o.order_id AND vl.is_active = 1 LIMIT 1))
+    LEFT JOIN vehicles veh ON veh.id = o.vehicle_id
     $where_sql
     ORDER BY o.created_at DESC
     LIMIT :limit OFFSET :offset

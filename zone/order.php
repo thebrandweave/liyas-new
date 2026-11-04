@@ -25,23 +25,13 @@ $stmt = $pdo->prepare("
         r.due_amount as receipt_due,
         r.payment_type as receipt_pay_type,
         r.created_at as receipt_date,
-        COALESCE(
-            o.vehicle_id, 
-            (SELECT vl.vehicle_id FROM vehicle_loads vl WHERE vl.order_id = o.order_id ORDER BY vl.id DESC LIMIT 1),
-            (SELECT s.vehicle_id FROM shops s WHERE TRIM(LOWER(s.shop_name)) = TRIM(LOWER(o.shop_name)) AND s.vehicle_id IS NOT NULL AND s.vehicle_id > 0 LIMIT 1),
-            (SELECT vz.id FROM vehicles vz WHERE vz.zone_id = o.zone_id AND vz.status != 'inactive' ORDER BY vz.id ASC LIMIT 1)
-        ) AS resolved_vehicle_id,
+        o.vehicle_id AS resolved_vehicle_id,
         veh.vehicle_number AS assigned_vehicle_number,
         veh.vehicle_name AS assigned_vehicle_name
     FROM orders o
     LEFT JOIN products p ON o.product_id = p.product_id
     LEFT JOIN receipts r ON o.order_id = r.order_id
-    LEFT JOIN vehicles veh ON veh.id = COALESCE(
-        o.vehicle_id, 
-        (SELECT vl.vehicle_id FROM vehicle_loads vl WHERE vl.order_id = o.order_id ORDER BY vl.id DESC LIMIT 1),
-        (SELECT s.vehicle_id FROM shops s WHERE TRIM(LOWER(s.shop_name)) = TRIM(LOWER(o.shop_name)) AND s.vehicle_id IS NOT NULL AND s.vehicle_id > 0 LIMIT 1),
-        (SELECT vz.id FROM vehicles vz WHERE vz.zone_id = o.zone_id AND vz.status != 'inactive' ORDER BY vz.id ASC LIMIT 1)
-    )
+    LEFT JOIN vehicles veh ON veh.id = o.vehicle_id
     WHERE o.order_id = ? AND o.zone_id = ?
 ");
 $stmt->execute([$order_id, $zone_id]);
