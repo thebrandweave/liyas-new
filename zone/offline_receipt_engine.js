@@ -199,6 +199,13 @@ const LiyasOfflineEngine = (function () {
         lines.push(padRight("BALANCE / DUE:", wLabel) + padLeft("Rs. " + due.toFixed(0), wVal));
         lines.push(dividerDotted);
 
+        if (parseFloat(rec.prior_due_amount || 0) > 0) {
+            const pAmt = parseFloat(rec.prior_due_amount);
+            const pMode = (rec.prior_due_mode === 'upi') ? 'Online' : 'Cash';
+            const pAmtStr = "Rs. " + pAmt.toFixed(0) + " (" + pMode + ")";
+            lines.push(padRight("Prior Settled:", wLabel) + padLeft(pAmtStr, wVal));
+        }
+
         // 6. Footer
         lines.push(dividerDashed);
         lines.push(center(website));

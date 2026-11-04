@@ -635,7 +635,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['generate_receipt'])) 
 
                 $receipt_notes = trim($_POST['receipt_notes'] ?? '');
                 if (!empty($settleResult['total_cleared']) && $settleResult['total_cleared'] > 0) {
-                    $clearedSummary = "Cleared ₹" . number_format($settleResult['total_cleared'], 2) . " earlier due (" . ucfirst($prior_due_mode) . ") from " . implode(', ', array_map(fn($c) => 'Bill #' . $c['bill_number'], $settleResult['cleared_receipts']));
+                    $realBills = [];
+                    if (!empty($settleResult['cleared_receipts'])) {
+                        foreach ($settleResult['cleared_receipts'] as $c) {
+                            $bNum = trim($c['bill_number'] ?? '');
+                            if (!empty($bNum) && strtoupper($bNum) !== 'OPENING-BALANCE') {
+                                $realBills[] = 'Bill #' . $bNum;
+                            }
+                        }
+                    }
+                    $fromClause = !empty($realBills) ? (" from " . implode(', ', $realBills)) : "";
+                    $modeLabel = ($prior_due_mode === 'upi') ? 'Online Payment' : 'Cash';
+                    $clearedSummary = "Cleared Rs. " . number_format($settleResult['total_cleared'], 2) . " earlier due ({$modeLabel})" . $fromClause;
                     $receipt_notes = !empty($receipt_notes) ? ($receipt_notes . " | " . $clearedSummary) : $clearedSummary;
                 }
 

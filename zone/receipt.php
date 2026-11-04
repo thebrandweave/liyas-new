@@ -283,7 +283,50 @@ if (!function_exists('buildThermalRawBtPayload')) {
 
         // Prior Due Settled (if notes)
         if (!empty($data['receipt_notes']) && stripos($data['receipt_notes'], 'Cleared') !== false) {
-            $lines[] = "Prior Due Settled: " . trim($data['receipt_notes']);
+            $rawNotes = $data['receipt_notes'];
+
+            // Extract cleared amount
+            $clearedAmt = null;
+            if (preg_match('/Cleared\s*(?:[^\d\s]+)?\s*([0-9,]+(?:\.[0-9]+)?)/iu', $rawNotes, $mAmt)) {
+                $clearedAmt = (float)str_replace(',', '', $mAmt[1]);
+            }
+
+            // Extract mode
+            $modeStr = '';
+            if (preg_match('/\((Cash|Online Payment|Upi|Online|Credit)\)/i', $rawNotes, $mMode)) {
+                $mLower = strtolower($mMode[1]);
+                $modeStr = ($mLower === 'upi' || $mLower === 'online' || $mLower === 'online payment') ? 'Online' : 'Cash';
+            }
+
+            // Extract actual bill numbers excluding OPENING-BALANCE
+            $realBills = [];
+            if (preg_match_all('/Bill\s*#([a-zA-Z0-9_-]+)/i', $rawNotes, $mBills)) {
+                foreach ($mBills[1] as $b) {
+                    if (strtoupper($b) !== 'OPENING-BALANCE') {
+                        $realBills[] = '#' . $b;
+                    }
+                }
+            }
+
+            if ($clearedAmt !== null && $clearedAmt > 0) {
+                $amtStr = "Rs. " . number_format($clearedAmt, 0) . (!empty($modeStr) ? " ({$modeStr})" : "");
+                if (strlen("Prior Settled:") + 1 + strlen($amtStr) <= $width) {
+                    $lines[] = str_pad("Prior Settled:", $width - strlen($amtStr)) . $amtStr;
+                } else {
+                    $lines[] = str_pad("Prior Settled:", $wLabel) . str_pad($amtStr, $wVal, " ", STR_PAD_LEFT);
+                }
+                if (!empty($realBills)) {
+                    $refStr = "  Ref: " . implode(', ', $realBills);
+                    if (strlen($refStr) <= $width) {
+                        $lines[] = $refStr;
+                    }
+                }
+            } else {
+                $cleanNotes = str_ireplace(['from Bill #OPENING-BALANCE', 'Bill #OPENING-BALANCE', 'OPENING-BALANCE'], '', $rawNotes);
+                $cleanNotes = preg_replace('/[₹\?]\s*([0-9])/u', 'Rs. $1', $cleanNotes);
+                $cleanNotes = trim(preg_replace('/\s+/', ' ', $cleanNotes));
+                $lines[] = "Prior Settled: " . $cleanNotes;
+            }
         }
 
         // Remaining Shop Due
@@ -1489,11 +1532,40 @@ if (file_exists($logoPath)) {
                     <td>BALANCE / DUE:</td>
                    <td style="text-align: right; font-size: 12.5px;"><?= '₹' . number_format((float)$dueAmount, 0) ?></td>
                 </tr>
-                <?php if (!empty($data['receipt_notes']) && stripos($data['receipt_notes'], 'Cleared') !== false): ?>
+                <?php if (!empty($data['receipt_notes']) && stripos($data['receipt_notes'], 'Cleared') !== false): 
+                    $rawNotes = $data['receipt_notes'];
+                    $clearedAmt = null;
+                    if (preg_match('/Cleared\s*(?:[^\d\s]+)?\s*([0-9,]+(?:\.[0-9]+)?)/iu', $rawNotes, $mAmt)) {
+                        $clearedAmt = (float)str_replace(',', '', $mAmt[1]);
+                    }
+                    $modeStr = '';
+                    if (preg_match('/\((Cash|Online Payment|Upi|Online|Credit)\)/i', $rawNotes, $mMode)) {
+                        $mLower = strtolower($mMode[1]);
+                        $modeStr = ($mLower === 'upi' || $mLower === 'online' || $mLower === 'online payment') ? 'Online Payment' : 'Cash';
+                    }
+                    $realBills = [];
+                    if (preg_match_all('/Bill\s*#([a-zA-Z0-9_-]+)/i', $rawNotes, $mBills)) {
+                        foreach ($mBills[1] as $b) {
+                            if (strtoupper($b) !== 'OPENING-BALANCE') {
+                                $realBills[] = '#' . $b;
+                            }
+                        }
+                    }
+                    if ($clearedAmt !== null && $clearedAmt > 0) {
+                        $dispNote = '₹' . number_format($clearedAmt, 0) . (!empty($modeStr) ? " ({$modeStr})" : "");
+                        if (!empty($realBills)) {
+                            $dispNote .= " • Ref: " . implode(', ', $realBills);
+                        }
+                    } else {
+                        $dispNote = str_ireplace(['from Bill #OPENING-BALANCE', 'Bill #OPENING-BALANCE', 'OPENING-BALANCE'], '', $rawNotes);
+                        $dispNote = preg_replace('/[₹\?]\s*([0-9])/u', '₹$1', $dispNote);
+                        $dispNote = trim(preg_replace('/\s+/', ' ', $dispNote));
+                    }
+                ?>
                 <tr>
                     <td style="color: #059669; font-weight: 700; padding-top: 8px;">Prior Due Settled:</td>
                     <td style="text-align: right; color: #059669; font-weight: 800; padding-top: 8px; font-size: 11px;">
-                        <?= htmlspecialchars($data['receipt_notes']) ?>
+                        <?= htmlspecialchars($dispNote) ?>
                     </td>
                 </tr>
                 <?php endif; ?>
