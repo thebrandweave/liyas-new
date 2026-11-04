@@ -7,7 +7,7 @@ if (isset($_GET['action']) && $_GET['action'] === 'check_prior_due') {
     $checkShop = trim($_GET['shop'] ?? '');
     $checkPhone = trim($_GET['phone'] ?? '');
     $exId = (int)($_GET['exclude_id'] ?? 0);
-    $dues = getShopPendingDueDetails($pdo, $checkShop, $checkPhone, $exId, $zone_id);
+    $dues = getShopPendingDueDetails($pdo, $checkShop, $checkPhone, $exId, null);
     echo json_encode($dues);
     exit;
 }
@@ -413,6 +413,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['generate_receipt'])) 
                     if ($assignedVehicleId <= 0) {
                         $assignedVehicleId = (int)($_POST['vehicle_id'] ?? 0);
                     }
+
+                    // Sync shop phone, location, and match assigned vehicle from master shops table
+                    $shopSync = syncShopOrderDetails($pdo, $shop_name, $phone, $place, $zone_id, $assignedVehicleId);
+                    if (!empty($shopSync['vehicle_id']) && $assignedVehicleId <= 0) {
+                        $assignedVehicleId = (int)$shopSync['vehicle_id'];
+                    }
+                    if (!empty($shopSync['phone']) && empty($phone)) {
+                        $phone = $shopSync['phone'];
+                    }
+                    if (!empty($shopSync['location']) && empty($place)) {
+                        $place = $shopSync['location'];
+                    }
+
                     if ($assignedVehicleId <= 0) {
                         throw new Exception("Please assign a delivery vehicle before generating the delivery receipt.");
                     } else {
@@ -702,15 +715,15 @@ $def_phone      = $order['phone'] ?? ($reorder_source['phone'] ?? '');
 $def_discount   = ($reorder_id > 0) ? 0.00 : (float)($order['discount'] ?? 0);
 
 // Load prior pending dues for this shop/phone
-$priorDues = getShopPendingDueDetails($pdo, $def_shop ?: $def_customer, $def_phone, $order_id, $zone_id);
+$priorDues = getShopPendingDueDetails($pdo, $def_shop ?: $def_customer, $def_phone, $order_id, null);
 
-// Load registered shops for autocomplete & searchable dropdown in this zone
+// Load registered shops for autocomplete & searchable dropdown (prioritize current zone first, then all shops)
 $zoneShopsList = [];
 try {
     $seenShops = [];
     $shSql = (!empty($zone_id)) 
-        ? "SELECT id, shop_name, location, phone, zone_id, vehicle_id FROM shops WHERE zone_id = ? OR zone_id IS NULL OR zone_id = 0 ORDER BY shop_name ASC"
-        : "SELECT id, shop_name, location, phone, zone_id, vehicle_id FROM shops ORDER BY shop_name ASC";
+        ? "SELECT id, shop_name, location, phone, zone_id, vehicle_id, pending_amount FROM shops ORDER BY (CASE WHEN zone_id = ? THEN 0 ELSE 1 END), shop_name ASC"
+        : "SELECT id, shop_name, location, phone, zone_id, vehicle_id, pending_amount FROM shops ORDER BY shop_name ASC";
     $shStmt = (!empty($zone_id)) ? $pdo->prepare($shSql) : $pdo->query($shSql);
     if (!empty($zone_id)) $shStmt->execute([(int)$zone_id]);
     $rawShops = $shStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
@@ -721,12 +734,13 @@ try {
             if (!isset($seenShops[$k])) {
                 $seenShops[$k] = true;
                 $zoneShopsList[] = [
-                    'id'         => (int)$rs['id'],
-                    'shop_name'  => $sName,
-                    'location'   => trim($rs['location'] ?? ''),
-                    'phone'      => trim($rs['phone'] ?? ''),
-                    'zone_id'    => (int)($rs['zone_id'] ?? 0),
-                    'vehicle_id' => (int)($rs['vehicle_id'] ?? 0)
+                    'id'             => (int)$rs['id'],
+                    'shop_name'      => $sName,
+                    'location'       => trim($rs['location'] ?? ''),
+                    'phone'          => trim($rs['phone'] ?? ''),
+                    'zone_id'        => (int)($rs['zone_id'] ?? 0),
+                    'vehicle_id'     => (int)($rs['vehicle_id'] ?? 0),
+                    'pending_amount' => (float)($rs['pending_amount'] ?? 0)
                 ];
             }
         }
@@ -1867,8 +1881,12 @@ foreach ($vehicle_products as $pid => $vp) {
                                     <?php foreach ($priorDues['receipts'] as $pr): ?>
                                     <tr style="border-bottom: 1px solid #f8fafc;">
                                         <td style="padding: 6px 10px; font-weight: 700; color: #0f172a;">
-                                            Bill #<?= htmlspecialchars($pr['bill_number']) ?>
-                                            <span style="font-size: 10px; color: #64748b; font-weight: normal;">(Order #<?= htmlspecialchars($pr['order_number']) ?>)</span>
+                                            <?php if ($pr['bill_number'] === 'OPENING-BALANCE'): ?>
+                                                Opening Due Balance <span style="font-size: 10px; color: #b45309; font-weight: 600;">(Previous Balance)</span>
+                                            <?php else: ?>
+                                                Bill #<?= htmlspecialchars($pr['bill_number']) ?>
+                                                <span style="font-size: 10px; color: #64748b; font-weight: normal;">(Order #<?= htmlspecialchars($pr['order_number']) ?>)</span>
+                                            <?php endif; ?>
                                         </td>
                                         <td style="padding: 6px 10px; color: #64748b;">
                                             <?= date('d M Y', strtotime($pr['receipt_date'])) ?>
@@ -2699,7 +2717,9 @@ foreach ($vehicle_products as $pid => $vp) {
                             if (tableBox) tableBox.style.display = 'block';
                             tbody.innerHTML = data.receipts.map(r => `
                                 <tr style="border-bottom: 1px solid #f8fafc;">
-                                    <td style="padding: 6px 10px; font-weight: 700; color: #0f172a;">Bill #${r.bill_number} <span style="font-size: 10px; color: #64748b;">(Order #${r.order_number})</span></td>
+                                    <td style="padding: 6px 10px; font-weight: 700; color: #0f172a;">
+                                        ${r.bill_number === 'OPENING-BALANCE' ? 'Opening Due Balance <span style="font-size: 10px; color: #b45309; font-weight: 600;">(Previous Balance)</span>' : `Bill #${escapeZoneHtml(r.bill_number)} <span style="font-size: 10px; color: #64748b;">(Order #${escapeZoneHtml(r.order_number)})</span>`}
+                                    </td>
                                     <td style="padding: 6px 10px; color: #64748b;">${r.receipt_date ? r.receipt_date.substring(0, 10) : ''}</td>
                                     <td style="padding: 6px 10px; text-align: right; color: #475569;">₹${parseFloat(r.total_amount).toFixed(2)}</td>
                                     <td style="padding: 6px 10px; text-align: right; font-weight: 800; color: #dc2626;">₹${parseFloat(r.due_amount).toFixed(2)}</td>
@@ -2772,10 +2792,14 @@ foreach ($vehicle_products as $pid => $vp) {
                 const displayShops = matches.slice(0, 100);
                 displayShops.forEach((s, idx) => {
                     const isExactMatch = (s.shop_name || '').toLowerCase() === (document.getElementById('shop_name')?.value || '').trim().toLowerCase();
+                    const hasDue = parseFloat(s.pending_amount || 0) > 0;
                     html += `
                         <div class="shop-dropdown-item ${isExactMatch ? 'active' : ''}" data-index="${idx}" onclick="selectZoneShopByIndex(${idx})">
-                            <div class="shop-item-info">
-                                <div class="shop-item-name">${highlightZoneMatch(s.shop_name, q)}</div>
+                            <div class="shop-item-info" style="flex: 1;">
+                                <div style="display: flex; align-items: center; justify-content: space-between; gap: 6px;">
+                                    <div class="shop-item-name">${highlightZoneMatch(s.shop_name, q)}</div>
+                                    ${hasDue ? `<span style="background: #fee2e2; color: #dc2626; font-size: 11px; font-weight: 800; padding: 2px 8px; border-radius: 9999px; border: 1px solid #fecaca; display: inline-flex; align-items: center; gap: 3px; white-space: nowrap;"><i class='bx bx-error-circle'></i> Due: ₹${parseFloat(s.pending_amount).toFixed(2)}</span>` : ''}
+                                </div>
                                 <div class="shop-item-meta">
                                     ${s.location ? `<span><i class='bx bx-map-pin' style="color:#2563eb;"></i> ${escapeZoneHtml(s.location)}</span>` : ''}
                                     ${s.phone ? `<span><i class='bx bx-phone' style="color:#059669;"></i> ${escapeZoneHtml(s.phone)}</span>` : ''}
