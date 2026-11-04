@@ -1325,7 +1325,7 @@ foreach ($vehicle_products as $pid => $vp) {
             text-align: center;
             font-weight: 800;
             font-size: 15px;
-            width: 60px;
+            width: 150px;
             height: 36px;
             padding: 4px;
             border: 1px solid var(--border-color);
@@ -1553,8 +1553,8 @@ foreach ($vehicle_products as $pid => $vp) {
                     <?php if ($reorder_id > 0 && !empty($reorder_source)): ?>
                         <i class='bx bx-refresh' style="color: #2563eb; "></i> <span style="font-size: 17px;">Place Reorder Delivery Receipt</span>
                     <?php else: ?>
-                        <i class='bx bx-receipt' style="color: #059669;"></i>
-                        <?= ($order_id > 0) ? 'Generate Delivery Receipt' : 'New Spot Delivery Receipt' ?>
+                
+                        <?= ($order_id > 0) ? 'Generate Delivery Receipt' : '' ?>
                     <?php endif; ?>
                 </h1>
                
@@ -1624,7 +1624,7 @@ foreach ($vehicle_products as $pid => $vp) {
                         </select>
                     </div>
                 <?php elseif (!empty($assignedVehicle)): ?>
-                    <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 10px; padding: 10px 14px; margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+                    <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 10px; padding: 1px 14px; margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between; gap: 8px;">
                         <div style="font-size: 13px; font-weight: 700; color: #1e40af; display: flex; align-items: center; gap: 6px;">
                             <i class='bx bxs-truck' style="font-size: 18px; color: #2563eb;"></i>
                             <span>Delivering Vehicle: <strong><?= htmlspecialchars($assignedVehicle['vehicle_number']) ?></strong><?= !empty($assignedVehicle['vehicle_name']) ? ' (' . htmlspecialchars($assignedVehicle['vehicle_name']) . ')' : '' ?></span>
@@ -1828,9 +1828,9 @@ foreach ($vehicle_products as $pid => $vp) {
                         <div class="item-card-qty-row">
                             <span class="item-qty-label">Delivered Cases:</span>
                             <div class="stepper-box">
-                                <button type="button" class="btn-stepper" onclick="stepItemQty(this, -1)" aria-label="Decrease">&minus;</button>
+                                <!-- <button type="button" class="btn-stepper" onclick="stepItemQty(this, -1)" aria-label="Decrease">&minus;</button> -->
                                 <input type="text" min="0" <?= $isExtra ? 'max="' . $maxCases . '"' : '' ?> name="items[<?= $idx ?>][quantity]" value="<?= $qty ?>" class="form-control stepper-input item-qty-input" required oninput="checkMaxCases(this); recalculate()">
-                                <button type="button" class="btn-stepper" onclick="stepItemQty(this, 1)" aria-label="Increase">&plus;</button>
+                                <!-- <button type="button" class="btn-stepper" onclick="stepItemQty(this, 1)" aria-label="Increase">&plus;</button> -->
                             </div>
                         </div>
                     </div>
@@ -2352,9 +2352,7 @@ foreach ($vehicle_products as $pid => $vp) {
                 <div class="item-card-qty-row">
                     <span class="item-qty-label">Delivered Cases:</span>
                     <div class="stepper-box">
-                        <button type="button" class="btn-stepper" onclick="stepItemQty(this, -1)" aria-label="Decrease">&minus;</button>
                         <input type="text" min="0" ${inVehicle ? `max="${maxCases}"` : ''} name="items[${idx}][quantity]" value="${addQty}" class="form-control stepper-input item-qty-input" required oninput="checkMaxCases(this); recalculate()">
-                        <button type="button" class="btn-stepper" onclick="stepItemQty(this, 1)" aria-label="Increase">&plus;</button>
                     </div>
                 </div>
             `;
