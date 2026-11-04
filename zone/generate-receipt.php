@@ -1586,6 +1586,32 @@ foreach ($vehicle_products as $vPid => $vp) {
             }
         }
 
+
+
+        /* Chrome, Edge, Safari */
+.item-rate::-webkit-inner-spin-button,
+.item-rate::-webkit-outer-spin-button {
+    -webkit-appearance: none !important;
+    margin: 0 !important;
+}
+
+/* Firefox */
+.item-rate {
+    -moz-appearance: textfield !important;
+    appearance: textfield !important;
+}
+        /* Chrome, Edge, Safari */
+.item-qty-input::-webkit-inner-spin-button,
+.item-qty-input::-webkit-outer-spin-button {
+    -webkit-appearance: none !important;
+    margin: 0 !important;
+}
+
+/* Firefox */
+.item-qty-input {
+    -moz-appearance: textfield !important;
+    appearance: textfield !important;
+}
         @media (max-width: 480px) {
             .prod-grid-header {
                 grid-template-columns: 1.3fr 1fr 1fr !important;
@@ -1773,7 +1799,7 @@ foreach ($vehicle_products as $vPid => $vp) {
                     </div>
 
                     <!-- Products Grid Rows (4 Products) -->
-                    <div id="itemsContainer" style="display: flex; flex-direction: column; gap: 8px; margin-top: 8px;">
+                    <div id="itemsContainer" style="display: flex; flex-direction: column; gap: 0px; margin-top: 8px;">
                         <div id="noItemsPlaceholder" style="display: none;"></div>
                         <?php foreach ($grid_products as $idx => $gp): 
                             $pid = (int)$gp['product_id'];
@@ -1791,31 +1817,31 @@ foreach ($vehicle_products as $vPid => $vp) {
                             <input type="hidden" name="items[<?= $idx ?>][max_cases]" value="<?= $availCases ?>" class="item-max-cases">
 
                             <!-- Column 1: Product & Total Cases in Vehicle in One Line -->
-                          <div style="display: flex; flex-direction: column; align-items: flex-start; gap: 6px;">
-    <strong class="item-product-name" style="font-size: 13.5px; font-weight: 800; color: #0f172a;">
-        <?= $pName ?>
-    </strong>
+                            <div style="display: flex; flex-direction: column; align-items: flex-start; gap: 6px;">
+                                <strong class="item-product-name" style="font-size: 13.5px; font-weight: 800; color: #0f172a;">
+                                    <?= $pName ?>
+                                </strong>
 
-    <span style="display: inline-flex; align-items: center; gap: 3px; background: #dbeafe; color: #1e40af; font-size: 11px; font-weight: 800; padding: 2px 4px;">
-        <?= $availCases ?> cases
-    </span>
-</div>
+                                <span style="display: inline-flex; align-items: center; gap: 3px; background: #dbeafe; color: #1e40af; font-size: 11px; font-weight: 800; padding: 2px 4px;">
+                                    <?= $availCases ?> cases
+                                </span>
+                            </div>
 
                             <!-- Column 2: Price Input -->
                             <div>
                                 <div style="display: flex; align-items: center; position: relative;">
                                     <span style="position: absolute; left: 8px; color: #64748b; font-weight: 700; font-size: 13px;">₹</span>
-                                    <input
-                                        type="text"
-                                        name="items[<?= $idx ?>][rate]"
-                                        value="<?= htmlspecialchars((string)(int)$currentRate, ENT_QUOTES, 'UTF-8') ?>"
-                                        class="form-control item-rate"
-                                        min="0"
-                                        step="1"
-                                        required
-                                        style="padding-left: 20px; text-align: center; font-weight: 700; font-size: 14px; height: 38px; border-radius: 8px; border: 1.5px solid #cbd5e1;"
-                                        oninput="recalculate()"
-                                    >
+                                 <input
+    type="number"
+    name="items[<?= $idx ?>][rate]"
+    value="<?= htmlspecialchars((string)(int)$currentRate, ENT_QUOTES, 'UTF-8') ?>"
+    class="form-control item-rate"
+    min="0"
+    step="1"
+    required
+    style="padding-left: 20px; text-align: center; font-weight: 700; font-size: 14px; height: 38px; border-radius: 8px; border: 1.5px solid #cbd5e1;"
+    oninput="recalculate()"
+>
                                 </div>
                             </div>
 
@@ -1823,22 +1849,34 @@ foreach ($vehicle_products as $vPid => $vp) {
                             <div>
                                 <div style="display: flex; flex-direction: column; align-items: center;">
                                     <input
-                                        type="text"
+                                        type="number"
                                         min="0"
                                         name="items[<?= $idx ?>][quantity]"
                                         value="<?= $currentQty > 0 ? $currentQty : '' ?>"
                                         placeholder="0"
-                                        class="form-control stepper-input item-qty-input"
+                                        class="form-control  item-qty-input"
                                         style="text-align: center; font-weight: 800; font-size: 15px; height: 38px; width: 100%; border-radius: 8px; border: 1.5px solid #cbd5e1;"
                                         oninput="checkMaxCases(this); recalculate()"
                                     >
-                                    <!-- <div style="font-size: 11px; font-weight: 700; color: #059669; margin-top: 2px; white-space: nowrap;">
-                                        <span class="item-line-total">₹<?= number_format($lineTotal, 2) ?></span>
-                                    </div> -->
                                 </div>
                             </div>
                         </div>
                         <?php endforeach; ?>
+                    </div>
+                </div>
+
+                <?php 
+                    $initGridSubtotal = array_sum(array_map(fn($gp) => (float)($gp['line_total'] ?? 0), $grid_products));
+                    $initGridCases = array_sum(array_map(fn($gp) => (int)($gp['quantity'] ?? 0), $grid_products));
+                ?>
+                <!-- Out of Box Total of All Products -->
+                <div id="outOfBoxTotal" style="display: flex; justify-content: space-between; align-items: center; background: #ffffff; border: 1.5px solid #bfdbfe; border-radius: var(--radius-md); padding: 6px 16px; margin-top: -6px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(37,99,235,0.08);">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span style="font-size: 14px; font-weight: 800; color: #1e3a8a;">Total :</span>
+                       
+                    </div>
+                    <div style="font-size: 18px; font-weight: 900; color: #059669;">
+                        <span id="gridTotalRupees">₹<?= number_format($initGridSubtotal, 2) ?></span>
                     </div>
                 </div>
 
@@ -2467,7 +2505,6 @@ foreach ($vehicle_products as $vPid => $vp) {
                 const qtyInput = card.querySelector('.item-qty-input');
                 const rateInput = card.querySelector('.item-rate');
                 const isExtraInput = card.querySelector('.item-is-extra');
-                const lineTotalDisplay = card.querySelector('.item-line-total');
                 const calcRateVal = card.querySelector('.calc-rate-val');
                 const calcQtyVal = card.querySelector('.calc-qty-val');
                 const calcSubVal = card.querySelector('.calc-sub-val');
@@ -2480,7 +2517,6 @@ foreach ($vehicle_products as $vPid => $vp) {
                 if (calcRateVal) calcRateVal.textContent = rate.toFixed(2);
                 if (calcQtyVal) calcQtyVal.textContent = qty;
                 if (calcSubVal) calcSubVal.textContent = lineTotal.toFixed(2);
-                if (lineTotalDisplay) lineTotalDisplay.textContent = '₹' + lineTotal.toFixed(2);
 
                 if (isExtra) {
                     extraCases += qty;
@@ -2565,6 +2601,16 @@ foreach ($vehicle_products as $vPid => $vp) {
             if (dispSubtotal) dispSubtotal.textContent = '₹' + subtotal.toFixed(2);
             if (dispTotal) dispTotal.textContent = '₹' + total.toFixed(2);
             if (dispCash) dispCash.textContent = '₹' + cashVal.toFixed(2);
+
+            // Out of Box Total of all products
+            const gridTotalRupees = document.getElementById('gridTotalRupees');
+            const gridTotalCases = document.getElementById('gridTotalCasesCount');
+            if (gridTotalRupees) {
+                gridTotalRupees.textContent = '₹' + subtotal.toFixed(2);
+            }
+            if (gridTotalCases) {
+                gridTotalCases.textContent = `${totalCases} ${totalCases === 1 ? 'Case' : 'Cases'}`;
+            }
             if (dispCredit) dispCredit.textContent = '₹' + creditVal.toFixed(2);
             if (dispDue) {
                 dispDue.textContent = '₹' + dueVal.toFixed(2);
