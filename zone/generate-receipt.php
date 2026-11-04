@@ -836,19 +836,66 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['items']) && is_array(
     }
 }
 
-// Collect IDs of products already ordered / present in the delivery bill
-$ordered_product_ids = [];
+// Build the list of 4 vehicle products for the direct 3-column delivery grid
+$grid_products = [];
+$orderItemByPid = [];
 foreach ($regular_items as $ri) {
     if (!empty($ri['product_id'])) {
-        $ordered_product_ids[(int)$ri['product_id']] = true;
+        $orderItemByPid[(int)$ri['product_id']] = $ri;
     }
 }
 
-// Filter dropdown products: ONLY loaded products in the vehicle that are NOT already in the ordered items
-$dropdown_vehicle_products = [];
-foreach ($vehicle_products as $pid => $vp) {
-    if (!isset($ordered_product_ids[$pid])) {
-        $dropdown_vehicle_products[$pid] = $vp;
+foreach ($products as $p) {
+    $pid = (int)$p['product_id'];
+    $pName = $p['product_name'] ?: ($p['name'] ?: 'Product #' . $pid);
+    $availCases = isset($vehicle_products[$pid]) ? (int)$vehicle_products[$pid]['available_cases'] : 0;
+    $defaultRate = (float)($p['case_price'] ?: $p['price']);
+
+    $currentQty = 0;
+    $currentRate = $defaultRate;
+
+    if (isset($orderItemByPid[$pid])) {
+        $currentQty = (int)$orderItemByPid[$pid]['quantity'];
+        if ((float)$orderItemByPid[$pid]['price_at_purchase'] > 0) {
+            $currentRate = (float)$orderItemByPid[$pid]['price_at_purchase'];
+        }
+    }
+
+    if (isset($_POST['items']) && is_array($_POST['items'])) {
+        foreach ($_POST['items'] as $pItem) {
+            if ((int)($pItem['product_id'] ?? 0) === $pid) {
+                $currentQty = (int)($pItem['quantity'] ?? 0);
+                if (isset($pItem['rate'])) {
+                    $currentRate = (float)$pItem['rate'];
+                }
+                break;
+            }
+        }
+    }
+
+    $grid_products[] = [
+        'product_id' => $pid,
+        'product_name' => $pName,
+        'available_cases' => $availCases,
+        'rate' => $currentRate,
+        'default_rate' => $defaultRate,
+        'quantity' => $currentQty,
+        'line_total' => $currentQty * $currentRate
+    ];
+}
+
+$existingGridPids = array_column($grid_products, 'product_id');
+foreach ($vehicle_products as $vPid => $vp) {
+    if (!in_array($vPid, $existingGridPids)) {
+        $grid_products[] = [
+            'product_id' => $vPid,
+            'product_name' => $vp['product_name'],
+            'available_cases' => (int)$vp['available_cases'],
+            'rate' => (float)$vp['price'],
+            'default_rate' => (float)$vp['price'],
+            'quantity' => 0,
+            'line_total' => 0
+        ];
     }
 }
 ?>
@@ -991,7 +1038,7 @@ foreach ($vehicle_products as $pid => $vp) {
 
         .form-control {
             width: 100%;
-            padding: 11px 14px;
+            padding: 9px 6px;
             border: 1.5px solid var(--border-color);
             border-radius: 10px;
             font-size: 15px;
@@ -1444,7 +1491,7 @@ foreach ($vehicle_products as $pid => $vp) {
             display: flex;
             align-items: center;
             gap: 10px;
-            font-size: 14px;
+            font-size: 12px;
             font-weight: 700;
             cursor: pointer;
         }
@@ -1536,6 +1583,23 @@ foreach ($vehicle_products as $pid => $vp) {
                 padding: 10px 16px;
                 box-shadow: 0 -4px 12px rgba(0,0,0,0.06);
                 z-index: 99;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .prod-grid-header {
+                grid-template-columns: 1.3fr 1fr 1fr !important;
+                gap: 6px !important;
+                font-size: 10px !important;
+                padding: 0 4px 6px 4px !important;
+            }
+            .prod-grid-row {
+                grid-template-columns: 1.3fr 1fr 1fr !important;
+                gap: 6px !important;
+                padding: 8px 6px !important;
+            }
+            .prod-grid-row .item-product-name {
+                font-size: 12.5px !important;
             }
         }
     </style>
@@ -1693,162 +1757,89 @@ foreach ($vehicle_products as $pid => $vp) {
                 </div> -->
 
                 <!-- Product & Quantity -->
-                <div class="section-hdr">
-                    <i class='bx bx-box' style="color: #059669;"></i> Delivered Items &amp; Quantity (<span id="regularCountDisplay"><?= count($regular_items) ?> <?= count($regular_items) === 1 ? 'Product' : 'Products' ?></span>)
+                <div class="section-hdr" style="margin-bottom: 10px;">
+                    <i class='bx bx-box' style="color: #059669;"></i> Delivered Items &amp; Quantity (<span id="regularCountDisplay"><?= count(array_filter($grid_products, fn($p) => (int)$p['quantity'] > 0)) ?> <?= count(array_filter($grid_products, fn($p) => (int)$p['quantity'] > 0)) === 1 ? 'Product' : 'Products' ?></span>)
                 </div>
 
-                <!-- Add Products from Vehicle Section -->
-                <div class="vehicle-product-selector-box" style="background: #eff6ff; border: 1.5px solid #bfdbfe; border-radius: var(--radius-md); padding: 14px; margin-bottom: 16px;">
-                    <div style="font-size: 13px; font-weight: 800; color: #1e40af; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px;">
-                        <span style="display: flex; align-items: center; font-size: 11px; gap: 6px;">
-                            <i class='bx bxs-truck' style="font-size: 18px; color: #2563eb;"></i>
-                            <?= !empty($vehicle_products) ? 'Add Products from Vehicle' : 'Add Products to Delivery' ?>
-                            <?= !empty($assignedVehicle['vehicle_number']) ? ' (' . htmlspecialchars($assignedVehicle['vehicle_number']) . (!empty($assignedVehicle['vehicle_name']) ? ' - ' . htmlspecialchars($assignedVehicle['vehicle_name']) : '') . ')' : '' ?>
-                        </span>
-                        <!-- <?php if (!empty($vehicle_products)): ?>
-                            <span style="font-size: 11px; font-weight: 700; color: #047857; background: #d1fae5; padding: 2px 8px; border-radius: 6px;">
-                                <?= count($vehicle_products) ?> Products Loaded in Vehicle
-                            </span>
-                        <?php endif; ?> -->
+                <!-- 3-Column Vehicle Products Grid -->
+                <div class="vehicle-product-selector-box" style="background: #ffffff; border: 1.5px solid #bfdbfe; border-radius: var(--radius-md); padding: 14px; margin-bottom: 16px; box-shadow: 0 2px 4px rgba(37,99,235,0.06);">
+                  
+
+                    <!-- 3-Column Grid Headers -->
+                    <div class="prod-grid-header" style="display: grid; grid-template-columns: 1.5fr 1fr 1fr; gap: 10px; padding: 0 10px 8px 10px; font-size: 11px; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1.5px solid #e2e8f0;">
+                        <div>Products</div>
+                        <div style="text-align: center;">Price</div>
+                        <div style="text-align: center;">Count</div>
                     </div>
 
-                    <?php if (!empty($dropdown_vehicle_products)): ?>
-                    <!-- Quick-add pill buttons for fast one-tap selection (only loaded products, excluding ordered items) -->
-                    <div id="quickAddPillsBox" style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px;">
-                        <?php foreach ($dropdown_vehicle_products as $vp): ?>
-                            <button type="button" class="btn-quick-prod" data-product-id="<?= $vp['product_id'] ?>" onclick="quickAddProduct(<?= $vp['product_id'] ?>)" 
-                                    style="background: #ffffff; border: 1.5px solid #93c5fd; color: #1e40af; padding: 6px 12px; border-radius: 8px; font-size: 12px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; box-shadow: 0 1px 2px rgba(0,0,0,0.04); transition: all 0.15s ease;"
-                                    onmouseover="this.style.background='#eff6ff'; this.style.borderColor='#2563eb';"
-                                    onmouseout="this.style.background='#ffffff'; this.style.borderColor='#93c5fd';"
-                                    title="Click to add <?= htmlspecialchars($vp['product_name']) ?> to delivery">
-                                <i class='bx bx-plus-circle' style="color: #2563eb; font-size: 15px;"></i>
-                                <span><?= htmlspecialchars($vp['product_name']) ?></span>
-                                <span style="background: #dbeafe; color: #1e40af; padding: 1px 6px; border-radius: 4px; font-size: 11px; font-weight: 800;"><?= (int)$vp['available_cases'] ?> cs</span>
-                                <span style="color: #059669; font-weight: 800;">₹<?= number_format($vp['price'], 2) ?></span>
-                            </button>
-                        <?php endforeach; ?>
-                    </div>
-                    <?php endif; ?>
+                    <!-- Products Grid Rows (4 Products) -->
+                    <div id="itemsContainer" style="display: flex; flex-direction: column; gap: 8px; margin-top: 8px;">
+                        <div id="noItemsPlaceholder" style="display: none;"></div>
+                        <?php foreach ($grid_products as $idx => $gp): 
+                            $pid = (int)$gp['product_id'];
+                            $pName = htmlspecialchars($gp['product_name']);
+                            $availCases = (int)$gp['available_cases'];
+                            $currentRate = (float)$gp['rate'];
+                            $defaultRate = (float)$gp['default_rate'];
+                            $currentQty = (int)$gp['quantity'];
+                            $lineTotal = (float)$gp['line_total'];
+                        ?>
+                        <div class="item-delivery-card prod-grid-row" id="itemRow_<?= $idx ?>" data-idx="<?= $idx ?>" style="display: grid; grid-template-columns: 1.5fr 1fr 1fr; gap: 10px; align-items: center; background: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 10px; padding: 10px 12px; transition: all 0.15s ease;">
+                            <input type="hidden" name="items[<?= $idx ?>][product_id]" value="<?= $pid ?>" class="item-pid">
+                            <input type="hidden" name="items[<?= $idx ?>][original_rate]" value="<?= $defaultRate ?>" class="item-original-rate">
+                            <input type="hidden" name="items[<?= $idx ?>][is_extra]" value="0" class="item-is-extra">
+                            <input type="hidden" name="items[<?= $idx ?>][max_cases]" value="<?= $availCases ?>" class="item-max-cases">
 
-                    <!-- Dropdown + Quantity Input + Add Product Button -->
-                    <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
-                        <select id="vehicleProductSelect" class="form-control" style="flex: 1; min-width: 220px;">
-                            <?php if (!empty($dropdown_vehicle_products)): ?>
-                                <option value="">-- Select Product from Vehicle --</option>
-                                <?php foreach ($dropdown_vehicle_products as $vp): ?>
-                                    <option value="<?= $vp['product_id'] ?>" 
-                                            data-name="<?= htmlspecialchars($vp['product_name']) ?>" 
-                                            data-price="<?= (float)$vp['price'] ?>" 
-                                            data-max="<?= (int)$vp['available_cases'] ?>"
-                                            data-content="<?= htmlspecialchars(($vp['net_content'] ? (float)$vp['net_content'] . ' ' . $vp['net_content_unit'] : '')) ?>"
-                                            data-in-vehicle="1">
-                                        <?= htmlspecialchars($vp['product_name']) ?> (<?= (int)$vp['available_cases'] ?> cs in vehicle) &bull; <?= formatCurrency($vp['price']) ?>/case
-                                    </option>
-                                <?php endforeach; ?>
-                            <?php elseif (empty($vehicle_products)): ?>
-                                <option value="" disabled selected>-- No products loaded in vehicle --</option>
-                            <?php else: ?>
-                                <option value="" disabled selected>-- All loaded vehicle products already in bill --</option>
-                            <?php endif; ?>
-                        </select>
+                            <!-- Column 1: Product & Total Cases in Vehicle in One Line -->
+                          <div style="display: flex; flex-direction: column; align-items: flex-start; gap: 6px;">
+    <strong class="item-product-name" style="font-size: 13.5px; font-weight: 800; color: #0f172a;">
+        <?= $pName ?>
+    </strong>
 
-                        <div style="display: flex; align-items: center; gap: 6px;">
-                            <input type="number" id="addQtyInput" min="1" value="1" class="form-control" style="width: 70px; text-align: center; font-weight: 700; padding: 10px 4px;" placeholder="Qty" title="Number of cases to add">
-                            <button type="button" id="btnAddProductFromVehicle" onclick="addProductFromDropdown()" <?= empty($dropdown_vehicle_products) ? 'disabled' : '' ?> style="background: #2563eb; color: #ffffff; border: none; padding: 11px 16px; border-radius: 10px; font-size: 13px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; box-shadow: 0 2px 4px rgba(37,99,235,0.25);">
-                                <i class='bx bx-plus-circle' style="font-size: 17px;"></i> Add Product
-                            </button>
-                        </div>
-                    </div>
-                </div>
+    <span style="display: inline-flex; align-items: center; gap: 3px; background: #dbeafe; color: #1e40af; font-size: 11px; font-weight: 800; padding: 2px 4px;">
+        <?= $availCases ?> cases
+    </span>
+</div>
 
-                <!-- Interactive Item Delivery Cards -->
-                <div id="itemsContainer" style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 16px;">
-                    <div id="noItemsPlaceholder" style="<?= !empty($regular_items) ? 'display: none;' : '' ?> text-align: center; padding: 22px 16px; background: #ffffff; border: 2px dashed #cbd5e1; border-radius: 12px; color: #64748b;">
-                        <i class='bx bx-package' style="font-size: 32px; color: #94a3b8; display: block; margin-bottom: 6px;"></i>
-                        <div style="font-weight: 700; font-size: 14px; color: #334155;">No products added to delivery yet</div>
-                        <div style="font-size: 12px; color: #64748b; margin-top: 3px;">
-                            Select products from the vehicle dropdown above to add items to this delivery.
-                        </div>
-                    </div>
-                    <?php foreach ($regular_items as $idx => $it): 
-                        $pid = (int)$it['product_id'];
-                        $pName = htmlspecialchars($it['product_name'] ?: ($it['name'] ?: 'Liyas Water'));
-                        $qty = (int)$it['quantity'];
-                        $isExtra = !empty($it['is_extra']);
-                        $rate = (float)$it['price_at_purchase'];
-                        if ($rate <= 0 && isset($productsById[$pid])) {
-                            $rate = (float)($productsById[$pid]['case_price'] ?: $productsById[$pid]['price']);
-                        }
-                        $lineTotal = $qty * $rate;
-                        $netContentStr = !empty($it['net_content']) ? (float)$it['net_content'] . ' ' . htmlspecialchars($it['net_content_unit'] ?? '') : '';
-                        $maxCases = (int)($it['max_cases'] ?? ($vehicle_products[$pid]['available_cases'] ?? 999));
-                    ?>
-                    <div class="item-delivery-card item-regular-card <?= $isExtra ? 'item-vehicle-extra-card' : '' ?>" id="itemRow_<?= $idx ?>" data-idx="<?= $idx ?>">
-                        <input type="hidden" name="items[<?= $idx ?>][product_id]" value="<?= $pid ?>" class="item-pid">
-                        <input type="hidden" name="items[<?= $idx ?>][original_rate]" value="<?= $rate ?>" class="item-original-rate">
-                        <input type="hidden" name="items[<?= $idx ?>][is_extra]" value="<?= $isExtra ? '1' : '0' ?>" class="item-is-extra">
-                        <?php if ($isExtra): ?>
-                            <input type="hidden" name="items[<?= $idx ?>][max_cases]" value="<?= $maxCases ?>" class="item-max-cases">
-                        <?php endif; ?>
-                        
-                        <!-- Top Header: Product Name, Badge & Total / Remove -->
-                        <div class="item-card-header">
-                            <div class="item-card-title-group">
-                                <div class="item-card-title">
-                                    <strong class="item-product-name"><?= $pName ?></strong>
-                                    <?php if ($isExtra): ?>
-                                        <span class="badge-vehicle-stock">VEHICLE STOCK</span>
-                                    <?php endif; ?>
-                                </div>
-                                <?php if ($isExtra): ?>
-                                    <div class="item-loaded-info">
-                                        Loaded in vehicle: <strong><?= $maxCases ?> cases</strong>
-                                    </div>
-                                <?php endif; ?>
-                            </div>
-                            <div class="item-card-total-group">
-                                <div class="item-line-total"><?= formatCurrency($lineTotal) ?></div>
-                                <button type="button" class="btn-remove-item" onclick="removeItemRow(this)" title="Remove this product from delivery">
-                                    <i class='bx bx-trash'></i> Remove
-                                </button>
-                            </div>
-                        </div>
-
-                        <!-- Rate & Calculation Row -->
-                        <div class="item-card-rate-row">
-                            <div class="item-rate-input-wrap">
-                                <label class="item-rate-label">Rate / Case:</label>
-                                <div class="item-rate-input-box">
-                                    <span class="currency-prefix">₹</span>
+                            <!-- Column 2: Price Input -->
+                            <div>
+                                <div style="display: flex; align-items: center; position: relative;">
+                                    <span style="position: absolute; left: 8px; color: #64748b; font-weight: 700; font-size: 13px;">₹</span>
                                     <input
-                                        type="number"
+                                        type="text"
                                         name="items[<?= $idx ?>][rate]"
-                                        value="<?= htmlspecialchars((string)(int)$rate, ENT_QUOTES, 'UTF-8') ?>"
+                                        value="<?= htmlspecialchars((string)(int)$currentRate, ENT_QUOTES, 'UTF-8') ?>"
                                         class="form-control item-rate"
                                         min="0"
                                         step="1"
                                         required
+                                        style="padding-left: 20px; text-align: center; font-weight: 700; font-size: 14px; height: 38px; border-radius: 8px; border: 1.5px solid #cbd5e1;"
                                         oninput="recalculate()"
                                     >
                                 </div>
-                                <span class="item-rate-unit">/ case</span>
                             </div>
-                            <div class="item-calc-text">
-                                Rate × Qty: ₹<span class="calc-rate-val"><?= number_format($rate, 2) ?></span> × <span class="calc-qty-val"><?= $qty ?></span> cs = ₹<span class="calc-sub-val"><?= number_format($lineTotal, 2) ?></span>
-                            </div>
-                        </div>
 
-                        <!-- Stepper / Delivered Cases Row -->
-                        <div class="item-card-qty-row">
-                            <span class="item-qty-label">Delivered Cases:</span>
-                            <div class="stepper-box">
-                                <!-- <button type="button" class="btn-stepper" onclick="stepItemQty(this, -1)" aria-label="Decrease">&minus;</button> -->
-                                <input type="text" min="0" <?= $isExtra ? 'max="' . $maxCases . '"' : '' ?> name="items[<?= $idx ?>][quantity]" value="<?= $qty ?>" class="form-control stepper-input item-qty-input" required oninput="checkMaxCases(this); recalculate()">
-                                <!-- <button type="button" class="btn-stepper" onclick="stepItemQty(this, 1)" aria-label="Increase">&plus;</button> -->
+                            <!-- Column 3: Cases Input -->
+                            <div>
+                                <div style="display: flex; flex-direction: column; align-items: center;">
+                                    <input
+                                        type="text"
+                                        min="0"
+                                        name="items[<?= $idx ?>][quantity]"
+                                        value="<?= $currentQty > 0 ? $currentQty : '' ?>"
+                                        placeholder="0"
+                                        class="form-control stepper-input item-qty-input"
+                                        style="text-align: center; font-weight: 800; font-size: 15px; height: 38px; width: 100%; border-radius: 8px; border: 1.5px solid #cbd5e1;"
+                                        oninput="checkMaxCases(this); recalculate()"
+                                    >
+                                    <!-- <div style="font-size: 11px; font-weight: 700; color: #059669; margin-top: 2px; white-space: nowrap;">
+                                        <span class="item-line-total">₹<?= number_format($lineTotal, 2) ?></span>
+                                    </div> -->
+                                </div>
                             </div>
                         </div>
+                        <?php endforeach; ?>
                     </div>
-                    <?php endforeach; ?>
                 </div>
 
                 <!-- Earlier Due Balance Section -->
@@ -1860,20 +1851,18 @@ foreach ($vehicle_products as $pid => $vp) {
                                 Earlier Due Pending: <span id="dispPriorDueTotal"><?= formatCurrency($priorDues['total_due'] ?? 0) ?></span>
                             </span>
                         </div>
-                        <span id="dispPriorDueCount" style="background: #fee2e2; color: #dc2626; font-size: 11px; font-weight: 800; padding: 3px 8px; border-radius: 6px;">
-                            <?= ($priorDues['due_count'] ?? 0) ?> <?= (($priorDues['due_count'] ?? 0) === 1) ? 'Unpaid Bill' : 'Unpaid Bills' ?>
-                        </span>
+                  
                     </div>
 
                     <!-- Bills Breakdown Table -->
-                    <div id="priorDueBillsTableBox" style="background: #ffffff; border: 1px solid #fed7d7; border-radius: 8px; overflow-x: auto; margin-bottom: 12px;">
+                    <!-- <div id="priorDueBillsTableBox" style="background: #ffffff; border: 1px solid #fed7d7; border-radius: 8px; overflow-x: auto; margin-bottom: 12px;">
                         <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
                             <thead>
                                 <tr style="background: #fef2f2; border-bottom: 1px solid #fee2e2; text-align: left; color: #991b1b;">
                                     <th style="padding: 6px 10px;">Bill #</th>
-                                    <th style="padding: 6px 10px;">Date</th>
+                           
                                     <th style="padding: 6px 10px; text-align: right;">Bill Total</th>
-                                    <th style="padding: 6px 10px; text-align: right;">Outstanding Due</th>
+                                    <th style="padding: 6px 10px; text-align: right;">Due</th>
                                 </tr>
                             </thead>
                             <tbody id="priorDueTableBody">
@@ -1882,7 +1871,7 @@ foreach ($vehicle_products as $pid => $vp) {
                                     <tr style="border-bottom: 1px solid #f8fafc;">
                                         <td style="padding: 6px 10px; font-weight: 700; color: #0f172a;">
                                             <?php if ($pr['bill_number'] === 'OPENING-BALANCE'): ?>
-                                                Opening Due Balance <span style="font-size: 10px; color: #b45309; font-weight: 600;">(Previous Balance)</span>
+                                                <span style="font-size: 10px; color: #b45309; font-weight: 600;">(Previous Balance)</span>
                                             <?php else: ?>
                                                 Bill #<?= htmlspecialchars($pr['bill_number']) ?>
                                                 <span style="font-size: 10px; color: #64748b; font-weight: normal;">(Order #<?= htmlspecialchars($pr['order_number']) ?>)</span>
@@ -1902,19 +1891,19 @@ foreach ($vehicle_products as $pid => $vp) {
                                 <?php endif; ?>
                             </tbody>
                         </table>
-                    </div>
+                    </div> -->
 
                     <!-- Interactive Settlement Options -->
                     <div style="background: #ffffff; border: 1.5px solid #fed7d7; border-radius: 8px; padding: 12px;">
                         <label class="chk-label" for="collect_prior_due" style="color: #0f172a;">
                             <input type="checkbox" name="collect_prior_due" id="collect_prior_due" class="chk-input" <?= isset($_POST['collect_prior_due']) ? 'checked' : '' ?> onchange="togglePriorDueBox(this.checked)">
-                            <span>Collect / Clear Earlier Due with this Delivery</span>
+                            <span>Clear Earlier Due with this Delivery</span>
                         </label>
 
                         <div id="priorDueInputFields" style="<?= isset($_POST['collect_prior_due']) ? 'display: block;' : 'display: none;' ?> margin-top: 10px; border-top: 1px dashed #e2e8f0; padding-top: 10px;">
                             <div style="display: grid; grid-template-columns: 1fr; gap: 10px;">
                                 <div>
-                                    <label class="form-label" style="font-size: 12px; margin-bottom: 4px;">Amount of Earlier Due to Clear (₹):</label>
+                                    <label class="form-label" style="font-size: 12px; margin-bottom: 4px;">Amount (₹):</label>
                                     <div style="display: flex; gap: 8px; align-items: center;">
                                         <input
                                             type="text"
@@ -1935,15 +1924,15 @@ foreach ($vehicle_products as $pid => $vp) {
                                 </div>
 
                                 <div>
-                                    <label class="form-label" style="font-size: 12px; margin-bottom: 4px;">Payment Mode for Earlier Due:</label>
+                                    <label class="form-label" style="font-size: 12px; margin-bottom: 4px;">Payment Mode</label>
                                     <div style="display: flex; gap: 16px; font-size: 13px; font-weight: 700;">
                                         <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
-                                            <input type="radio" name="prior_due_mode" value="cash" checked style="accent-color: #2563eb;">
-                                            💵 In-Hand Cash
+                                            <input type="radio" name="prior_due_mode" value="cash" checked style="accent-color: #2563eb;" onchange="recalculate()">
+                                             Cash
                                         </label>
                                         <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
-                                            <input type="radio" name="prior_due_mode" value="upi" style="accent-color: #2563eb;">
-                                            📱 UPI / Online Payment
+                                            <input type="radio" name="prior_due_mode" value="upi" style="accent-color: #2563eb;" onchange="recalculate()">
+                                             Online Payment
                                         </label>
                                     </div>
                                 </div>
@@ -1982,7 +1971,7 @@ foreach ($vehicle_products as $pid => $vp) {
                                 <label class="form-label" style="font-size: 11px; margin-bottom: 3px; font-weight: 700; color: #7f1d1d;">Action</label>
                                 <select name="manual_prior_due_action" id="manual_prior_due_action" class="form-control" style="font-size: 12px; font-weight: 600;" onchange="recalculate()">
                                     <option value="carry_forward" <?= ($_POST['manual_prior_due_action'] ?? '') === 'carry_forward' ? 'selected' : '' ?>>Carry Forward (Keep as Outstanding)</option>
-                                    <option value="collect_now" <?= ($_POST['manual_prior_due_action'] ?? '') === 'collect_now' ? 'selected' : '' ?>>Collect / Clear Today</option>
+                                    <option value="collect_now" <?= ($_POST['manual_prior_due_action'] ?? '') === 'collect_now' ? 'selected' : '' ?>>Clear Today</option>
                                 </select>
                             </div>
                         </div>
@@ -2099,21 +2088,47 @@ foreach ($vehicle_products as $pid => $vp) {
                         <span id="dispTotal" style="color: #0f172a;">₹0.00</span>
                     </div>
                     <div class="calc-row" id="rowPriorDueCollected" style="display: none; color: #b91c1c;">
-                        <span style="font-weight: 600;">+ Earlier Due Collected:</span>
+                        <span style="font-weight: 600; display: inline-flex; align-items: center; gap: 6px;">
+                            <span>+ Earlier Due Collected:</span>
+                            <span id="badgePriorDueMethod" style="font-size: 10px; font-weight: 800; padding: 1px 6px; border-radius: 4px; background: #dcfce7; color: #166534; text-transform: uppercase;">Cash</span>
+                        </span>
                         <span id="dispPriorDueCollected" style="font-weight: 700;">₹0.00</span>
                     </div>
                     <div class="calc-row" id="rowGrandTotal" style="display: none; border-top: 1.5px solid #cbd5e1; padding-top: 6px; font-size: 15px; font-weight: 800; color: #1e40af;">
                         <span>Total Collectible Today:</span>
                         <span id="dispGrandTotal">₹0.00</span>
                     </div>
-                    <div class="calc-row">
+                    <div class="calc-row" id="rowCashBreakdown">
                         <span style="color: #059669;">&minus; Cash Collected (Current Bill):</span>
                         <span id="dispCash" style="color: #059669; font-weight: 700;">₹0.00</span>
                     </div>
-                    <div class="calc-row">
-                        <span style="color: #d97706;">&minus; Credited Amount (Current Bill):</span>
-                        <span id="dispCredit" style="color: #d97706; font-weight: 700;">₹0.00</span>
+                    <div class="calc-row" id="rowCreditBreakdown">
+                        <span style="color: #2563eb;">&minus; Online Payment (Current Bill):</span>
+                        <span id="dispCredit" style="color: #2563eb; font-weight: 700;">₹0.00</span>
                     </div>
+
+                    <!-- Separated Earlier Due Collection rows by payment method -->
+                    <div class="calc-row" id="rowPriorDueCashBreakdown" style="display: none; color: #047857;">
+                        <span style="font-weight: 600;">&minus; Cash Collected (Earlier Due):</span>
+                        <span id="dispPriorDueCash" style="font-weight: 700;">₹0.00</span>
+                    </div>
+                    <div class="calc-row" id="rowPriorDueOnlineBreakdown" style="display: none; color: #1d4ed8;">
+                        <span style="font-weight: 600;">&minus; Online Payment (Earlier Due):</span>
+                        <span id="dispPriorDueOnline" style="font-weight: 700;">₹0.00</span>
+                    </div>
+
+                    <!-- Separated Totals Box (Total Cash vs Total Online to collect) -->
+                    <div id="boxPaymentMethodTotals" style="display: none; margin: 8px 0; padding: 8px 12px; background: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 8px;">
+                        <div id="rowTotalCashCombined" style="display: flex; justify-content: space-between; align-items: center; color: #166534; font-weight: 700; font-size: 12px; margin-bottom: 4px;">
+                            <span>💵 Total Cash to Collect:</span>
+                            <span id="dispTotalCashCombined" style="font-size: 13px; font-weight: 800;">₹0.00</span>
+                        </div>
+                        <div id="rowTotalOnlineCombined" style="display: flex; justify-content: space-between; align-items: center; color: #1e40af; font-weight: 700; font-size: 12px;">
+                            <span>💳 Total Online to Collect:</span>
+                            <span id="dispTotalOnlineCombined" style="font-size: 13px; font-weight: 800;">₹0.00</span>
+                        </div>
+                    </div>
+
                     <div class="calc-row due">
                         <span>Current Bill Balance / Due:</span>
                         <span id="dispDue">₹0.00</span>
@@ -2534,8 +2549,11 @@ foreach ($vehicle_products as $pid => $vp) {
                 }
             }
             if (regularCountDisplay) {
-                const regCount = itemsContainer.querySelectorAll('.item-delivery-card').length;
-                regularCountDisplay.textContent = `${regCount} ${regCount === 1 ? 'Product' : 'Products'}`;
+                const activeCount = Array.from(itemsContainer.querySelectorAll('.item-delivery-card')).filter(card => {
+                    const qInp = card.querySelector('.item-qty-input');
+                    return (parseInt(qInp ? qInp.value : 0) || 0) > 0;
+                }).length;
+                regularCountDisplay.textContent = `${activeCount} ${activeCount === 1 ? 'Product' : 'Products'}`;
             }
 
             const placeholder = document.getElementById('noItemsPlaceholder');
@@ -2587,6 +2605,71 @@ foreach ($vehicle_products as $pid => $vp) {
                     dispPriorCollected.textContent = '+ ₹' + totalPriorCleared.toFixed(2);
                 } else {
                     rowPrior.style.display = 'none';
+                }
+            }
+
+            // Prior Due Payment Method separation
+            const priorModeEl = document.querySelector('input[name="prior_due_mode"]:checked');
+            const priorDueMode = priorModeEl ? priorModeEl.value.toLowerCase() : 'cash';
+            const isPriorDueUpi = (priorDueMode === 'upi');
+
+            const badgePriorMethod = document.getElementById('badgePriorDueMethod');
+            if (badgePriorMethod) {
+                if (isPriorDueUpi) {
+                    badgePriorMethod.textContent = 'Online Payment';
+                    badgePriorMethod.style.background = '#dbeafe';
+                    badgePriorMethod.style.color = '#1e40af';
+                } else {
+                    badgePriorMethod.textContent = 'Cash';
+                    badgePriorMethod.style.background = '#dcfce7';
+                    badgePriorMethod.style.color = '#166534';
+                }
+            }
+
+            const rowPriorCash = document.getElementById('rowPriorDueCashBreakdown');
+            const rowPriorOnline = document.getElementById('rowPriorDueOnlineBreakdown');
+            const dispPriorCash = document.getElementById('dispPriorDueCash');
+            const dispPriorOnline = document.getElementById('dispPriorDueOnline');
+
+            if (totalPriorCleared > 0) {
+                if (isPriorDueUpi) {
+                    if (rowPriorCash) rowPriorCash.style.display = 'none';
+                    if (rowPriorOnline) {
+                        rowPriorOnline.style.display = 'flex';
+                        if (dispPriorOnline) dispPriorOnline.textContent = '₹' + totalPriorCleared.toFixed(2);
+                    }
+                } else {
+                    if (rowPriorOnline) rowPriorOnline.style.display = 'none';
+                    if (rowPriorCash) {
+                        rowPriorCash.style.display = 'flex';
+                        if (dispPriorCash) dispPriorCash.textContent = '₹' + totalPriorCleared.toFixed(2);
+                    }
+                }
+            } else {
+                if (rowPriorCash) rowPriorCash.style.display = 'none';
+                if (rowPriorOnline) rowPriorOnline.style.display = 'none';
+            }
+
+            // Separated Combined Totals
+            const boxTotals = document.getElementById('boxPaymentMethodTotals');
+            const dispCashCombined = document.getElementById('dispTotalCashCombined');
+            const dispOnlineCombined = document.getElementById('dispTotalOnlineCombined');
+            const rowTotalCashCombined = document.getElementById('rowTotalCashCombined');
+            const rowTotalOnlineCombined = document.getElementById('rowTotalOnlineCombined');
+
+            if (boxTotals) {
+                const totalCashCombined = cashVal + (!isPriorDueUpi ? totalPriorCleared : 0);
+                const totalOnlineCombined = creditVal + (isPriorDueUpi ? totalPriorCleared : 0);
+
+                if (totalPriorCleared > 0 || (cashVal > 0 && creditVal > 0)) {
+                    boxTotals.style.display = 'block';
+                    if (dispCashCombined) dispCashCombined.textContent = '₹' + totalCashCombined.toFixed(2);
+                    if (dispOnlineCombined) dispOnlineCombined.textContent = '₹' + totalOnlineCombined.toFixed(2);
+
+                    if (rowTotalCashCombined) rowTotalCashCombined.style.display = (totalCashCombined > 0 || totalOnlineCombined === 0) ? 'flex' : 'none';
+                    if (rowTotalOnlineCombined) rowTotalOnlineCombined.style.display = (totalOnlineCombined > 0) ? 'flex' : 'none';
+                } else {
+                    boxTotals.style.display = 'none';
                 }
             }
 
@@ -2694,60 +2777,89 @@ foreach ($vehicle_products as $pid => $vp) {
             recalculate();
         }
 
+        // --- SEARCHABLE SHOP DROPDOWN & DUES ENGINE ---
+        const registeredZoneShops = <?= json_encode($zoneShopsList) ?>;
+        let activeZoneShopIndex = -1;
+        let lastDueRequestId = 0;
+        let typingDueTimer = null;
+
+        function renderPriorDueUI(totalDue, dueCount, receipts) {
+            const section = document.getElementById('priorDueSection');
+            const tableBox = document.getElementById('priorDueBillsTableBox');
+            const tbody = document.getElementById('priorDueTableBody');
+            const pInput = document.getElementById('prior_due_amount');
+            const totalEl = document.getElementById('dispPriorDueTotal');
+            const countEl = document.getElementById('dispPriorDueCount');
+
+            if (!section) return;
+
+            totalDue = parseFloat(totalDue || 0);
+            dueCount = parseInt(dueCount || 0);
+
+            if (totalDue > 0) {
+                section.style.display = 'block';
+                section.dataset.totalDue = totalDue;
+                if (totalEl) totalEl.textContent = '₹' + totalDue.toFixed(2);
+                if (countEl) countEl.textContent = dueCount + (dueCount === 1 ? ' Unpaid Bill' : ' Unpaid Bills');
+
+                if (tbody && receipts && receipts.length > 0) {
+                    if (tableBox) tableBox.style.display = 'block';
+                    tbody.innerHTML = receipts.map(r => `
+                        <tr style="border-bottom: 1px solid #f8fafc;">
+                            <td style="padding: 6px 10px; font-weight: 700; color: #0f172a;">
+                                ${r.bill_number === 'OPENING-BALANCE' ? '<span style="font-size: 10px; color: #b45309; font-weight: 600;">Previous Balance</span>' : `Bill #${escapeZoneHtml(r.bill_number)} <span style="font-size: 10px; color: #64748b;">(Order #${escapeZoneHtml(r.order_number)})</span>`}
+                            </td>
+                      
+                            <td style="padding: 6px 10px; text-align: right; color: #475569;">₹${parseFloat(r.total_amount).toFixed(2)}</td>
+                            <td style="padding: 6px 10px; text-align: right; font-weight: 800; color: #dc2626;">₹${parseFloat(r.due_amount).toFixed(2)}</td>
+                        </tr>
+                    `).join('');
+                }
+
+                if (pInput) {
+                    pInput.max = totalDue;
+                    if (!pInput.value || parseFloat(pInput.value) <= 0) {
+                        pInput.value = totalDue.toFixed(2);
+                    }
+                }
+            } else {
+                section.style.display = 'none';
+                section.dataset.totalDue = 0;
+            }
+            recalculate();
+        }
+
         function checkShopDuesAjax() {
             const shopVal = (document.getElementById('shop_name')?.value || '').trim();
             const phoneVal = (document.getElementById('phone')?.value || '').trim();
             if (!shopVal && !phoneVal) return;
 
+            const reqId = ++lastDueRequestId;
             const url = '<?= zone_url($zone_slug, 'generate-receipt') ?>?action=check_prior_due&shop=' + encodeURIComponent(shopVal) + '&phone=' + encodeURIComponent(phoneVal) + '&exclude_id=<?= (int)$order_id ?>';
             fetch(url)
                 .then(res => res.json())
                 .then(data => {
-                    const section = document.getElementById('priorDueSection');
-                    const tableBox = document.getElementById('priorDueBillsTableBox');
-                    if (!section) return;
+                    if (reqId !== lastDueRequestId) return;
                     if (data && data.has_due && data.total_due > 0) {
-                        section.style.display = 'block';
-                        section.dataset.totalDue = data.total_due;
-                        document.getElementById('dispPriorDueTotal').textContent = '₹' + data.total_due.toFixed(2);
-                        document.getElementById('dispPriorDueCount').textContent = data.due_count + (data.due_count === 1 ? ' Unpaid Bill' : ' Unpaid Bills');
-                        
-                        const tbody = document.getElementById('priorDueTableBody');
-                        if (tbody && data.receipts) {
-                            if (tableBox) tableBox.style.display = 'block';
-                            tbody.innerHTML = data.receipts.map(r => `
-                                <tr style="border-bottom: 1px solid #f8fafc;">
-                                    <td style="padding: 6px 10px; font-weight: 700; color: #0f172a;">
-                                        ${r.bill_number === 'OPENING-BALANCE' ? 'Opening Due Balance <span style="font-size: 10px; color: #b45309; font-weight: 600;">(Previous Balance)</span>' : `Bill #${escapeZoneHtml(r.bill_number)} <span style="font-size: 10px; color: #64748b;">(Order #${escapeZoneHtml(r.order_number)})</span>`}
-                                    </td>
-                                    <td style="padding: 6px 10px; color: #64748b;">${r.receipt_date ? r.receipt_date.substring(0, 10) : ''}</td>
-                                    <td style="padding: 6px 10px; text-align: right; color: #475569;">₹${parseFloat(r.total_amount).toFixed(2)}</td>
-                                    <td style="padding: 6px 10px; text-align: right; font-weight: 800; color: #dc2626;">₹${parseFloat(r.due_amount).toFixed(2)}</td>
-                                </tr>
-                            `).join('');
-                        }
-                        const pInput = document.getElementById('prior_due_amount');
-                        if (pInput) {
-                            pInput.max = data.total_due;
-                            if (!pInput.value || parseFloat(pInput.value) <= 0) {
-                                pInput.value = data.total_due.toFixed(2);
-                            }
-                        }
+                        renderPriorDueUI(data.total_due, data.due_count, data.receipts);
                     } else {
-                        section.style.display = 'none';
-                        section.dataset.totalDue = 0;
+                        // Keep in-memory opening balance if master shop has pending_amount
+                        const curShopName = (document.getElementById('shop_name')?.value || '').trim().toLowerCase();
+                        const clientShop = registeredZoneShops.find(s => (s.shop_name || '').toLowerCase() === curShopName);
+                        if (!clientShop || !(parseFloat(clientShop.pending_amount || 0) > 0)) {
+                            renderPriorDueUI(0, 0, []);
+                        }
                     }
-                    recalculate();
                 })
                 .catch(err => console.error(err));
         }
 
         document.getElementById('shop_name')?.addEventListener('blur', checkShopDuesAjax);
         document.getElementById('phone')?.addEventListener('blur', checkShopDuesAjax);
-
-        // --- SEARCHABLE SHOP DROPDOWN ENGINE (ZONE PORTAL) ---
-        const registeredZoneShops = <?= json_encode($zoneShopsList) ?>;
-        let activeZoneShopIndex = -1;
+        document.getElementById('phone')?.addEventListener('input', function() {
+            clearTimeout(typingDueTimer);
+            typingDueTimer = setTimeout(checkShopDuesAjax, 300);
+        });
 
         function renderZoneShopDropdown(filter = '') {
             const listEl = document.getElementById('zoneShopDropdownList');
@@ -2887,7 +2999,22 @@ foreach ($vehicle_products as $pid => $vp) {
                 if (vehSel) vehSel.value = shop.vehicle_id;
             }
 
+            // 0ms INSTANT DISPLAY of known prior due from memory
+            const dueAmt = parseFloat(shop.pending_amount || 0);
+            if (dueAmt > 0) {
+                renderPriorDueUI(dueAmt, 1, [{
+                    bill_number: 'OPENING-BALANCE',
+                    order_number: 'CREDITOR-OB',
+                    receipt_date: new Date().toISOString(),
+                    total_amount: dueAmt,
+                    due_amount: dueAmt
+                }]);
+            } else {
+                renderPriorDueUI(0, 0, []);
+            }
+
             closeZoneShopDropdown();
+            // Fast background verification for past unpaid order bills
             checkShopDuesAjax();
         }
 
@@ -2905,7 +3032,6 @@ foreach ($vehicle_products as $pid => $vp) {
             const placeInput = document.getElementById('place');
             const phoneInput = document.getElementById('phone');
             const clearBtn = document.getElementById('btnClearZoneShop');
-            const sectionPrior = document.getElementById('priorDueSection');
 
             if (shopInput) {
                 shopInput.value = '';
@@ -2914,8 +3040,8 @@ foreach ($vehicle_products as $pid => $vp) {
             if (placeInput) placeInput.value = '';
             if (phoneInput) phoneInput.value = '';
             if (clearBtn) clearBtn.style.display = 'none';
-            if (sectionPrior) sectionPrior.style.display = 'none';
 
+            renderPriorDueUI(0, 0, []);
             renderZoneShopDropdown('');
         }
 
@@ -2947,21 +3073,42 @@ foreach ($vehicle_products as $pid => $vp) {
                 if (filterInp) filterInp.value = val;
                 renderZoneShopDropdown(val);
 
-                // Auto match on full exact typing
-                const match = registeredZoneShops.find(s => (s.shop_name || '').toLowerCase() === val.trim().toLowerCase());
-                if (match) {
-                    const placeInp = document.getElementById('place');
-                    const phoneInp = document.getElementById('phone');
-                    if (placeInp && match.location) placeInp.value = match.location;
-                    if (phoneInp && match.phone && !phoneInp.value) phoneInp.value = match.phone;
-                    if (match.vehicle_id && parseInt(match.vehicle_id) > 0) {
-                        const vehInp = document.getElementById('assignedVehicleIdInput');
-                        if (vehInp) vehInp.value = match.vehicle_id;
-                        const vehSel = document.getElementById('vehicleSelect');
-                        if (vehSel) vehSel.value = match.vehicle_id;
+                // Instant match check on typing (exact or prefix >= 3 chars)
+                const q = val.trim().toLowerCase();
+                if (!q) {
+                    renderPriorDueUI(0, 0, []);
+                } else {
+                    const match = registeredZoneShops.find(s => {
+                        const sn = (s.shop_name || '').toLowerCase();
+                        return sn === q || (q.length >= 3 && (sn.startsWith(q) || q.startsWith(sn)));
+                    });
+
+                    if (match) {
+                        const placeInp = document.getElementById('place');
+                        const phoneInp = document.getElementById('phone');
+                        if (placeInp && match.location && !placeInp.value) placeInp.value = match.location;
+                        if (phoneInp && match.phone && !phoneInp.value) phoneInp.value = match.phone;
+                        if (match.vehicle_id && parseInt(match.vehicle_id) > 0) {
+                            const vehInp = document.getElementById('assignedVehicleIdInput');
+                            if (vehInp && !vehInp.value) vehInp.value = match.vehicle_id;
+                            const vehSel = document.getElementById('vehicleSelect');
+                            if (vehSel && !vehSel.value) vehSel.value = match.vehicle_id;
+                        }
+                        const dueAmt = parseFloat(match.pending_amount || 0);
+                        if (dueAmt > 0) {
+                            renderPriorDueUI(dueAmt, 1, [{
+                                bill_number: 'OPENING-BALANCE',
+                                order_number: 'CREDITOR-OB',
+                                receipt_date: new Date().toISOString(),
+                                total_amount: dueAmt,
+                                due_amount: dueAmt
+                            }]);
+                        }
                     }
-                    checkShopDuesAjax();
                 }
+
+                clearTimeout(typingDueTimer);
+                typingDueTimer = setTimeout(checkShopDuesAjax, 250);
             });
 
             zoneShopInp.addEventListener('keydown', handleZoneDropdownKeydown);
@@ -3247,6 +3394,12 @@ foreach ($vehicle_products as $pid => $vp) {
             const creditVal = enableCredit && enableCredit.checked ? (parseFloat(creditInput ? creditInput.value : 0) || 0) : 0;
             const dueVal = enableDue && enableDue.checked ? (parseFloat(dueInput ? dueInput.value : 0) || 0) : Math.max(0, total - (cashVal + creditVal));
 
+            const priorModeEl = document.querySelector('input[name="prior_due_mode"]:checked');
+            const priorDueMode = priorModeEl ? priorModeEl.value.toLowerCase() : 'cash';
+            const collectPriorDue = document.getElementById('collect_prior_due');
+            const priorDueInput = document.getElementById('prior_due_amount');
+            const offlinePriorCleared = (collectPriorDue && collectPriorDue.checked) ? (parseFloat(priorDueInput ? priorDueInput.value : 0) || 0) : 0;
+
             // Validate cash + credit doesn't exceed total
             if ((cashVal + creditVal) > (total + 0.01)) {
                 alert("Payment error: Cash (₹" + cashVal.toFixed(2) + ") + Credit (₹" + creditVal.toFixed(2) + ") cannot exceed Total (₹" + total.toFixed(2) + ").");
@@ -3274,6 +3427,8 @@ foreach ($vehicle_products as $pid => $vp) {
                 cash_amount: cashVal,
                 credited_amount: creditVal,
                 due_amount: dueVal,
+                prior_due_amount: offlinePriorCleared,
+                prior_due_mode: priorDueMode,
                 payment_type: (cashVal > 0 && creditVal > 0) ? 'Cash + Credited' : (cashVal > 0 ? 'Cash' : (creditVal > 0 ? 'Credited' : 'Pending')),
                 company_gstin: zoneInfo.company_gstin || '29AAOCP8622L1ZM',
                 company_phone: zoneInfo.company_phone || '+91 63663 78967',

@@ -114,7 +114,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 // Update vehicle status to loading if currently active
                 $pdo->prepare("UPDATE vehicles SET status = 'loading', updated_at = NOW() WHERE id = ? AND status = 'active'")->execute([$vId]);
 
-                $_SESSION['success_message'] = "Successfully loaded " . count($itemsToLoad) . " product(s) (total {$totalCasesLoaded} cases) onto vehicle " . htmlspecialchars($vehLabel) . " (" . implode(', ', $loadedSummary) . ")!";
+                $_SESSION['success_message'] = "Successfully loaded " . count($itemsToLoad) . " product(s)";
             }
         }
         $redirectZone = $_GET['zone'] ?? 'all';

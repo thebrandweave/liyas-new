@@ -325,6 +325,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_order'])) {
             try {
                 $pdo->beginTransaction();
 
+                // Sync shop phone, location, and match assigned vehicle from master shops table
+                $shopSync = syncShopOrderDetails($pdo, $shop_name, $phone, $location, $zone_id, $vehicle_id);
+                if (!empty($shopSync['vehicle_id']) && $vehicle_id <= 0) {
+                    $vehicle_id = (int)$shopSync['vehicle_id'];
+                }
+                if (!empty($shopSync['phone']) && empty($phone)) {
+                    $phone = $shopSync['phone'];
+                }
+                if (!empty($shopSync['location']) && empty($location)) {
+                    $location = $shopSync['location'];
+                }
+                if (!empty($shopSync['zone_id']) && $zone_id <= 0) {
+                    $zone_id = (int)$shopSync['zone_id'];
+                }
+
                 $primary_pid = !empty($valid_order_items) ? $valid_order_items[0]['product_id'] : null;
                 $primary_unit_price = !empty($valid_order_items) ? $valid_order_items[0]['price_at_purchase'] : 0.00;
 
