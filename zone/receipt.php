@@ -325,7 +325,7 @@ if (!function_exists('buildThermalRawBtPayload')) {
                 $cleanNotes = str_ireplace(['from Bill #OPENING-BALANCE', 'Bill #OPENING-BALANCE', 'OPENING-BALANCE'], '', $rawNotes);
                 $cleanNotes = preg_replace('/[₹\?]\s*([0-9])/u', 'Rs. $1', $cleanNotes);
                 $cleanNotes = trim(preg_replace('/\s+/', ' ', $cleanNotes));
-                $lines[] = "Prior Settled:" . $cleanNotes;
+               $lines[] = "Prior Settled:" . ltrim($cleanNotes);
             }
         }
 
