@@ -459,6 +459,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['generate_receipt'])) 
                 } else {
                     // New direct spot delivery without prior order OR Reorder
                     $assignedVehicleId = (int)($_POST['vehicle_id'] ?? 0);
+
+                    // Sync shop phone, location, and match assigned vehicle from master shops table
+                    $shopSync = syncShopOrderDetails($pdo, $shop_name, $phone, $place, $zone_id, $assignedVehicleId);
+                    if (!empty($shopSync['vehicle_id']) && $assignedVehicleId <= 0) {
+                        $assignedVehicleId = (int)$shopSync['vehicle_id'];
+                    }
+                    if (!empty($shopSync['phone']) && empty($phone)) {
+                        $phone = $shopSync['phone'];
+                    }
+                    if (!empty($shopSync['location']) && empty($place)) {
+                        $place = $shopSync['location'];
+                    }
+
                     if ($assignedVehicleId <= 0 && !empty($availVehicles)) {
                         $assignedVehicleId = (int)$availVehicles[0]['id'];
                     }
@@ -696,8 +709,8 @@ $zoneShopsList = [];
 try {
     $seenShops = [];
     $shSql = (!empty($zone_id)) 
-        ? "SELECT id, shop_name, location, phone FROM shops WHERE zone_id = ? OR zone_id IS NULL OR zone_id = 0 ORDER BY shop_name ASC"
-        : "SELECT id, shop_name, location, phone FROM shops ORDER BY shop_name ASC";
+        ? "SELECT id, shop_name, location, phone, zone_id, vehicle_id FROM shops WHERE zone_id = ? OR zone_id IS NULL OR zone_id = 0 ORDER BY shop_name ASC"
+        : "SELECT id, shop_name, location, phone, zone_id, vehicle_id FROM shops ORDER BY shop_name ASC";
     $shStmt = (!empty($zone_id)) ? $pdo->prepare($shSql) : $pdo->query($shSql);
     if (!empty($zone_id)) $shStmt->execute([(int)$zone_id]);
     $rawShops = $shStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
@@ -708,10 +721,12 @@ try {
             if (!isset($seenShops[$k])) {
                 $seenShops[$k] = true;
                 $zoneShopsList[] = [
-                    'id'        => (int)$rs['id'],
-                    'shop_name' => $sName,
-                    'location'  => trim($rs['location'] ?? ''),
-                    'phone'     => trim($rs['phone'] ?? '')
+                    'id'         => (int)$rs['id'],
+                    'shop_name'  => $sName,
+                    'location'   => trim($rs['location'] ?? ''),
+                    'phone'      => trim($rs['phone'] ?? ''),
+                    'zone_id'    => (int)($rs['zone_id'] ?? 0),
+                    'vehicle_id' => (int)($rs['vehicle_id'] ?? 0)
                 ];
             }
         }
@@ -719,8 +734,8 @@ try {
 
     // Also include past orders for this zone
     $ordSql = (!empty($zone_id))
-        ? "SELECT DISTINCT TRIM(COALESCE(NULLIF(shop_name, ''), customer_name)) as shop_name, MAX(location) as location, MAX(phone) as phone FROM orders WHERE zone_id = ? AND ((shop_name IS NOT NULL AND TRIM(shop_name) != '') OR (customer_name IS NOT NULL AND TRIM(customer_name) != '')) GROUP BY TRIM(COALESCE(NULLIF(shop_name, ''), customer_name))"
-        : "SELECT DISTINCT TRIM(COALESCE(NULLIF(shop_name, ''), customer_name)) as shop_name, MAX(location) as location, MAX(phone) as phone FROM orders WHERE ((shop_name IS NOT NULL AND TRIM(shop_name) != '') OR (customer_name IS NOT NULL AND TRIM(customer_name) != '')) GROUP BY TRIM(COALESCE(NULLIF(shop_name, ''), customer_name))";
+        ? "SELECT DISTINCT TRIM(COALESCE(NULLIF(shop_name, ''), customer_name)) as shop_name, MAX(location) as location, MAX(phone) as phone, MAX(zone_id) as zone_id, MAX(vehicle_id) as vehicle_id FROM orders WHERE zone_id = ? AND ((shop_name IS NOT NULL AND TRIM(shop_name) != '') OR (customer_name IS NOT NULL AND TRIM(customer_name) != '')) GROUP BY TRIM(COALESCE(NULLIF(shop_name, ''), customer_name))"
+        : "SELECT DISTINCT TRIM(COALESCE(NULLIF(shop_name, ''), customer_name)) as shop_name, MAX(location) as location, MAX(phone) as phone, MAX(zone_id) as zone_id, MAX(vehicle_id) as vehicle_id FROM orders WHERE ((shop_name IS NOT NULL AND TRIM(shop_name) != '') OR (customer_name IS NOT NULL AND TRIM(customer_name) != '')) GROUP BY TRIM(COALESCE(NULLIF(shop_name, ''), customer_name))";
     $ordStmt = (!empty($zone_id)) ? $pdo->prepare($ordSql) : $pdo->query($ordSql);
     if (!empty($zone_id)) $ordStmt->execute([(int)$zone_id]);
     $rawOrdShops = $ordStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
@@ -731,10 +746,12 @@ try {
             if (!isset($seenShops[$k])) {
                 $seenShops[$k] = true;
                 $zoneShopsList[] = [
-                    'id'        => 0,
-                    'shop_name' => $sName,
-                    'location'  => trim($ros['location'] ?? ''),
-                    'phone'     => trim($ros['phone'] ?? '')
+                    'id'         => 0,
+                    'shop_name'  => $sName,
+                    'location'   => trim($ros['location'] ?? ''),
+                    'phone'      => trim($ros['phone'] ?? ''),
+                    'zone_id'    => (int)($ros['zone_id'] ?? 0),
+                    'vehicle_id' => (int)($ros['vehicle_id'] ?? 0)
                 ];
             }
         }
@@ -2841,6 +2858,13 @@ foreach ($vehicle_products as $pid => $vp) {
             if (phoneInput && shop.phone) phoneInput.value = shop.phone;
             if (clearBtn) clearBtn.style.display = 'inline-flex';
 
+            if (shop.vehicle_id && parseInt(shop.vehicle_id) > 0) {
+                const vehInp = document.getElementById('assignedVehicleIdInput');
+                if (vehInp) vehInp.value = shop.vehicle_id;
+                const vehSel = document.getElementById('vehicleSelect');
+                if (vehSel) vehSel.value = shop.vehicle_id;
+            }
+
             closeZoneShopDropdown();
             checkShopDuesAjax();
         }
@@ -2908,6 +2932,12 @@ foreach ($vehicle_products as $pid => $vp) {
                     const phoneInp = document.getElementById('phone');
                     if (placeInp && match.location) placeInp.value = match.location;
                     if (phoneInp && match.phone && !phoneInp.value) phoneInp.value = match.phone;
+                    if (match.vehicle_id && parseInt(match.vehicle_id) > 0) {
+                        const vehInp = document.getElementById('assignedVehicleIdInput');
+                        if (vehInp) vehInp.value = match.vehicle_id;
+                        const vehSel = document.getElementById('vehicleSelect');
+                        if (vehSel) vehSel.value = match.vehicle_id;
+                    }
                     checkShopDuesAjax();
                 }
             });

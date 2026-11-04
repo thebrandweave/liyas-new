@@ -24,7 +24,7 @@ if (empty($zone_slug)) {
     // Remove known folder names like 'liyas-new' or 'zone'
     $cleanedParts = [];
     foreach ($uriParts as $part) {
-        if (!in_array($part, ['liyas-new', 'zone', 'public'])) {
+        if (!in_array($part, ['water', 'liyas-new', 'zone', 'public'])) {
             $cleanedParts[] = $part;
         }
     }

@@ -364,6 +364,36 @@ function ensureWarehouseSchema(PDO $pdo): bool {
         }
 
         // ============================================
+        // 10C. AUTO-SYNC PHONE & VEHICLE BETWEEN SHOPS AND ORDERS
+        // ============================================
+        try {
+            // 1. Sync vehicle_id to orders where missing but assigned in shops
+            $pdo->exec("
+                UPDATE orders o
+                JOIN shops s ON TRIM(LOWER(o.shop_name)) = TRIM(LOWER(s.shop_name))
+                SET o.vehicle_id = s.vehicle_id
+                WHERE (o.vehicle_id IS NULL OR o.vehicle_id = 0)
+                  AND s.vehicle_id IS NOT NULL 
+                  AND s.vehicle_id > 0
+            ");
+
+            // 2. Feed phone numbers from orders to shops if shops.phone is empty
+            $pdo->exec("
+                UPDATE shops s
+                JOIN (
+                    SELECT TRIM(LOWER(shop_name)) as sname, MAX(phone) as latest_phone
+                    FROM orders
+                    WHERE phone IS NOT NULL AND TRIM(phone) != '' AND TRIM(phone) != '—'
+                    GROUP BY TRIM(LOWER(shop_name))
+                ) o ON TRIM(LOWER(s.shop_name)) = o.sname
+                SET s.phone = o.latest_phone
+                WHERE (s.phone IS NULL OR TRIM(s.phone) = '' OR s.phone = '—')
+            ");
+        } catch (Exception $e) {
+            error_log("Schema sync shop-order auto-sync error: " . $e->getMessage());
+        }
+
+        // ============================================
         // 11. PRIMARY KEY INTEGRITY CHECKER
         // Fixes phpMyAdmin "Current selection does not contain a unique column" warning
         // by ensuring all tables in the database have a valid PRIMARY KEY.

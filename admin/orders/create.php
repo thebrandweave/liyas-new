@@ -206,6 +206,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_order'])) {
     $address       = trim($_POST['address'] ?? '');
     $zone_id       = (int)($_POST['zone_id'] ?? 0);
     $vehicle_id    = isset($_POST['vehicle_id']) && $_POST['vehicle_id'] !== '' ? (int)$_POST['vehicle_id'] : 0;
+
+    // Sync shop phone, location, and match assigned vehicle & zone from master shops table
+    $shopSync = syncShopOrderDetails($pdo, $shop_name, $phone, $location, $zone_id, $vehicle_id);
+    if (!empty($shopSync['vehicle_id']) && $vehicle_id <= 0) {
+        $vehicle_id = (int)$shopSync['vehicle_id'];
+    }
+    if (!empty($shopSync['zone_id']) && $zone_id <= 0) {
+        $zone_id = (int)$shopSync['zone_id'];
+    }
+    if (!empty($shopSync['phone']) && empty($phone)) {
+        $phone = $shopSync['phone'];
+    }
+    if (!empty($shopSync['location']) && empty($location)) {
+        $location = $shopSync['location'];
+    }
+
     // Auto-resolve vehicle from zone if not specified
     if ($vehicle_id <= 0 && $zone_id > 0 && isset($zone_vehicle_map[$zone_id])) {
         $vehicle_id = (int)$zone_vehicle_map[$zone_id];

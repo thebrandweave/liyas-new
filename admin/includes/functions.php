@@ -1925,6 +1925,137 @@ function resolveDamagedItem(PDO $pdo, int $damagedId, string $action = 'transfer
 	}
 }
 
+/**
+ * Synchronize shop details (phone, location, zone, vehicle) between orders and master shops table.
+ * 
+ * 1. Matches shop by name (case-insensitive, trimmed) or name + location.
+ * 2. If shop exists:
+ *    - Auto-matches vehicle_id from shops.vehicle_id if missing or 0 in order.
+ *    - Auto-matches zone_id from shops.zone_id if missing or 0 in order.
+ *    - Feeds/updates phone number in shops.phone if provided.
+ *    - Feeds/updates location in shops.location if provided and empty in shops.
+ *    - Feeds/updates zone_id / vehicle_id in shops if empty in shops.
+ * 3. If shop does NOT exist:
+ *    - Auto-registers shop in shops table.
+ * 
+ * @return array ['shop_id' => int, 'zone_id' => ?int, 'vehicle_id' => ?int, 'phone' => string, 'location' => string]
+ */
+function syncShopOrderDetails(PDO $pdo, string $shopName, string $phone = '', string $location = '', ?int $zoneId = null, ?int $vehicleId = null): array {
+	$shopName = trim($shopName);
+	if (empty($shopName)) {
+		return [
+			'shop_id' => 0,
+			'zone_id' => $zoneId,
+			'vehicle_id' => $vehicleId,
+			'phone' => trim($phone),
+			'location' => trim($location)
+		];
+	}
+
+	$cleanPhone = trim($phone);
+	$cleanLoc = trim($location);
+	$zoneId = ($zoneId !== null && (int)$zoneId > 0) ? (int)$zoneId : null;
+	$vehicleId = ($vehicleId !== null && (int)$vehicleId > 0) ? (int)$vehicleId : null;
+
+	try {
+		$stmt = $pdo->prepare("
+			SELECT id, shop_name, location, phone, zone_id, vehicle_id 
+			FROM shops 
+			WHERE TRIM(LOWER(shop_name)) = TRIM(LOWER(?))
+			   OR TRIM(LOWER(CONCAT(shop_name, ' ', COALESCE(location, '')))) = TRIM(LOWER(?))
+			LIMIT 1
+		");
+		$stmt->execute([$shopName, $shopName]);
+		$shop = $stmt->fetch(PDO::FETCH_ASSOC);
+
+		if ($shop) {
+			$shopId = (int)$shop['id'];
+			$shopVehId = !empty($shop['vehicle_id']) ? (int)$shop['vehicle_id'] : null;
+			$shopZoneId = !empty($shop['zone_id']) ? (int)$shop['zone_id'] : null;
+
+			// 1. Match vehicle from shop if missing
+			if (($vehicleId === null || $vehicleId <= 0) && $shopVehId > 0) {
+				$vehicleId = $shopVehId;
+			}
+
+			// 2. Match zone from shop if missing
+			if (($zoneId === null || $zoneId <= 0) && $shopZoneId > 0) {
+				$zoneId = $shopZoneId;
+			}
+
+			// 3. Feed phone and metadata to shops table
+			$updates = [];
+			$params = [];
+
+			if (!empty($cleanPhone) && trim($shop['phone'] ?? '') !== $cleanPhone && $cleanPhone !== '—') {
+				$updates[] = "`phone` = ?";
+				$params[] = $cleanPhone;
+			}
+
+			if (!empty($cleanLoc) && empty(trim($shop['location'] ?? ''))) {
+				$updates[] = "`location` = ?";
+				$params[] = $cleanLoc;
+			}
+
+			if ($vehicleId > 0 && empty($shopVehId)) {
+				$updates[] = "`vehicle_id` = ?";
+				$params[] = $vehicleId;
+			}
+
+			if ($zoneId > 0 && empty($shopZoneId)) {
+				$updates[] = "`zone_id` = ?";
+				$params[] = $zoneId;
+			}
+
+			if (!empty($updates)) {
+				$params[] = $shopId;
+				$sql = "UPDATE shops SET " . implode(", ", $updates) . ", updated_at = NOW() WHERE id = ?";
+				$upStmt = $pdo->prepare($sql);
+				$upStmt->execute($params);
+			}
+
+			return [
+				'shop_id' => $shopId,
+				'zone_id' => $zoneId,
+				'vehicle_id' => $vehicleId,
+				'phone' => !empty($cleanPhone) ? $cleanPhone : trim($shop['phone'] ?? ''),
+				'location' => !empty($cleanLoc) ? $cleanLoc : trim($shop['location'] ?? '')
+			];
+		} else {
+			// Auto-register new shop in shops table
+			$insStmt = $pdo->prepare("
+				INSERT INTO shops (shop_name, location, phone, zone_id, vehicle_id, pending_amount, created_at, updated_at) 
+				VALUES (?, ?, ?, ?, ?, 0.00, NOW(), NOW())
+			");
+			$insStmt->execute([
+				$shopName,
+				$cleanLoc,
+				$cleanPhone,
+				$zoneId,
+				$vehicleId
+			]);
+			$newId = (int)$pdo->lastInsertId();
+
+			return [
+				'shop_id' => $newId,
+				'zone_id' => $zoneId,
+				'vehicle_id' => $vehicleId,
+				'phone' => $cleanPhone,
+				'location' => $cleanLoc
+			];
+		}
+	} catch (Exception $e) {
+		error_log("Error in syncShopOrderDetails: " . $e->getMessage());
+		return [
+			'shop_id' => 0,
+			'zone_id' => $zoneId,
+			'vehicle_id' => $vehicleId,
+			'phone' => $cleanPhone,
+			'location' => $cleanLoc
+		];
+	}
+}
+
 
 
 

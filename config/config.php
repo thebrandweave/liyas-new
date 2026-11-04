@@ -21,7 +21,9 @@ use Firebase\JWT\Key;
 $is_local = (
     (isset($_SERVER['HTTP_HOST']) && (
         in_array($_SERVER['HTTP_HOST'], ['localhost', '127.0.0.1', '::1']) || 
-        strpos($_SERVER['HTTP_HOST'], 'localhost:') === 0
+        strpos($_SERVER['HTTP_HOST'], 'localhost:') === 0 ||
+        preg_match('/^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.|127\.)/', $_SERVER['HTTP_HOST']) ||
+        substr($_SERVER['HTTP_HOST'], -6) === '.local'
     )) ||
     (php_sapi_name() === 'cli' && (strpos(__DIR__, 'xampp') !== false || strpos(__DIR__, 'htdocs') !== false))
 );

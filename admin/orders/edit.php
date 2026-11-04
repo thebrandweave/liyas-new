@@ -175,6 +175,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_order'])) {
     $address       = trim($_POST['address'] ?? '');
     $zone_id       = (int)($_POST['zone_id'] ?? 0);
     $vehicle_id    = isset($_POST['vehicle_id']) && $_POST['vehicle_id'] !== '' ? (int)$_POST['vehicle_id'] : 0;
+
+    // Sync shop phone, location, and match assigned vehicle & zone from master shops table
+    $shopSync = syncShopOrderDetails($pdo, $shop_name, $phone, $location, $zone_id, $vehicle_id);
+    if (!empty($shopSync['vehicle_id']) && $vehicle_id <= 0) {
+        $vehicle_id = (int)$shopSync['vehicle_id'];
+    }
+    if (!empty($shopSync['zone_id']) && $zone_id <= 0) {
+        $zone_id = (int)$shopSync['zone_id'];
+    }
+    if (!empty($shopSync['phone']) && empty($phone)) {
+        $phone = $shopSync['phone'];
+    }
+    if (!empty($shopSync['location']) && empty($location)) {
+        $location = $shopSync['location'];
+    }
+
     $discount      = (float)($_POST['discount'] ?? 0);
     $status        = $_POST['status'] ?? $order['status'];
 

@@ -112,6 +112,17 @@ foreach ($data['receipts'] as $rec) {
 
         } else {
             // New Direct Spot Delivery / Reorder
+            $shopSync = syncShopOrderDetails($pdo, $shopName, $phone, $place, $zone_id, $assignedVehicleId);
+            if (!empty($shopSync['vehicle_id']) && $assignedVehicleId <= 0) {
+                $assignedVehicleId = (int)$shopSync['vehicle_id'];
+            }
+            if (!empty($shopSync['phone']) && empty($phone)) {
+                $phone = $shopSync['phone'];
+            }
+            if (!empty($shopSync['location']) && empty($place)) {
+                $place = $shopSync['location'];
+            }
+
             $maxOrdStmt = $pdo->query("SELECT MAX(order_id) FROM orders");
             $nextOrdId = (int)$maxOrdStmt->fetchColumn() + 1;
             $order_number = '' . str_pad($nextOrdId, 3, '0', STR_PAD_LEFT);
