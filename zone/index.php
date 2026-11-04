@@ -404,7 +404,12 @@ $orders_stmt = $pdo->prepare("
         r.credited_amount as receipt_credit,
         r.due_amount as receipt_due,
         r.payment_type as receipt_pay_type,
-        COALESCE(o.vehicle_id, (SELECT vl.vehicle_id FROM vehicle_loads vl WHERE vl.order_id = o.order_id AND vl.is_active = 1 LIMIT 1)) AS resolved_vehicle_id,
+        COALESCE(
+            o.vehicle_id, 
+            (SELECT vl.vehicle_id FROM vehicle_loads vl WHERE vl.order_id = o.order_id ORDER BY vl.id DESC LIMIT 1),
+            (SELECT s.vehicle_id FROM shops s WHERE TRIM(LOWER(s.shop_name)) = TRIM(LOWER(o.shop_name)) AND s.vehicle_id IS NOT NULL AND s.vehicle_id > 0 LIMIT 1),
+            (SELECT vz.id FROM vehicles vz WHERE vz.zone_id = o.zone_id AND vz.status != 'inactive' ORDER BY vz.id ASC LIMIT 1)
+        ) AS resolved_vehicle_id,
         veh.vehicle_number AS assigned_vehicle_number,
         veh.vehicle_name AS assigned_vehicle_name,
         (SELECT COUNT(*) FROM order_items oi WHERE oi.order_id = o.order_id) AS items_count,
@@ -415,7 +420,12 @@ $orders_stmt = $pdo->prepare("
     FROM orders o
     LEFT JOIN products p ON o.product_id = p.product_id
     LEFT JOIN receipts r ON o.order_id = r.order_id
-    LEFT JOIN vehicles veh ON veh.id = COALESCE(o.vehicle_id, (SELECT vl.vehicle_id FROM vehicle_loads vl WHERE vl.order_id = o.order_id AND vl.is_active = 1 LIMIT 1))
+    LEFT JOIN vehicles veh ON veh.id = COALESCE(
+        o.vehicle_id, 
+        (SELECT vl.vehicle_id FROM vehicle_loads vl WHERE vl.order_id = o.order_id ORDER BY vl.id DESC LIMIT 1),
+        (SELECT s.vehicle_id FROM shops s WHERE TRIM(LOWER(s.shop_name)) = TRIM(LOWER(o.shop_name)) AND s.vehicle_id IS NOT NULL AND s.vehicle_id > 0 LIMIT 1),
+        (SELECT vz.id FROM vehicles vz WHERE vz.zone_id = o.zone_id AND vz.status != 'inactive' ORDER BY vz.id ASC LIMIT 1)
+    )
     WHERE $where_sql
     ORDER BY o.created_at DESC
 ");
@@ -470,7 +480,7 @@ $zoneVehiclesStmt = $pdo->prepare("
     WHERE v.status != 'inactive' 
       AND (
           v.zone_id = ? 
-          OR v.id IN (SELECT vehicle_id FROM vehicle_loads WHERE zone_id = ? AND is_active = 1)
+          OR v.id IN (SELECT vehicle_id FROM vehicle_loads WHERE zone_id = ? AND is_active = 1 AND cases_loaded > 0)
           OR v.id IN (SELECT vehicle_id FROM orders WHERE zone_id = ? AND vehicle_id IS NOT NULL AND status NOT IN ('delivered', 'cancelled'))
       )
     ORDER BY v.vehicle_number ASC
@@ -3131,18 +3141,25 @@ if (!function_exists('buildWhatsAppLink')) {
                                     $ovCases = $ovLoad ? (int)$ovLoad['total_cases'] : null;
                                     $ovBreakdown = $ovLoad ? $ovLoad['breakdown_text'] : '';
                                 ?>
-                                    <span class="order-veh-badge" title="Vehicle: <?= htmlspecialchars($order['assigned_vehicle_number']) ?><?= !empty($order['assigned_vehicle_name']) ? ' (' . htmlspecialchars($order['assigned_vehicle_name']) . ')' : '' ?> | Load Remaining: <?= $ovCases !== null ? $ovCases . ' cs (' . htmlspecialchars($ovBreakdown) . ')' : '0 cs' ?>">
+                                    <span class="order-veh-badge" title="Vehicle: <?= htmlspecialchars($order['assigned_vehicle_number']) ?><?= !empty($order['assigned_vehicle_name']) ? ' (' . htmlspecialchars($order['assigned_vehicle_name']) . ')' : '' ?><?= ($status === 'delivered') ? ' (Delivered)' : ($ovCases !== null ? ' | Load Remaining: ' . $ovCases . ' cs (' . htmlspecialchars($ovBreakdown) . ')' : '') ?>">
                                         <i class='bx bxs-truck' style="color: #60a5fa;"></i> 
                                         <span><?= htmlspecialchars($order['assigned_vehicle_number']) ?></span>
-                                        <?php if ($ovCases !== null): ?>
+                                        <?php if ($status !== 'delivered' && $ovCases !== null): ?>
                                             <span class="veh-cases-chip"><?= $ovCases ?> cs left</span>
                                         <?php endif; ?>
                                     </span>
                                 <?php else: ?>
-                                    <span class="order-veh-badge badge-veh-unassigned" style="background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; font-weight: 700;" title="No vehicle assigned to this order yet">
-                                        <i class='bx bx-error-circle' style="color: #ef4444;"></i>
-                                        <span>Vehicle is not assigned</span>
-                                    </span>
+                                    <?php if ($status === 'delivered'): ?>
+                                        <span class="order-veh-badge" style="background: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; font-weight: 700;" title="Delivered direct to shop">
+                                            <i class='bx bxs-truck' style="color: #94a3b8;"></i>
+                                            <span>Direct Delivery</span>
+                                        </span>
+                                    <?php else: ?>
+                                        <span class="order-veh-badge badge-veh-unassigned" style="background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; font-weight: 700;" title="No vehicle assigned to this order yet">
+                                            <i class='bx bx-error-circle' style="color: #ef4444;"></i>
+                                            <span>Vehicle is not assigned</span>
+                                        </span>
+                                    <?php endif; ?>
                                 <?php endif; ?>
                                 <?php if ((int)$order['is_zone_read'] === 0): ?>
                                     <span class="badge-unread-chip" id="unread-tag-<?= $ordId ?>" title="Not yet checked by zone staff">

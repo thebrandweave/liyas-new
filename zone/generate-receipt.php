@@ -112,9 +112,14 @@ if ($checkOrd && empty($order_items) && !empty($checkOrd['product_id']) && (int)
 // Determine assigned vehicle
 $assignedVehicleId = (int)($order['vehicle_id'] ?? ($reorder_source['vehicle_id'] ?? 0));
 if ($assignedVehicleId <= 0 && $order_id > 0) {
-    $vChk = $pdo->prepare("SELECT vehicle_id FROM vehicle_loads WHERE order_id = ? AND is_active = 1 LIMIT 1");
+    $vChk = $pdo->prepare("SELECT vehicle_id FROM vehicle_loads WHERE order_id = ? ORDER BY id DESC LIMIT 1");
     $vChk->execute([$order_id]);
     $assignedVehicleId = (int)$vChk->fetchColumn();
+}
+if ($assignedVehicleId <= 0 && !empty($order['shop_name'])) {
+    $sChk = $pdo->prepare("SELECT vehicle_id FROM shops WHERE TRIM(LOWER(shop_name)) = TRIM(LOWER(?)) AND vehicle_id IS NOT NULL LIMIT 1");
+    $sChk->execute([$order['shop_name']]);
+    $assignedVehicleId = (int)$sChk->fetchColumn();
 }
 if ($assignedVehicleId <= 0 && $reorder_source && !empty($reorder_source['vehicle_id'])) {
     $assignedVehicleId = (int)$reorder_source['vehicle_id'];
@@ -128,15 +133,24 @@ $vZoneStmt = $pdo->prepare("
     SELECT id, vehicle_number, vehicle_name, driver_name, driver_phone 
     FROM vehicles 
     WHERE status != 'inactive' 
-      AND (id IN (SELECT vehicle_id FROM vehicle_loads WHERE zone_id = ? AND is_active = 1) OR zone_id = ?) 
-    ORDER BY (id IN (SELECT vehicle_id FROM vehicle_loads WHERE zone_id = ? AND is_active = 1)) DESC, id DESC
+      AND (id IN (SELECT vehicle_id FROM vehicle_loads WHERE zone_id = ? AND is_active = 1 AND cases_loaded > 0) OR zone_id = ?) 
+    ORDER BY (id IN (SELECT vehicle_id FROM vehicle_loads WHERE zone_id = ? AND is_active = 1 AND cases_loaded > 0)) DESC, id DESC
 ");
 $vZoneStmt->execute([$zone_id, $zone_id, $zone_id]);
 $availVehicles = $vZoneStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
-// Only auto-pick first vehicle if this is a new spot delivery without prior order
-if ($assignedVehicleId <= 0 && $order_id <= 0 && !empty($availVehicles)) {
+// Auto-pick first available vehicle for this zone if vehicle still unassigned
+if ($assignedVehicleId <= 0 && !empty($availVehicles)) {
     $assignedVehicleId = (int)$availVehicles[0]['id'];
+}
+if ($assignedVehicleId <= 0) {
+    $vZoneDef = $pdo->prepare("SELECT id FROM vehicles WHERE zone_id = ? AND status != 'inactive' ORDER BY id ASC LIMIT 1");
+    $vZoneDef->execute([$zone_id]);
+    $assignedVehicleId = (int)$vZoneDef->fetchColumn();
+}
+if ($assignedVehicleId <= 0) {
+    $vAny = $pdo->query("SELECT id FROM vehicles WHERE status != 'inactive' ORDER BY id ASC LIMIT 1");
+    $assignedVehicleId = (int)$vAny->fetchColumn();
 }
 $assignedVehicle = null;
 if ($assignedVehicleId > 0) {
@@ -413,7 +427,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['generate_receipt'])) 
                     // Determine assigned vehicle ID
                     $assignedVehicleId = (int)($order['vehicle_id'] ?? 0);
                     if ($assignedVehicleId <= 0) {
-                        $vChk = $pdo->prepare("SELECT vehicle_id FROM vehicle_loads WHERE order_id = ? AND is_active = 1 LIMIT 1");
+                        $vChk = $pdo->prepare("SELECT vehicle_id FROM vehicle_loads WHERE order_id = ? ORDER BY id DESC LIMIT 1");
                         $vChk->execute([$order_id]);
                         $assignedVehicleId = (int)$vChk->fetchColumn();
                     }
@@ -431,6 +445,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['generate_receipt'])) 
                     }
                     if (!empty($shopSync['location']) && empty($place)) {
                         $place = $shopSync['location'];
+                    }
+
+                    if ($assignedVehicleId <= 0 && !empty($availVehicles)) {
+                        $assignedVehicleId = (int)$availVehicles[0]['id'];
+                    }
+                    if ($assignedVehicleId <= 0) {
+                        $vZoneDef = $pdo->prepare("SELECT id FROM vehicles WHERE zone_id = ? AND status != 'inactive' ORDER BY id ASC LIMIT 1");
+                        $vZoneDef->execute([$zone_id]);
+                        $assignedVehicleId = (int)$vZoneDef->fetchColumn();
+                    }
+                    if ($assignedVehicleId <= 0) {
+                        $vAny = $pdo->query("SELECT id FROM vehicles WHERE status != 'inactive' ORDER BY id ASC LIMIT 1");
+                        $assignedVehicleId = (int)$vAny->fetchColumn();
+                    }
+                    if ($assignedVehicleId <= 0) {
+                        $vZoneDef = $pdo->prepare("SELECT id FROM vehicles WHERE zone_id = ? AND status != 'inactive' ORDER BY id ASC LIMIT 1");
+                        $vZoneDef->execute([$zone_id]);
+                        $assignedVehicleId = (int)$vZoneDef->fetchColumn();
+                    }
+                    if ($assignedVehicleId <= 0) {
+                        $vAny = $pdo->query("SELECT id FROM vehicles WHERE status != 'inactive' ORDER BY id ASC LIMIT 1");
+                        $assignedVehicleId = (int)$vAny->fetchColumn();
                     }
 
                     if ($assignedVehicleId <= 0) {
@@ -494,6 +530,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['generate_receipt'])) 
 
                     if ($assignedVehicleId <= 0 && !empty($availVehicles)) {
                         $assignedVehicleId = (int)$availVehicles[0]['id'];
+                    }
+                    if ($assignedVehicleId <= 0) {
+                        $vZoneDef = $pdo->prepare("SELECT id FROM vehicles WHERE zone_id = ? AND status != 'inactive' ORDER BY id ASC LIMIT 1");
+                        $vZoneDef->execute([$zone_id]);
+                        $assignedVehicleId = (int)$vZoneDef->fetchColumn();
+                    }
+                    if ($assignedVehicleId <= 0) {
+                        $vAny = $pdo->query("SELECT id FROM vehicles WHERE status != 'inactive' ORDER BY id ASC LIMIT 1");
+                        $assignedVehicleId = (int)$vAny->fetchColumn();
                     }
 
                     $maxOrdStmt = $pdo->query("SELECT MAX(order_id) FROM orders");

@@ -110,6 +110,12 @@ $ordersSql = "
         r.credited_amount AS receipt_credit,
         r.due_amount AS receipt_due,
         r.payment_type AS receipt_pay_type,
+        COALESCE(
+            o.vehicle_id, 
+            (SELECT vl.vehicle_id FROM vehicle_loads vl WHERE vl.order_id = o.order_id ORDER BY vl.id DESC LIMIT 1),
+            (SELECT s.vehicle_id FROM shops s WHERE TRIM(LOWER(s.shop_name)) = TRIM(LOWER(o.shop_name)) AND s.vehicle_id IS NOT NULL AND s.vehicle_id > 0 LIMIT 1),
+            (SELECT vz.id FROM vehicles vz WHERE vz.zone_id = o.zone_id AND vz.status != 'inactive' ORDER BY vz.id ASC LIMIT 1)
+        ) AS resolved_vehicle_id,
         veh.vehicle_number AS assigned_vehicle_number,
         veh.vehicle_name AS assigned_vehicle_name,
         (SELECT COUNT(*) FROM order_items oi WHERE oi.order_id = o.order_id) AS items_count,
@@ -128,7 +134,12 @@ $ordersSql = "
     LEFT JOIN zones z ON o.zone_id = z.id
     LEFT JOIN products p ON o.product_id = p.product_id
     LEFT JOIN receipts r ON o.order_id = r.order_id
-    LEFT JOIN vehicles veh ON o.vehicle_id = veh.id
+    LEFT JOIN vehicles veh ON veh.id = COALESCE(
+        o.vehicle_id, 
+        (SELECT vl.vehicle_id FROM vehicle_loads vl WHERE vl.order_id = o.order_id ORDER BY vl.id DESC LIMIT 1),
+        (SELECT s.vehicle_id FROM shops s WHERE TRIM(LOWER(s.shop_name)) = TRIM(LOWER(o.shop_name)) AND s.vehicle_id IS NOT NULL AND s.vehicle_id > 0 LIMIT 1),
+        (SELECT vz.id FROM vehicles vz WHERE vz.zone_id = o.zone_id AND vz.status != 'inactive' ORDER BY vz.id ASC LIMIT 1)
+    )
     WHERE {$whereSql}
     ORDER BY o.created_at DESC
 ";
@@ -153,12 +164,23 @@ try {
                 p.case_price,
                 p.net_content,
                 p.net_content_unit,
+                COALESCE(
+                    o.vehicle_id, 
+                    (SELECT vl.vehicle_id FROM vehicle_loads vl WHERE vl.order_id = o.order_id ORDER BY vl.id DESC LIMIT 1),
+                    (SELECT s.vehicle_id FROM shops s WHERE TRIM(LOWER(s.shop_name)) = TRIM(LOWER(o.shop_name)) AND s.vehicle_id IS NOT NULL AND s.vehicle_id > 0 LIMIT 1),
+                    (SELECT vz.id FROM vehicles vz WHERE vz.zone_id = o.zone_id AND vz.status != 'inactive' ORDER BY vz.id ASC LIMIT 1)
+                ) AS resolved_vehicle_id,
                 veh.vehicle_number AS assigned_vehicle_number,
                 veh.vehicle_name AS assigned_vehicle_name
             FROM orders o
             LEFT JOIN zones z ON o.zone_id = z.id
             LEFT JOIN products p ON o.product_id = p.product_id
-            LEFT JOIN vehicles veh ON o.vehicle_id = veh.id
+            LEFT JOIN vehicles veh ON veh.id = COALESCE(
+                o.vehicle_id, 
+                (SELECT vl.vehicle_id FROM vehicle_loads vl WHERE vl.order_id = o.order_id ORDER BY vl.id DESC LIMIT 1),
+                (SELECT s.vehicle_id FROM shops s WHERE TRIM(LOWER(s.shop_name)) = TRIM(LOWER(o.shop_name)) AND s.vehicle_id IS NOT NULL AND s.vehicle_id > 0 LIMIT 1),
+                (SELECT vz.id FROM vehicles vz WHERE vz.zone_id = o.zone_id AND vz.status != 'inactive' ORDER BY vz.id ASC LIMIT 1)
+            )
             WHERE {$whereSql}
             ORDER BY o.created_at DESC
         ";

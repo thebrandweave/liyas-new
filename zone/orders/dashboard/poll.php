@@ -159,21 +159,48 @@ try {
             }
         }
 
-        // If delivered or cancelled, auto-reset assigned vehicle & order loads while preserving lifetime delivery count
+        // If delivered or cancelled, manage vehicle assignment & active truck loads
         $vehicleReset = false;
         if ($new_status === 'delivered') {
-            $vStmt = $pdo->prepare("SELECT vehicle_id FROM orders WHERE order_id = ?");
+            $vStmt = $pdo->prepare("SELECT vehicle_id, zone_id, shop_name FROM orders WHERE order_id = ?");
             $vStmt->execute([$order_id]);
-            $currVehId = (int)$vStmt->fetchColumn();
+            $ordRow = $vStmt->fetch(PDO::FETCH_ASSOC);
+            $currVehId = (int)($ordRow['vehicle_id'] ?? 0);
+            $ordZoneId = (int)($ordRow['zone_id'] ?? 0);
+            $ordShopName = trim($ordRow['shop_name'] ?? '');
+
+            // If order has no vehicle_id yet, resolve it from vehicle_loads, shop, or zone vehicle
+            if ($currVehId <= 0) {
+                $vlChk = $pdo->prepare("SELECT vehicle_id FROM vehicle_loads WHERE order_id = ? ORDER BY id DESC LIMIT 1");
+                $vlChk->execute([$order_id]);
+                $currVehId = (int)$vlChk->fetchColumn();
+            }
+            if ($currVehId <= 0 && $ordShopName !== '') {
+                $sChk = $pdo->prepare("SELECT vehicle_id FROM shops WHERE TRIM(LOWER(shop_name)) = TRIM(LOWER(?)) AND vehicle_id IS NOT NULL LIMIT 1");
+                $sChk->execute([$ordShopName]);
+                $currVehId = (int)$sChk->fetchColumn();
+            }
+            if ($currVehId <= 0 && $ordZoneId > 0) {
+                $zChk = $pdo->prepare("SELECT id FROM vehicles WHERE zone_id = ? AND status != 'inactive' ORDER BY id ASC LIMIT 1");
+                $zChk->execute([$ordZoneId]);
+                $currVehId = (int)$zChk->fetchColumn();
+            }
+            if ($currVehId <= 0) {
+                $anyChk = $pdo->query("SELECT id FROM vehicles WHERE status != 'inactive' ORDER BY id ASC LIMIT 1");
+                $currVehId = (int)$anyChk->fetchColumn();
+            }
+
             if ($currVehId > 0) {
                 $pdo->prepare("UPDATE vehicles SET total_deliveries_done = total_deliveries_done + 1 WHERE id = ?")->execute([$currVehId]);
-                $pdo->prepare("UPDATE orders SET vehicle_id = NULL WHERE order_id = ?")->execute([$order_id]);
-                $pdo->prepare("DELETE FROM vehicle_loads WHERE order_id = ?")->execute([$order_id]);
-                $vehicleReset = true;
+                // Ensure order permanently retains its delivering vehicle
+                $pdo->prepare("UPDATE orders SET vehicle_id = ? WHERE order_id = ?")->execute([$currVehId, $order_id]);
             }
+            // Deactivate active loaded inventory for this order so cases leave the truck
+            $pdo->prepare("UPDATE vehicle_loads SET is_active = 0 WHERE order_id = ?")->execute([$order_id]);
+            $vehicleReset = false;
         } elseif ($new_status === 'cancelled') {
             $pdo->prepare("UPDATE orders SET vehicle_id = NULL WHERE order_id = ?")->execute([$order_id]);
-            $pdo->prepare("DELETE FROM vehicle_loads WHERE order_id = ?")->execute([$order_id]);
+            $pdo->prepare("UPDATE vehicle_loads SET is_active = 0 WHERE order_id = ?")->execute([$order_id]);
             $vehicleReset = true;
         }
 

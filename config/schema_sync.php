@@ -525,6 +525,58 @@ function ensureWarehouseSchema(PDO $pdo, bool $force = false): bool {
             error_log("Schema sync performance indexes error: " . $e->getMessage());
         }
 
+        // ============================================
+        // 16. AUTO-HEAL UNASSIGNED ORDERS VEHICLE_ID
+        // Restores vehicle_id on orders where it was set to NULL or 0
+        // ============================================
+        try {
+            $chkNullVeh = (int)$pdo->query("SELECT COUNT(*) FROM `orders` WHERE `vehicle_id` IS NULL OR `vehicle_id` = 0")->fetchColumn();
+            if ($chkNullVeh > 0) {
+                // A. Restore from vehicle_loads if available
+                $pdo->exec("
+                    UPDATE `orders` o 
+                    JOIN (
+                        SELECT order_id, MAX(vehicle_id) as vid 
+                        FROM `vehicle_loads` 
+                        WHERE order_id IS NOT NULL AND vehicle_id > 0
+                        GROUP BY order_id
+                    ) vl ON o.order_id = vl.order_id
+                    SET o.vehicle_id = vl.vid
+                    WHERE o.vehicle_id IS NULL OR o.vehicle_id = 0
+                ");
+
+                // B. Restore from shops table if shop has designated vehicle
+                $pdo->exec("
+                    UPDATE `orders` o
+                    JOIN `shops` s ON (TRIM(LOWER(o.shop_name)) = TRIM(LOWER(s.shop_name)))
+                    SET o.vehicle_id = s.vehicle_id
+                    WHERE (o.vehicle_id IS NULL OR o.vehicle_id = 0) AND s.vehicle_id IS NOT NULL AND s.vehicle_id > 0
+                ");
+
+                // C. Restore from zone's designated active vehicle
+                $pdo->exec("
+                    UPDATE `orders` o
+                    JOIN (
+                        SELECT zone_id, MIN(id) as vid 
+                        FROM `vehicles` 
+                        WHERE status != 'inactive' AND zone_id IS NOT NULL 
+                        GROUP BY zone_id
+                    ) zv ON o.zone_id = zv.zone_id
+                    SET o.vehicle_id = zv.vid
+                    WHERE o.vehicle_id IS NULL OR o.vehicle_id = 0
+                ");
+
+                // D. Fallback to any active vehicle
+                $pdo->exec("
+                    UPDATE `orders` o
+                    SET o.vehicle_id = (SELECT id FROM `vehicles` WHERE status != 'inactive' ORDER BY id ASC LIMIT 1)
+                    WHERE o.vehicle_id IS NULL OR o.vehicle_id = 0
+                ");
+            }
+        } catch (Exception $eVeh) {
+            error_log("Schema sync orders vehicle repair error: " . $eVeh->getMessage());
+        }
+
         // Write persistent lock file to mark schema as synced and cache it
         @file_put_contents($lockFile, date('Y-m-d H:i:s'));
 
