@@ -2111,7 +2111,7 @@ $cleanBaseUrl = rtrim(BASE_URL, '/');
                                         </td>
 
                                         <!-- Due Balance -->
-                                        <td class="col-due" style="text-align: center;">
+                                        <td class="col-due" style="text-align: start;">
                                             <?php if ($status === 'cancelled'): ?>
                                                 <span style="color: #94a3b8; font-size: 11px;">Voided</span>
                                             <?php elseif ($due > 0): ?>
@@ -2137,7 +2137,7 @@ $cleanBaseUrl = rtrim(BASE_URL, '/');
                                                         Total Due: <?= formatCurrency($due + $earlierDue) ?>
                                                     </div> -->
                                                 <?php endif; ?>
-                                                <div style="margin-top: 4px; display: flex; gap: 4px; justify-content: center; flex-wrap: wrap;">
+                                                <div style="margin-top: 4px; display: flex; gap: 4px; justify-content: start; flex-wrap: wrap;">
                                                     <button type="button" class="btn-tbl" onclick="openRevenueDueModal(<?= $ordId ?>, '<?= htmlspecialchars($ordNum, ENT_QUOTES) ?>', '<?= htmlspecialchars($shop, ENT_QUOTES) ?>', <?= (float)$due ?>)" style="padding: 9px 14px; font-size: 11px; background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; cursor: pointer; border-radius: 4px; display: inline-flex; align-items: center; gap: 3px; font-weight: 700; white-space: nowrap;" title="Custom Due Clearance">
                                                         <i class='bx bx-check-circle'></i> Clear Bill Due
                                                     </button>
@@ -2222,21 +2222,21 @@ $cleanBaseUrl = rtrim(BASE_URL, '/');
                                                     </a>
                                                 <?php endif; ?>
 
-                                                <?php if ($due > 0): ?>
+                                                <!-- <?php if ($due > 0): ?>
                                                     <button type="button" class="btn-tbl" onclick="openRevenueDueModal(<?= $ordId ?>, '<?= htmlspecialchars($ordNum, ENT_QUOTES) ?>', '<?= htmlspecialchars($shop, ENT_QUOTES) ?>', <?= (float)$due ?>)" style="background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; cursor: pointer;" title="Custom Due Clearance (<?= formatCurrency($due) ?>)">
                                                         <i class='bx bx-money'></i>
                                                     </button>
-                                                <?php endif; ?>
+                                                <?php endif; ?> -->
 
-                                                <?php if ($earlierDue > 0): ?>
+                                                <!-- <?php if ($earlierDue > 0): ?>
                                                     <button type="button" class="btn-tbl" onclick="openShopEarlierDueModal(<?= $ordId ?>, '<?= htmlspecialchars($shop, ENT_QUOTES) ?>', '<?= htmlspecialchars($phone, ENT_QUOTES) ?>', <?= (float)$earlierDue ?>)" style="background: #fff1f2; color: #b91c1c; border-color: #fca5a5;" title="Settle Earlier Shop Due (<?= formatCurrency($earlierDue) ?>)">
                                                         <i class='bx bx-time-five'></i>
                                                     </button>
-                                                <?php endif; ?>
+                                                <?php endif; ?> -->
 
-                                                <a href="<?= $cleanBaseUrl ?>/<?= $zSlug ?>/order?id=<?= $ordId ?>" target="_blank" class="btn-tbl btn-tbl-view" title="Open in Zone Portal">
+                                                <!-- <a href="<?= $cleanBaseUrl ?>/<?= $zSlug ?>/order?id=<?= $ordId ?>" target="_blank" class="btn-tbl btn-tbl-view" title="Open in Zone Portal">
                                                     <i class='bx bx-link-external'></i>
-                                                </a>
+                                                </a> -->
                                             </div>
                                         </td>
                                     </tr>
