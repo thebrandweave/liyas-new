@@ -2122,28 +2122,28 @@ $cleanBaseUrl = rtrim(BASE_URL, '/');
                                                 </div>
                                                 <?php if ((int)($o['payments_count'] ?? 0) > 1): ?>
                                                     <div style="margin-top: 3px;">
-                                                        <button type="button" onclick="openPaymentHistoryModal(<?= $ordId ?>)" style="background: #eff6ff; border: 1px solid #bfdbfe; color: #2563eb; font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 4px; cursor: pointer; display: inline-flex; align-items: center; gap: 2px;" title="View payment installments">
+                                                        <button type="button" onclick="openPaymentHistoryModal(<?= $ordId ?>)" style="background: #eff6ff; border: 1px solid #bfdbfe; color: #2563eb; font-size: 10px; font-weight: 700; padding: 9px 14px; border-radius: 4px; cursor: pointer; display: inline-flex; align-items: center; gap: 2px;" title="View payment installments">
                                                             <i class='bx bx-history'></i> Partial Paid
                                                         </button>
                                                     </div>
                                                 <?php endif; ?>
                                                 <?php if ($earlierDue > 0): ?>
                                                     <div style="margin-top: 4px;">
-                                                        <button type="button" onclick="openShopEarlierDueModal(<?= $ordId ?>, '<?= htmlspecialchars($shop, ENT_QUOTES) ?>', '<?= htmlspecialchars($phone, ENT_QUOTES) ?>', <?= (float)$earlierDue ?>)" style="border: 1px solid #fca5a5; background: #fff1f2; color: #b91c1c; font-size: 10.5px; font-weight: 800; padding: 2px 6px; border-radius: 4px; display: inline-flex; align-items: center; gap: 3px; cursor: pointer;" title="Shop earlier pending due: <?= formatCurrency($earlierDue) ?>. Click to settle.">
+                                                        <button type="button" onclick="openShopEarlierDueModal(<?= $ordId ?>, '<?= htmlspecialchars($shop, ENT_QUOTES) ?>', '<?= htmlspecialchars($phone, ENT_QUOTES) ?>', <?= (float)$earlierDue ?>)" style="border: 1px solid #fca5a5; background: #fff1f2; color: #b91c1c; font-size: 10.5px; font-weight: 800; padding: 9px 14px; border-radius: 4px; display: inline-flex; align-items: center; gap: 3px; cursor: pointer;" title="Shop earlier pending due: <?= formatCurrency($earlierDue) ?>. Click to settle.">
                                                             <i class='bx bx-time-five'></i> Earlier: <?= formatCurrency($earlierDue) ?>
                                                         </button>
                                                     </div>
-                                                    <div style="font-size: 10.5px; font-weight: 800; color: #991b1b; margin-top: 3px;">
+                                                    <!-- <div style="font-size: 10.5px; font-weight: 800; color: #991b1b; margin-top: 3px;">
                                                         Total Due: <?= formatCurrency($due + $earlierDue) ?>
-                                                    </div>
+                                                    </div> -->
                                                 <?php endif; ?>
                                                 <div style="margin-top: 4px; display: flex; gap: 4px; justify-content: center; flex-wrap: wrap;">
-                                                    <button type="button" class="btn-tbl" onclick="openRevenueDueModal(<?= $ordId ?>, '<?= htmlspecialchars($ordNum, ENT_QUOTES) ?>', '<?= htmlspecialchars($shop, ENT_QUOTES) ?>', <?= (float)$due ?>)" style="padding: 2px 6px; font-size: 11px; background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; cursor: pointer; border-radius: 4px; display: inline-flex; align-items: center; gap: 3px; font-weight: 700; white-space: nowrap;" title="Custom Due Clearance">
+                                                    <button type="button" class="btn-tbl" onclick="openRevenueDueModal(<?= $ordId ?>, '<?= htmlspecialchars($ordNum, ENT_QUOTES) ?>', '<?= htmlspecialchars($shop, ENT_QUOTES) ?>', <?= (float)$due ?>)" style="padding: 9px 14px; font-size: 11px; background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; cursor: pointer; border-radius: 4px; display: inline-flex; align-items: center; gap: 3px; font-weight: 700; white-space: nowrap;" title="Custom Due Clearance">
                                                         <i class='bx bx-check-circle'></i> Clear Bill Due
                                                     </button>
                                                     <?php if ($earlierDue > 0): ?>
-                                                        <button type="button" class="btn-tbl" onclick="openShopEarlierDueModal(<?= $ordId ?>, '<?= htmlspecialchars($shop, ENT_QUOTES) ?>', '<?= htmlspecialchars($phone, ENT_QUOTES) ?>', <?= (float)$earlierDue ?>)" style="padding: 2px 6px; font-size: 11px; background: #fff1f2; color: #b91c1c; border: 1px solid #fecdd3; cursor: pointer; border-radius: 4px; display: inline-flex; align-items: center; gap: 3px; font-weight: 700; white-space: nowrap;" title="Settle Earlier Due">
-                                                            <i class='bx bx-time-five'></i> Clear Earlier
+                                                        <button type="button" class="btn-tbl" onclick="openShopEarlierDueModal(<?= $ordId ?>, '<?= htmlspecialchars($shop, ENT_QUOTES) ?>', '<?= htmlspecialchars($phone, ENT_QUOTES) ?>', <?= (float)$earlierDue ?>)" style="padding: 9px 14px; font-size: 11px; background: #fff1f2; color: #b91c1c; border: 1px solid #fecdd3; cursor: pointer; border-radius: 4px; display: inline-flex; align-items: center; gap: 3px; font-weight: 700; white-space: nowrap;" title="Settle Earlier Due">
+                                                            <i class='bx bx-time-five'></i> Clear Earlier Due
                                                         </button>
                                                     <?php endif; ?>
                                                 </div>
@@ -2155,12 +2155,12 @@ $cleanBaseUrl = rtrim(BASE_URL, '/');
                                                 </div>
                                                 <?php if ($earlierDue > 0): ?>
                                                     <div style="margin-top: 4px;">
-                                                        <button type="button" onclick="openShopEarlierDueModal(<?= $ordId ?>, '<?= htmlspecialchars($shop, ENT_QUOTES) ?>', '<?= htmlspecialchars($phone, ENT_QUOTES) ?>', <?= (float)$earlierDue ?>)" style="border: 1px solid #fca5a5; background: #fff1f2; color: #b91c1c; font-size: 11px; font-weight: 800; padding: 2px 7px; border-radius: 4px; display: inline-flex; align-items: center; gap: 3px; cursor: pointer;" title="Shop has earlier due of <?= formatCurrency($earlierDue) ?>. Click to settle.">
+                                                        <button type="button" onclick="openShopEarlierDueModal(<?= $ordId ?>, '<?= htmlspecialchars($shop, ENT_QUOTES) ?>', '<?= htmlspecialchars($phone, ENT_QUOTES) ?>', <?= (float)$earlierDue ?>)" style="border: 1px solid #fca5a5; background: #fff1f2; color: #b91c1c; font-size: 11px; font-weight: 800; padding: 9px 14px; border-radius: 4px; display: inline-flex; align-items: center; gap: 3px; cursor: pointer;" title="Shop has earlier due of <?= formatCurrency($earlierDue) ?>. Click to settle.">
                                                             <i class='bx bxs-error-circle'></i> Earlier Due: <?= formatCurrency($earlierDue) ?>
                                                         </button>
                                                     </div>
                                                     <div style="margin-top: 3px;">
-                                                        <button type="button" class="btn-tbl" onclick="openShopEarlierDueModal(<?= $ordId ?>, '<?= htmlspecialchars($shop, ENT_QUOTES) ?>', '<?= htmlspecialchars($phone, ENT_QUOTES) ?>', <?= (float)$earlierDue ?>)" style="padding: 2px 6px; font-size: 10.5px; background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; cursor: pointer; border-radius: 4px; display: inline-flex; align-items: center; gap: 3px; font-weight: 700; white-space: nowrap;" title="Settle shop's earlier pending due">
+                                                        <button type="button" class="btn-tbl" onclick="openShopEarlierDueModal(<?= $ordId ?>, '<?= htmlspecialchars($shop, ENT_QUOTES) ?>', '<?= htmlspecialchars($phone, ENT_QUOTES) ?>', <?= (float)$earlierDue ?>)" style="padding: 9px 14px; font-size: 10.5px; background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; cursor: pointer; border-radius: 4px; display: inline-flex; align-items: center; gap: 3px; font-weight: 700; white-space: nowrap;" title="Settle shop's earlier pending due">
                                                             <i class='bx bx-check-circle'></i> Settle Earlier Due
                                                         </button>
                                                     </div>
@@ -2173,12 +2173,12 @@ $cleanBaseUrl = rtrim(BASE_URL, '/');
                                                 </div>
                                                 <?php if ($earlierDue > 0): ?>
                                                     <div style="margin-top: 4px;">
-                                                        <button type="button" onclick="openShopEarlierDueModal(<?= $ordId ?>, '<?= htmlspecialchars($shop, ENT_QUOTES) ?>', '<?= htmlspecialchars($phone, ENT_QUOTES) ?>', <?= (float)$earlierDue ?>)" style="border: 1px solid #fca5a5; background: #fff1f2; color: #b91c1c; font-size: 11px; font-weight: 800; padding: 2px 7px; border-radius: 4px; display: inline-flex; align-items: center; gap: 3px; cursor: pointer;" title="Shop has earlier due of <?= formatCurrency($earlierDue) ?>. Click to settle.">
+                                                        <button type="button" onclick="openShopEarlierDueModal(<?= $ordId ?>, '<?= htmlspecialchars($shop, ENT_QUOTES) ?>', '<?= htmlspecialchars($phone, ENT_QUOTES) ?>', <?= (float)$earlierDue ?>)" style="border: 1px solid #fca5a5; background: #fff1f2; color: #b91c1c; font-size: 11px; font-weight: 800; padding: 9px 14px; border-radius: 4px; display: inline-flex; align-items: center; gap: 3px; cursor: pointer;" title="Shop has earlier due of <?= formatCurrency($earlierDue) ?>. Click to settle.">
                                                             <i class='bx bxs-error-circle'></i> Earlier Due: <?= formatCurrency($earlierDue) ?>
                                                         </button>
                                                     </div>
                                                     <div style="margin-top: 3px;">
-                                                        <button type="button" class="btn-tbl" onclick="openShopEarlierDueModal(<?= $ordId ?>, '<?= htmlspecialchars($shop, ENT_QUOTES) ?>', '<?= htmlspecialchars($phone, ENT_QUOTES) ?>', <?= (float)$earlierDue ?>)" style="padding: 2px 6px; font-size: 10.5px; background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; cursor: pointer; border-radius: 4px; display: inline-flex; align-items: center; gap: 3px; font-weight: 700; white-space: nowrap;" title="Settle shop's earlier pending due">
+                                                        <button type="button" class="btn-tbl" onclick="openShopEarlierDueModal(<?= $ordId ?>, '<?= htmlspecialchars($shop, ENT_QUOTES) ?>', '<?= htmlspecialchars($phone, ENT_QUOTES) ?>', <?= (float)$earlierDue ?>)" style="padding: 9px 14px; font-size: 10.5px; background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; cursor: pointer; border-radius: 4px; display: inline-flex; align-items: center; gap: 3px; font-weight: 700; white-space: nowrap;" title="Settle shop's earlier pending due">
                                                             <i class='bx bx-check-circle'></i> Settle Earlier Due
                                                         </button>
                                                     </div>
