@@ -435,13 +435,21 @@ if (isset($_GET['export']) && in_array($_GET['export'], ['csv', 'excel'])) {
     $exp_stmt->execute();
     $export_rows = $exp_stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    // Compute earlier shop due for each exported order
+    // Compute consistent shop total ledger balances to avoid duplicate/confusing numbers
+    $shopBalanceMap = [];
     foreach ($export_rows as &$row) {
         $sName = !empty($row['shop_name']) ? $row['shop_name'] : (!empty($row['customer_name']) ? $row['customer_name'] : '');
         $sPhone = $row['phone'] ?? '';
-        $ordId = (int)$row['order_id'];
-        $dueDetails = getShopPendingDueDetails($pdo, $sName, $sPhone, $ordId);
-        $row['earlier_due'] = (float)($dueDetails['total_due'] ?? 0);
+        $cKey = trim(strtolower($sName));
+        if ($cKey === '') {
+            $cKey = 'p_' . preg_replace('/[^0-9]/', '', $sPhone);
+        }
+
+        if (!isset($shopBalanceMap[$cKey])) {
+            $dueDetails = getShopPendingDueDetails($pdo, $sName, $sPhone, 0);
+            $shopBalanceMap[$cKey] = (float)($dueDetails['total_due'] ?? 0);
+        }
+        $row['shop_total_due'] = $shopBalanceMap[$cKey];
     }
     unset($row);
 
@@ -468,10 +476,15 @@ if (isset($_GET['export']) && in_array($_GET['export'], ['csv', 'excel'])) {
             'Cash Paid',
             'Credited',
             'Bill Due',
-            'Earlier Due',
-            'Total Due'
+            'Bill Status',
+            'Shop Ledger Balance'
         ];
         fputcsv($out, $headers);
+
+        $sumTotalAmt = 0.0;
+        $sumCash = 0.0;
+        $sumCredit = 0.0;
+        $sumBillDue = 0.0;
 
         foreach ($export_rows as $row) {
             $ordNum = $row['order_number'] ?: ('#' . $row['order_id']);
@@ -492,7 +505,26 @@ if (isset($_GET['export']) && in_array($_GET['export'], ['csv', 'excel'])) {
             $cash = ($status === 'cancelled') ? 0.00 : (float)($row['receipt_cash'] ?? 0);
             $credit = ($status === 'cancelled') ? 0.00 : (float)($row['receipt_credit'] ?? 0);
             $due = ($status === 'cancelled') ? 0.00 : (float)($row['receipt_due'] ?? 0);
-            $earlierDue = (float)($row['earlier_due'] ?? 0);
+            $shopTotalDue = (float)($row['shop_total_due'] ?? 0);
+
+            if ($status === 'cancelled') {
+                $billStatus = 'Cancelled (Voided)';
+            } elseif ($due > 0) {
+                if ($cash > 0 || $credit > 0) {
+                    $billStatus = 'Partial Due (₹' . number_format($due, 2) . ')';
+                } else {
+                    $billStatus = 'Unpaid Due (₹' . number_format($due, 2) . ')';
+                }
+            } elseif (!empty($row['bill_number'])) {
+                $billStatus = 'Paid (Settled)';
+            } else {
+                $billStatus = 'Unbilled';
+            }
+
+            $sumTotalAmt += $totAmt;
+            $sumCash += $cash;
+            $sumCredit += $credit;
+            $sumBillDue += $due;
 
             fputcsv($out, [
                 $ordNum,
@@ -505,10 +537,27 @@ if (isset($_GET['export']) && in_array($_GET['export'], ['csv', 'excel'])) {
                 number_format($cash, 2, '.', ''),
                 number_format($credit, 2, '.', ''),
                 number_format($due, 2, '.', ''),
-                number_format($earlierDue, 2, '.', ''),
-                number_format($due + $earlierDue, 2, '.', '')
+                $billStatus,
+                number_format($shopTotalDue, 2, '.', '')
             ]);
         }
+
+        // Output summary footer row
+        fputcsv($out, [
+            'TOTAL',
+            '',
+            '',
+            '',
+            count($export_rows) . ' Orders',
+            '',
+            number_format($sumTotalAmt, 2, '.', ''),
+            number_format($sumCash, 2, '.', ''),
+            number_format($sumCredit, 2, '.', ''),
+            number_format($sumBillDue, 2, '.', ''),
+            ($sumBillDue > 0 ? 'Total Unpaid: ₹' . number_format($sumBillDue, 2, '.', '') : 'All Settled'),
+            '(Customer Balances)'
+        ]);
+
         fclose($out);
         exit;
     } elseif ($exp_format === 'excel') {
@@ -525,6 +574,7 @@ if (isset($_GET['export']) && in_array($_GET['export'], ['csv', 'excel'])) {
             td { border: 1px solid #e2e8f0; padding: 6px 10px; }
             .col-due-hdr { background-color: #fee2e2 !important; color: #991b1b !important; font-weight: bold; }
             .col-due-cell { background-color: #fef2f2 !important; color: #b91c1c !important; font-weight: bold; }
+            .col-settled { color: #059669 !important; font-weight: 600; }
             .num { text-align: center; }
         </style></head><body>';
         echo '<table border="1">';
@@ -538,10 +588,15 @@ if (isset($_GET['export']) && in_array($_GET['export'], ['csv', 'excel'])) {
         echo '<th class="num">Total Amount</th>';
         echo '<th class="num">Cash Paid</th>';
         echo '<th class="num">Credited</th>';
-        echo '<th class="num col-due-hdr" style=" color: #991b1b;">Bill Due</th>';
-        echo '<th class="num col-due-hdr" style=" color: #b91c1c;">Earlier Due</th>';
-        echo '<th class="num col-due-hdr" style=" color: #7f1d1d; font-weight: 800;">Total Due</th>';
+        echo '<th class="num col-due-hdr" style="background-color: #fee2e2; color: #991b1b;">Bill Due</th>';
+        echo '<th class="num" style="background-color: #f1f5f9; color: #334155;">Bill Status</th>';
+        echo '<th class="num col-due-hdr" style="background-color: #fff1f2; color: #991b1b;">Shop Ledger Balance</th>';
         echo '</tr></thead><tbody>';
+
+        $sumTotalAmt = 0.0;
+        $sumCash = 0.0;
+        $sumCredit = 0.0;
+        $sumBillDue = 0.0;
 
         foreach ($export_rows as $row) {
             $ordNum = htmlspecialchars($row['order_number'] ?: ('#' . $row['order_id']));
@@ -562,7 +617,38 @@ if (isset($_GET['export']) && in_array($_GET['export'], ['csv', 'excel'])) {
             $cash = ($status === 'cancelled') ? 0.00 : (float)($row['receipt_cash'] ?? 0);
             $credit = ($status === 'cancelled') ? 0.00 : (float)($row['receipt_credit'] ?? 0);
             $due = ($status === 'cancelled') ? 0.00 : (float)($row['receipt_due'] ?? 0);
-            $earlierDue = (float)($row['earlier_due'] ?? 0);
+            $shopTotalDue = (float)($row['shop_total_due'] ?? 0);
+
+            if ($status === 'cancelled') {
+                $billStatus = 'Cancelled (Voided)';
+            } elseif ($due > 0) {
+                if ($cash > 0 || $credit > 0) {
+                    $billStatus = 'Partial Due (₹' . number_format($due, 2) . ')';
+                } else {
+                    $billStatus = 'Unpaid Due (₹' . number_format($due, 2) . ')';
+                }
+            } elseif (!empty($row['bill_number'])) {
+                $billStatus = 'Paid (Settled)';
+            } else {
+                $billStatus = 'Unbilled';
+            }
+
+            $sumTotalAmt += $totAmt;
+            $sumCash += $cash;
+            $sumCredit += $credit;
+            $sumBillDue += $due;
+
+            $dueCellHtml = ($due > 0)
+                ? '<td class="num col-due-cell" style="background-color: #fee2e2; color: #b91c1c; font-weight: bold;">' . number_format($due, 2) . '</td>'
+                : '<td class="num col-settled" style="color: #059669; font-weight: 600;">0.00</td>';
+
+            $statusCellHtml = ($due > 0)
+                ? '<td class="num col-due-cell" style="background-color: #fef2f2; color: #b91c1c; font-weight: 600;">' . htmlspecialchars($billStatus) . '</td>'
+                : '<td class="num" style="background-color: #f0fdf4; color: #166534; font-weight: 600;">' . htmlspecialchars($billStatus) . '</td>';
+
+            $ledgerCellHtml = ($shopTotalDue > 0)
+                ? '<td class="num" style="background-color: #fff1f2; color: #991b1b; font-weight: 700;">' . number_format($shopTotalDue, 2) . '</td>'
+                : '<td class="num" style="color: #64748b;">0.00</td>';
 
             echo '<tr>';
             echo '<td>' . $ordNum . '</td>';
@@ -574,12 +660,27 @@ if (isset($_GET['export']) && in_array($_GET['export'], ['csv', 'excel'])) {
             echo '<td class="num">' . number_format($totAmt, 2) . '</td>';
             echo '<td class="num">' . number_format($cash, 2) . '</td>';
             echo '<td class="num">' . number_format($credit, 2) . '</td>';
-            echo '<td class="num col-due-cell" style="background-color: #fef2f2; color: #b91c1c;">' . number_format($due, 2) . '</td>';
-            echo '<td class="num col-due-cell" style="background-color: #fff1f2; color: #b91c1c;">' . number_format($earlierDue, 2) . '</td>';
-            echo '<td class="num col-due-cell" style="background-color: #fee2e2; color: #7f1d1d; font-weight: bold;">' . number_format($due + $earlierDue, 2) . '</td>';
+            echo $dueCellHtml;
+            echo $statusCellHtml;
+            echo $ledgerCellHtml;
             echo '</tr>';
         }
-        echo '</tbody></table></body></html>';
+        echo '</tbody>';
+
+        // Add summary footer
+        echo '<tfoot>';
+        echo '<tr style="background-color: #f1f5f9; font-weight: bold; border-top: 2px solid #64748b;">';
+        echo '<td colspan="6" style="text-align: right; padding: 10px; font-weight: bold;">TOTAL (' . count($export_rows) . ' Orders):</td>';
+        echo '<td class="num" style="font-weight: bold;">' . number_format($sumTotalAmt, 2) . '</td>';
+        echo '<td class="num" style="font-weight: bold; color: #047857;">' . number_format($sumCash, 2) . '</td>';
+        echo '<td class="num" style="font-weight: bold; color: #6d28d9;">' . number_format($sumCredit, 2) . '</td>';
+        echo '<td class="num" style="font-weight: bold; background-color: #fee2e2; color: #991b1b;">' . number_format($sumBillDue, 2) . '</td>';
+        echo '<td class="num" style="font-weight: bold;">' . ($sumBillDue > 0 ? 'Total Due: ₹' . number_format($sumBillDue, 2) : 'All Settled') . '</td>';
+        echo '<td class="num" style="color: #64748b; font-size: 10pt;">(Customer Balances)</td>';
+        echo '</tr>';
+        echo '</tfoot>';
+
+        echo '</table></body></html>';
         exit;
     }
 }
@@ -763,16 +864,35 @@ try {
     error_log("Error executing orders query: " . $e->getMessage());
 }
 
-// Attach shop earlier dues for each order row
+// Attach shop total dues and consistent customer ledger balance for each order row
+$shopBalanceCache = [];
 foreach ($orders as &$o) {
-    $sName = !empty($o['shop_name']) ? $o['shop_name'] : (!empty($o['customer_name']) ? $o['customer_name'] : '');
-    $sPhone = $o['phone'] ?? '';
-    $ordId = (int)$o['order_id'];
+    $sName = !empty($o['shop_name']) ? trim($o['shop_name']) : (!empty($o['customer_name']) ? trim($o['customer_name']) : '');
+    $sPhone = trim($o['phone'] ?? '');
+    $cKey = !empty($sName) ? ('name:' . mb_strtolower($sName)) : ('phone:' . preg_replace('/[^0-9]/', '', $sPhone));
 
-    $dueDetails = getShopPendingDueDetails($pdo, $sName, $sPhone, $ordId);
-    $o['earlier_due'] = (float)($dueDetails['total_due'] ?? 0);
-    $o['earlier_due_count'] = (int)($dueDetails['due_count'] ?? 0);
-    $o['earlier_due_details'] = $dueDetails['receipts'] ?? [];
+    if (!isset($shopBalanceCache[$cKey])) {
+        // Customer total balance overall (excludeOrderId = 0)
+        $overallDue = getShopPendingDueDetails($pdo, $sName, $sPhone, 0);
+        $shopBalanceCache[$cKey] = [
+            'total_due' => (float)($overallDue['total_due'] ?? 0),
+            'due_count' => (int)($overallDue['due_count'] ?? 0),
+            'receipts'  => $overallDue['receipts'] ?? []
+        ];
+    }
+
+    $shopBal = $shopBalanceCache[$cKey];
+    $o['shop_total_due'] = $shopBal['total_due'];
+    $o['shop_total_due_count'] = $shopBal['due_count'];
+    $o['shop_due_details'] = $shopBal['receipts'];
+
+    $billDue = (float)($o['receipt_due'] ?? 0);
+    // Other dues = overall customer balance minus this bill's due
+    $otherDues = max(0.0, round($o['shop_total_due'] - $billDue, 2));
+    $o['other_dues'] = $otherDues;
+    $o['earlier_due'] = $otherDues;
+    $o['earlier_due_count'] = max(0, $shopBal['due_count'] - ($billDue > 0 ? 1 : 0));
+    $o['earlier_due_details'] = $shopBal['receipts'];
 }
 unset($o);
 
@@ -2032,9 +2152,12 @@ $cleanBaseUrl = rtrim(BASE_URL, '/');
                                         <td>
                                             <div style="font-weight: 700; color: #0f172a; display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
                                                 <span><?= $shop ?></span>
-                                                <?php if ($earlierDue > 0): ?>
-                                                    <span style="background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; font-size: 10.5px; font-weight: 700; padding: 1.5px 6px; border-radius: 4px; display: inline-flex; align-items: center; gap: 3px;" title="Shop has earlier pending due of <?= formatCurrency($earlierDue) ?> (opening balance / previous bills)">
-                                                        <i class='bx bxs-error-circle'></i> Earlier Due: <?= formatCurrency($earlierDue) ?>
+                                                <?php 
+                                                $shopTotalDue = (float)($o['shop_total_due'] ?? 0);
+                                                if ($shopTotalDue > 0): 
+                                                ?>
+                                                    <span style="background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 4px; display: inline-flex; align-items: center; gap: 3px;" title="Customer total pending due across all transactions: <?= formatCurrency($shopTotalDue) ?>">
+                                                        <i class='bx bxs-error-circle'></i> Shop Due: <?= formatCurrency($shopTotalDue) ?>
                                                     </span>
                                                 <?php endif; ?>
                                             </div>
@@ -2149,28 +2272,23 @@ $cleanBaseUrl = rtrim(BASE_URL, '/');
                                                 </div>
                                                 <?php if ((int)($o['payments_count'] ?? 0) > 1): ?>
                                                     <div style="margin-top: 3px;">
-                                                        <button type="button" onclick="openPaymentHistoryModal(<?= $ordId ?>)" style="background: #eff6ff; border: 1px solid #bfdbfe; color: #2563eb; font-size: 10px; font-weight: 700; padding: 9px 14px; border-radius: 4px; cursor: pointer; display: inline-flex; align-items: center; gap: 2px;" title="View payment installments">
+                                                        <button type="button" onclick="openPaymentHistoryModal(<?= $ordId ?>)" style="background: #eff6ff; border: 1px solid #bfdbfe; color: #2563eb; font-size: 10px; font-weight: 700; padding: 3px 8px; border-radius: 4px; cursor: pointer; display: inline-flex; align-items: center; gap: 2px;" title="View payment installments">
                                                             <i class='bx bx-history'></i> Partial Paid
                                                         </button>
                                                     </div>
                                                 <?php endif; ?>
-                                                <?php if ($earlierDue > 0): ?>
-                                                    <div style="margin-top: 4px;">
-                                                        <button type="button" onclick="openShopEarlierDueModal(<?= $ordId ?>, '<?= htmlspecialchars($shop, ENT_QUOTES) ?>', '<?= htmlspecialchars($phone, ENT_QUOTES) ?>', <?= (float)$earlierDue ?>)" style="border: 1px solid #fca5a5; background: #fff1f2; color: #b91c1c; font-size: 10.5px; font-weight: 800; padding: 9px 14px; border-radius: 4px; display: inline-flex; align-items: center; gap: 3px; cursor: pointer;" title="Shop earlier pending due: <?= formatCurrency($earlierDue) ?>. Click to settle.">
-                                                            <i class='bx bx-time-five'></i> Earlier: <?= formatCurrency($earlierDue) ?>
-                                                        </button>
+                                                <!-- <?php if ($earlierDue > 0): ?>
+                                                    <div style="font-size: 11px; color: #64748b; margin-top: 4px; font-weight: 600;">
+                                                        + <?= formatCurrency($earlierDue) ?> on other bills
                                                     </div>
-                                                    <!-- <div style="font-size: 10.5px; font-weight: 800; color: #991b1b; margin-top: 3px;">
-                                                        Total Due: <?= formatCurrency($due + $earlierDue) ?>
-                                                    </div> -->
-                                                <?php endif; ?>
-                                                <div style="margin-top: 4px; display: flex; gap: 4px; justify-content: start; flex-wrap: wrap;">
-                                                    <button type="button" class="btn-tbl" onclick="openRevenueDueModal(<?= $ordId ?>, '<?= htmlspecialchars($ordNum, ENT_QUOTES) ?>', '<?= htmlspecialchars($shop, ENT_QUOTES) ?>', <?= (float)$due ?>)" style="padding: 9px 14px; font-size: 11px; background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; cursor: pointer; border-radius: 4px; display: inline-flex; align-items: center; gap: 3px; font-weight: 700; white-space: nowrap;" title="Custom Due Clearance">
-                                                        <i class='bx bx-check-circle'></i> Clear Bill Due
+                                                <?php endif; ?> -->
+                                                <div style="margin-top: 5px; display: flex; gap: 5px; justify-content: start; flex-wrap: wrap;">
+                                                    <button type="button" class="btn-tbl" onclick="openRevenueDueModal(<?= $ordId ?>, '<?= htmlspecialchars($ordNum, ENT_QUOTES) ?>', '<?= htmlspecialchars($shop, ENT_QUOTES) ?>', <?= (float)$due ?>)" style="padding: 6px 12px; font-size: 11px; background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; cursor: pointer; border-radius: 5px; display: inline-flex; align-items: center; gap: 4px; font-weight: 700; white-space: nowrap;" title="Pay / Clear this bill's due of <?= formatCurrency($due) ?>">
+                                                        <i class='bx bx-check-circle'></i> Clear Bill Due (<?= formatCurrency($due) ?>)
                                                     </button>
-                                                    <?php if ($earlierDue > 0): ?>
-                                                        <button type="button" class="btn-tbl" onclick="openShopEarlierDueModal(<?= $ordId ?>, '<?= htmlspecialchars($shop, ENT_QUOTES) ?>', '<?= htmlspecialchars($phone, ENT_QUOTES) ?>', <?= (float)$earlierDue ?>)" style="padding: 9px 14px; font-size: 11px; background: #fff1f2; color: #b91c1c; border: 1px solid #fecdd3; cursor: pointer; border-radius: 4px; display: inline-flex; align-items: center; gap: 3px; font-weight: 700; white-space: nowrap;" title="Settle Earlier Due">
-                                                            <i class='bx bx-time-five'></i> Clear Earlier Due
+                                                    <?php if ($shopTotalDue > $due): ?>
+                                                        <button type="button" class="btn-tbl" onclick="openShopEarlierDueModal(<?= $ordId ?>, '<?= htmlspecialchars($shop, ENT_QUOTES) ?>', '<?= htmlspecialchars($phone, ENT_QUOTES) ?>', <?= (float)$shopTotalDue ?>)" style="padding: 6px 12px; font-size: 11px; background: #fff1f2; color: #b91c1c; border: 1px solid #fecdd3; cursor: pointer; border-radius: 5px; display: inline-flex; align-items: center; gap: 4px; font-weight: 700; white-space: nowrap;" title="Clear entire customer balance of <?= formatCurrency($shopTotalDue) ?>">
+                                                            <i class='bx bx-wallet'></i> Settle All (<?= formatCurrency($shopTotalDue) ?>)
                                                         </button>
                                                     <?php endif; ?>
                                                 </div>
@@ -2180,15 +2298,10 @@ $cleanBaseUrl = rtrim(BASE_URL, '/');
                                                         Settled (₹0) <i class='bx bx-history' style="font-size: 13px;"></i>
                                                     </button>
                                                 </div>
-                                                <?php if ($earlierDue > 0): ?>
-                                                    <div style="margin-top: 4px;">
-                                                        <button type="button" onclick="openShopEarlierDueModal(<?= $ordId ?>, '<?= htmlspecialchars($shop, ENT_QUOTES) ?>', '<?= htmlspecialchars($phone, ENT_QUOTES) ?>', <?= (float)$earlierDue ?>)" style="border: 1px solid #fca5a5; background: #fff1f2; color: #b91c1c; font-size: 11px; font-weight: 800; padding: 9px 14px; border-radius: 4px; display: inline-flex; align-items: center; gap: 3px; cursor: pointer;" title="Shop has earlier due of <?= formatCurrency($earlierDue) ?>. Click to settle.">
-                                                            <i class='bx bxs-error-circle'></i> Earlier Due: <?= formatCurrency($earlierDue) ?>
-                                                        </button>
-                                                    </div>
-                                                    <div style="margin-top: 3px;">
-                                                        <button type="button" class="btn-tbl" onclick="openShopEarlierDueModal(<?= $ordId ?>, '<?= htmlspecialchars($shop, ENT_QUOTES) ?>', '<?= htmlspecialchars($phone, ENT_QUOTES) ?>', <?= (float)$earlierDue ?>)" style="padding: 9px 14px; font-size: 10.5px; background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; cursor: pointer; border-radius: 4px; display: inline-flex; align-items: center; gap: 3px; font-weight: 700; white-space: nowrap;" title="Settle shop's earlier pending due">
-                                                            <i class='bx bx-check-circle'></i> Settle Earlier Due
+                                                <?php if ($shopTotalDue > 0): ?>
+                                                    <div style="margin-top: 5px;">
+                                                        <button type="button" onclick="openShopEarlierDueModal(<?= $ordId ?>, '<?= htmlspecialchars($shop, ENT_QUOTES) ?>', '<?= htmlspecialchars($phone, ENT_QUOTES) ?>', <?= (float)$shopTotalDue ?>)" style="border: 1px solid #e2e8f0; background: #f8fafc; color: #475569; font-size: 11px; font-weight: 600; padding: 4px 8px; border-radius: 4px; display: inline-flex; align-items: center; gap: 4px; cursor: pointer;" title="This bill is settled. Customer has other pending dues of <?= formatCurrency($shopTotalDue) ?>">
+                                                            <i class='bx bx-info-circle' style="color: #ea580c;"></i> Shop Has Dues: <?= formatCurrency($shopTotalDue) ?>
                                                         </button>
                                                     </div>
                                                 <?php endif; ?>

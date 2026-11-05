@@ -69,6 +69,36 @@ $creditAmount = (float)$data['receipt_credit'];
 $dueAmount = (float)$data['receipt_due'];
 $payType = htmlspecialchars($data['receipt_pay_type'] ?: 'Cash');
 
+$isDueOnlyReceipt = ($deliveredQty <= 0) 
+    || stripos($payType, 'Due Clearance') !== false 
+    || stripos($data['notes'] ?? '', 'Due Clearance') !== false 
+    || stripos($data['receipt_notes'] ?? '', 'Due Clearance') !== false
+    || stripos($data['payment_type'] ?? '', 'Due Clearance') !== false;
+
+// Extract cleared due amount if due-only receipt
+$clearedDueAmount = 0.0;
+if (!empty($data['receipt_notes']) && preg_match('/Cleared\s*(?:Rs\.|₹)?\s*([0-9,]+(?:\.[0-9]+)?)/iu', $data['receipt_notes'], $mAmt)) {
+    $clearedDueAmount = (float)str_replace(',', '', $mAmt[1]);
+}
+if ($clearedDueAmount <= 0 && isset($_GET['prior_cleared'])) {
+    $clearedDueAmount = (float)$_GET['prior_cleared'];
+}
+if ($clearedDueAmount <= 0 && (float)$data['receipt_total'] > 0 && $deliveredQty <= 0) {
+    $clearedDueAmount = (float)$data['receipt_total'];
+}
+
+if ($isDueOnlyReceipt && $clearedDueAmount > 0) {
+    $totalPayable = $clearedDueAmount;
+    if ($cashReceived <= 0 && $creditAmount <= 0) {
+        if (stripos($payType, 'Online') !== false || stripos($payType, 'UPI') !== false) {
+            $creditAmount = $clearedDueAmount;
+        } else {
+            $cashReceived = $clearedDueAmount;
+        }
+    }
+    $dueAmount = 0.00;
+}
+
 // Fetch all order items
 $all_order_items = getOrderItems($pdo, $order_id);
 
@@ -128,18 +158,35 @@ $deliveredSummaryWa = (count($itemsWaLines) > 1)
 $cleanPhone = preg_replace('/[^0-9]/', '', $customerTel);
 if (strlen($cleanPhone) === 10) $cleanPhone = '91' . $cleanPhone;
 $receiptUrl = zone_url($zone_slug, 'receipt', ['id' => $order_id]);
-$waMsg = "🧾 *LIYAS INTERNATIONAL - DELIVERY RECEIPT*\n"
-       . "━━━━━━━━━━━━━━━━━━━━\n"
-       . "Bill No: *{$billNumber}*\n"
-       . "Date: {$receiptDate}\n"
-       . "Customer: *{$shopName}*\n"
-       . "{$deliveredSummaryWa}\n"
-       . "Total Amount: *" . formatCurrency($totalPayable) . "*\n"
-       . "Cash Paid: *" . formatCurrency($cashReceived) . "*\n"
-       . ($dueAmount > 0 ? "⚠️ Balance Due: *" . formatCurrency($dueAmount) . "*\n" : "✅ Status: *Fully Paid*\n")
-       . "━━━━━━━━━━━━━━━━━━━━\n"
-       . "📄 View / Download Receipt: {$receiptUrl}\n"
-       . "Thank you for choosing Liyas Water!";
+
+if ($isDueOnlyReceipt) {
+    $modeDisplay = ($cashReceived > 0 && $creditAmount > 0) ? 'Cash + Online' : ($creditAmount > 0 ? 'Online Payment' : 'Cash');
+    $waMsg = "🧾 *LIYAS INTERNATIONAL - DUE PAYMENT RECEIPT*\n"
+           . "━━━━━━━━━━━━━━━━━━━━\n"
+           . "Bill No: *{$billNumber}*\n"
+           . "Date: {$receiptDate}\n"
+           . "Customer: *{$shopName}*\n"
+           . "Purpose: *Outstanding Due Settlement*\n"
+           . "Amount Paid: *" . formatCurrency($totalPayable) . "*\n"
+           . "Payment Mode: *{$modeDisplay}*\n"
+           . (!empty($remainingShopDues['has_due']) ? "⚠️ Remaining Shop Due: *" . formatCurrency($remainingShopDues['total_due']) . "*\n" : "✅ Status: *All Past Dues Cleared*\n")
+           . "━━━━━━━━━━━━━━━━━━━━\n"
+           . "📄 View / Download Receipt: {$receiptUrl}\n"
+           . "Thank you for doing business with Liyas International!";
+} else {
+    $waMsg = "🧾 *LIYAS INTERNATIONAL - DELIVERY RECEIPT*\n"
+           . "━━━━━━━━━━━━━━━━━━━━\n"
+           . "Bill No: *{$billNumber}*\n"
+           . "Date: {$receiptDate}\n"
+           . "Customer: *{$shopName}*\n"
+           . "{$deliveredSummaryWa}\n"
+           . "Total Amount: *" . formatCurrency($totalPayable) . "*\n"
+           . "Cash Paid: *" . formatCurrency($cashReceived) . "*\n"
+           . ($dueAmount > 0 ? "⚠️ Balance Due: *" . formatCurrency($dueAmount) . "*\n" : "✅ Status: *Fully Paid*\n")
+           . "━━━━━━━━━━━━━━━━━━━━\n"
+           . "📄 View / Download Receipt: {$receiptUrl}\n"
+           . "Thank you for choosing Liyas Water!";
+}
 $waShareUrl = !empty($cleanPhone) ? "https://wa.me/{$cleanPhone}?text=" . rawurlencode($waMsg) : "https://api.whatsapp.com/send?text=" . rawurlencode($waMsg);
 
 // Build RawBT ESC/POS formatted text matching thermal printer layout (< 1 second)
@@ -213,29 +260,48 @@ if (!function_exists('buildThermalRawBtPayload')) {
         $lines[] = $tableHeader;
         $lines[] = $dividerDashed;
 
-        $itemCount = count($order_items);
-        foreach ($order_items as $idx => $oi) {
-            $iName = trim($oi['product_name'] ?: ($oi['name'] ?: 'Liyas Water'));
-            $iQty = (int)$oi['quantity'];
-            $iRate = (float)$oi['price_at_purchase'];
-            $iAmt = (float)$oi['line_total'];
+        $isThermalDueOnly = ((int)$data['delivered_quantity'] <= 0) 
+            || stripos($data['receipt_notes'] ?? '', 'Due Clearance') !== false 
+            || stripos($data['receipt_pay_type'] ?? '', 'Due Clearance') !== false;
 
-            $rateStr = (fmod($iRate, 1.0) == 0.0) ? number_format($iRate, 0) : number_format($iRate, 2);
-            $amtStr  = (fmod($iAmt, 1.0) == 0.0) ? number_format($iAmt, 0) : number_format($iAmt, 2);
-
-            $colQty  = str_pad((string)$iQty, $wQty, " ", STR_PAD_LEFT);
-            $colRate = str_pad($rateStr, $wRate, " ", STR_PAD_LEFT);
-            $colAmt  = str_pad($amtStr, $wAmt, " ", STR_PAD_LEFT);
-
-            if (strlen($iName) <= $wItem) {
-                $lines[] = str_pad($iName, $wItem) . $colQty . $colRate . $colAmt;
-            } else {
-                $lines[] = $iName;
-                $lines[] = str_pad("", $wItem) . $colQty . $colRate . $colAmt;
+        $totalPayable = (float)($data['receipt_total'] ?? 0);
+        if ($isThermalDueOnly) {
+            if (!empty($data['receipt_notes']) && preg_match('/Cleared\s*(?:Rs\.|₹)?\s*([0-9,]+(?:\.[0-9]+)?)/iu', $data['receipt_notes'], $mAmt)) {
+                $clearedDueAmt = (float)str_replace(',', '', $mAmt[1]);
+                if ($clearedDueAmt > 0) {
+                    $totalPayable = $clearedDueAmt;
+                }
             }
+        }
 
-            if ($idx < $itemCount - 1) {
-                $lines[] = $dividerDotted;
+        $itemCount = count($order_items);
+        if ($isThermalDueOnly) {
+            $amtStr = number_format($totalPayable > 0 ? $totalPayable : (float)$data['receipt_total'], 0);
+            $lines[] = str_pad("DUE SETTLE", $wItem) . str_pad("-", $wQty, " ", STR_PAD_LEFT) . str_pad("-", $wRate, " ", STR_PAD_LEFT) . str_pad($amtStr, $wAmt, " ", STR_PAD_LEFT);
+        } else {
+            foreach ($order_items as $idx => $oi) {
+                $iName = trim($oi['product_name'] ?: ($oi['name'] ?: 'Liyas Water'));
+                $iQty = (int)$oi['quantity'];
+                $iRate = (float)$oi['price_at_purchase'];
+                $iAmt = (float)$oi['line_total'];
+
+                $rateStr = (fmod($iRate, 1.0) == 0.0) ? number_format($iRate, 0) : number_format($iRate, 2);
+                $amtStr  = (fmod($iAmt, 1.0) == 0.0) ? number_format($iAmt, 0) : number_format($iAmt, 2);
+
+                $colQty  = str_pad((string)$iQty, $wQty, " ", STR_PAD_LEFT);
+                $colRate = str_pad($rateStr, $wRate, " ", STR_PAD_LEFT);
+                $colAmt  = str_pad($amtStr, $wAmt, " ", STR_PAD_LEFT);
+
+                if (strlen($iName) <= $wItem) {
+                    $lines[] = str_pad($iName, $wItem) . $colQty . $colRate . $colAmt;
+                } else {
+                    $lines[] = $iName;
+                    $lines[] = str_pad("", $wItem) . $colQty . $colRate . $colAmt;
+                }
+
+                if ($idx < $itemCount - 1) {
+                    $lines[] = $dividerDotted;
+                }
             }
         }
         $lines[] = $dividerDashed;
@@ -249,11 +315,34 @@ if (!function_exists('buildThermalRawBtPayload')) {
             $receiptSubtotal = (float)$data['receipt_total'] + (float)$data['discount'];
         }
 
-        $totalPayable = (float)$data['receipt_total'];
+        if (!$isThermalDueOnly) {
+            $totalPayable = (float)$data['receipt_total'];
+        }
         $cashReceived = (float)$data['receipt_cash'];
         $creditAmount = (float)$data['receipt_credit'];
         $dueAmount    = (float)$data['receipt_due'];
         $discountVal  = (float)$data['discount'];
+
+        if ($isThermalDueOnly) {
+            $clearedDue = 0.0;
+            if (!empty($data['receipt_notes']) && preg_match('/Cleared\s*(?:Rs\.|₹)?\s*([0-9,]+(?:\.[0-9]+)?)/iu', $data['receipt_notes'], $mAmt)) {
+                $clearedDue = (float)str_replace(',', '', $mAmt[1]);
+            }
+            if ($clearedDue <= 0 && (float)$data['receipt_total'] > 0) {
+                $clearedDue = (float)$data['receipt_total'];
+            }
+            if ($clearedDue > 0) {
+                $totalPayable = $clearedDue;
+                if ($cashReceived <= 0 && $creditAmount <= 0) {
+                    if (stripos($data['receipt_pay_type'] ?? '', 'Online') !== false || stripos($data['receipt_pay_type'] ?? '', 'UPI') !== false) {
+                        $creditAmount = $clearedDue;
+                    } else {
+                        $cashReceived = $clearedDue;
+                    }
+                }
+                $dueAmount = 0.00;
+            }
+        }
 
         // Subtotal
         $subtotalStr = "Rs. " . number_format($receiptSubtotal, 0);
@@ -1420,10 +1509,10 @@ if (file_exists($logoPath)) {
                 <i class='bx bx-check-circle' style="font-size: 26px; color: #059669; flex-shrink: 0;"></i>
                 <div>
                     <div style="font-weight: 800; font-size: 14px; color: #065f46;">
-                        Receipt Generated &bull; Bill #<?= htmlspecialchars($billNumber) ?>
+                        <?= $isDueOnlyReceipt ? 'Due Payment Receipt Generated' : 'Receipt Generated' ?> &bull; Bill #<?= htmlspecialchars($billNumber) ?>
                     </div>
                     <div style="font-size: 12px; color: #047857; margin-top: 1px;">
-                        Delivered to <strong><?= $shopName ?></strong>.
+                        <?= $isDueOnlyReceipt ? 'Past due payment recorded for' : 'Delivered to' ?> <strong><?= $shopName ?></strong>.
                     </div>
                 </div>
             </div>
@@ -1443,7 +1532,7 @@ if (file_exists($logoPath)) {
             </div>
 
             <div class="invoice-meta">
-                <div class="official-tag">Official Bill No</div>
+                <div class="official-tag"><?= $isDueOnlyReceipt ? 'Due Clearance Bill' : 'Official Bill No' ?></div>
                 <div class="bill-num-display">#<?= htmlspecialchars($billNumber) ?></div>
                 <div class="meta-date"><?= htmlspecialchars($receiptDate) ?> &bull; <?= htmlspecialchars($receiptTime) ?></div>
             </div>
@@ -1480,6 +1569,23 @@ if (file_exists($logoPath)) {
                 </tr>
             </thead>
             <tbody>
+                <?php if ($isDueOnlyReceipt): ?>
+                <tr>
+                    <td class="td-product">
+                        <strong style="color: #0f172a;">Due</strong>
+                     
+                    </td>
+                    <td class="td-qty" style="text-align: center; font-size: 12.5px; font-weight: 400;">
+                        -
+                    </td>
+                    <td class="td-rate" style="text-align: right;">
+                        -
+                    </td>
+                    <td class="td-amt" style="text-align: right; font-size: 12.5px; font-weight: 700; color: #059669;">
+                        <?= '₹' . number_format((float)$totalPayable, 0) ?>
+                    </td>
+                </tr>
+                <?php else: ?>
                 <?php foreach ($order_items as $item): 
                     $pItemName = htmlspecialchars($item['product_name'] ?: ($item['name'] ?: 'Liyas Water'));
                     $pItemQty = (int)$item['quantity'];
@@ -1501,12 +1607,39 @@ if (file_exists($logoPath)) {
                     </td>
                 </tr>
                 <?php endforeach; ?>
+                <?php endif; ?>
             </tbody>
         </table>
 
         <!-- Summary & Due Calculation -->
         <div class="summary-container">
             <table class="summary-table">
+                <?php if ($isDueOnlyReceipt): ?>
+                <tr>
+                    <td style="color: var(--text-muted);">Due Amount Paid:</td>
+                    <td style="text-align: right; font-size: 12.5px; font-weight: 700;"><?= '₹' . number_format((float)$totalPayable, 0) ?></td>
+                </tr>
+                <tr class="summary-total-row">
+                    <td>TOTAL CLEARED:</td>
+                    <td style="text-align: right; font-size: 12.5px;"><?= '₹' . number_format((float)$totalPayable, 0) ?></td>
+                </tr>
+                <?php if ($cashReceived > 0): ?>
+                <tr>
+                    <td style="color: #059669;">Cash</td>
+                    <td style="text-align: right; color: #059669; font-size: 12.5px; font-weight: 400;"><?= '₹' . number_format((float)$cashReceived, 0) ?></td>
+                </tr>
+                <?php endif; ?>
+                <?php if ($creditAmount > 0): ?>
+                <tr>
+                    <td style="color: #d97706;">Credited / Online</td>
+                    <td style="text-align: right; color: #d97706; font-size: 12.5px; font-weight: 400;"><?= '₹' . number_format((float)$creditAmount, 0) ?></td>
+                </tr>
+                <?php endif; ?>
+                <tr class="summary-due-row">
+                    <td>CURRENT BILL BALANCE:</td>
+                    <td style="text-align: right; font-size: 12.5px; color: #059669;">₹0</td>
+                </tr>
+                <?php else: ?>
                 <tr>
                     <td style="color: var(--text-muted);">Subtotal:</td>
                     <td style="text-align: right; font-size: 12.5px; font-weight: 400;"><?= '₹' . number_format((float)$receiptSubtotal, 0) ?></td>
@@ -1537,6 +1670,7 @@ if (file_exists($logoPath)) {
                     <td>BALANCE / DUE:</td>
                    <td style="text-align: right; font-size: 12.5px;"><?= '₹' . number_format((float)$dueAmount, 0) ?></td>
                 </tr>
+                <?php endif; ?>
                 <?php if (!empty($data['receipt_notes']) && stripos($data['receipt_notes'], 'Cleared') !== false): 
                     $rawNotes = $data['receipt_notes'];
                     $clearedAmt = null;
@@ -1568,7 +1702,7 @@ if (file_exists($logoPath)) {
                     }
                 ?>
                 <tr>
-                    <td style="color: #059669; font-weight: 700; padding-top: 8px;">Prior Due Settled:</td>
+                    <td style="color: #059669; font-weight: 700; padding-top: 8px;">Due Settled:</td>
                     <td style="text-align: right; color: #059669; font-weight: 800; padding-top: 8px; font-size: 11px;">
                         <?= htmlspecialchars($dispNote) ?>
                     </td>

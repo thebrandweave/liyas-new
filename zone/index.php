@@ -174,8 +174,10 @@ if (!function_exists('attachPriorDues')) {
             foreach ($dueRows as $dr) {
                 if ((int)$dr['order_id'] === $tOrdId) continue;
                 $match = false;
-                if ($tShop !== '' && ($tShop === $dr['shop_name'] || $tShop === $dr['customer_name'])) {
-                    $match = true;
+                if ($tShop !== '') {
+                    if ($tShop === $dr['shop_name'] || $tShop === $dr['customer_name']) {
+                        $match = true;
+                    }
                 } elseif (!empty($tP10) && $tP10 === $dr['phone_10']) {
                     $match = true;
                 }
@@ -3256,14 +3258,20 @@ if (!function_exists('buildWhatsAppLink')) {
                                     <?php if ($ordReceiptCredit > 0): ?>
                                         <span class="credit-badge">Credit: <?= formatCurrency($ordReceiptCredit) ?></span>
                                     <?php endif; ?>
-                                    <?php if ($ordTotalDue > 0): ?>
-                                        <span class="due-badge" title="Total Due: <?= formatCurrency($ordTotalDue) ?><?= ($ordPriorDue > 0 && $ordReceiptDue > 0) ? ' (Current Order: ' . formatCurrency($ordReceiptDue) . ' + Prior Unpaid: ' . formatCurrency($ordPriorDue) . ')' : '' ?>">
-                                            <i class='bx bx-error-circle'></i> Due: <?= formatCurrency($ordTotalDue) ?>
-                                            <?php if ($ordPriorDue > 0 && $ordReceiptDue > 0): ?>
-                                                <span style="font-size: 10px; font-weight: 600; opacity: 0.95;">(Incl. Prior: <?= formatCurrency($ordPriorDue) ?>)</span>
-                                            <?php elseif ($ordPriorDue > 0 && $ordReceiptDue <= 0): ?>
-                                                <span style="font-size: 10px; font-weight: 600; opacity: 0.95;">(Prior Due)</span>
+                                    <?php if ($ordReceiptDue > 0): ?>
+                                        <span class="due-badge" title="Bill Due: <?= formatCurrency($ordReceiptDue) ?><?= ($ordPriorDue > 0) ? ' (Plus shop prior due: ' . formatCurrency($ordPriorDue) . ')' : '' ?>">
+                                            <i class='bx bx-error-circle'></i> Due: <?= formatCurrency($ordReceiptDue) ?>
+                                            <?php if ($ordPriorDue > 0): ?>
+                                                <span style="font-size: 10px; font-weight: 600; opacity: 0.95;">(+<?= formatCurrency($ordPriorDue) ?> prior)</span>
                                             <?php endif; ?>
+                                        </span>
+                                    <?php elseif ($ordPriorDue > 0): ?>
+                                        <span style="font-size: 11px; color: #b91c1c; background: #fff1f2; border: 1px solid #fecdd3; padding: 2px 6px; border-radius: 4px; font-weight: 700; display: inline-flex; align-items: center; gap: 3px;" title="This bill is settled. Shop has separate prior due of <?= formatCurrency($ordPriorDue) ?>">
+                                            <i class='bx bx-time-five'></i> Prior Due: <?= formatCurrency($ordPriorDue) ?>
+                                        </span>
+                                    <?php else: ?>
+                                        <span style="font-size: 11px; color: #047857; font-weight: 700;">
+                                            <i class='bx bx-check-double'></i> Settled
                                         </span>
                                     <?php endif; ?>
                                 <?php else: ?>

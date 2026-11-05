@@ -138,8 +138,12 @@ $vZoneStmt = $pdo->prepare("
 ");
 $vZoneStmt->execute([$zone_id, $zone_id, $zone_id]);
 $availVehicles = $vZoneStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+$availVehicleIds = array_map(fn($v) => (int)$v['id'], $availVehicles);
 
-// Auto-pick first available vehicle for this zone if vehicle still unassigned
+// Auto-pick first available vehicle for this zone if vehicle still unassigned or from another zone
+if (!empty($availVehicleIds) && !in_array($assignedVehicleId, $availVehicleIds, true)) {
+    $assignedVehicleId = (int)$availVehicles[0]['id'];
+}
 if ($assignedVehicleId <= 0 && !empty($availVehicles)) {
     $assignedVehicleId = (int)$availVehicles[0]['id'];
 }
@@ -249,6 +253,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['generate_receipt'])) 
     $manual_prior_due        = max(0, (float)($_POST['manual_prior_due'] ?? 0));
     $manual_prior_due_action = trim($_POST['manual_prior_due_action'] ?? 'carry_forward');
     $manual_prior_due_notes  = trim($_POST['manual_prior_due_notes'] ?? '');
+    $manual_prior_due_mode   = trim($_POST['manual_prior_due_mode'] ?? (isset($_POST['manual_prior_due_mode_upi']) ? 'upi' : 'cash'));
 
 
 
@@ -326,288 +331,427 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['generate_receipt'])) 
         }
     }
 
+    // Detect Due Clearance Only mode
+    $is_due_collection_only = (!empty($_POST['is_due_collection_only']) && (int)$_POST['is_due_collection_only'] === 1);
+
+    // Handle clearance of prior pending dues if selected
+    $collect_prior_due = isset($_POST['collect_prior_due']);
+    $prior_due_amount  = $collect_prior_due ? (float)($_POST['prior_due_amount'] ?? 0) : 0.00;
+    $prior_due_mode    = trim($_POST['prior_due_mode'] ?? 'cash');
+
+    $effective_cleared_due = ($collect_prior_due ? $prior_due_amount : 0.0) + (($manual_prior_due > 0 && $manual_prior_due_action === 'collect_now') ? $manual_prior_due : 0.0);
+
+    if ($total_delivered_cases <= 0 && $effective_cleared_due > 0) {
+        $is_due_collection_only = true;
+    }
+
     // Validation
     if (empty($shop_name)) {
         $error = "Shop / Customer Name is required.";
-    } elseif (empty($processed_items) || $total_delivered_cases <= 0) {
-        $error = "Please specify at least one delivered item with quantity of 1 or more.";
+    } elseif (!$is_due_collection_only && (empty($processed_items) || $total_delivered_cases <= 0)) {
+        $error = "Please specify at least one delivered item with quantity of 1 or more, or choose 'Clear Due Only'.";
+    } elseif ($is_due_collection_only && $effective_cleared_due <= 0) {
+        $error = "Please enter an amount to clear for this shop's pending due.";
     } elseif ($cash_amount < 0 || $credited_amount < 0) {
         $error = "Payment amounts cannot be negative.";
     } else {
-        $discount = $order ? (float)$order['discount'] : (float)($_POST['discount'] ?? ($reorder_source['discount'] ?? 0.00));
-        if ($discount > $base_subtotal) {
-            $discount = $base_subtotal;
-        }
-        $total_amount = max(0, $base_subtotal - $discount);
-
-        // Balance payments with respect to Due input if provided
-        if ($enable_due && $due_input > 0) {
-            if (!$enable_cash && !$enable_credit) {
-                $cash_amount = max(0, $total_amount - $due_input);
-            }
-        }
-
-        // Validation: Cash + Credit cannot exceed Total, and Due cannot exceed Total
-        if (($cash_amount + $credited_amount) > ($total_amount + 0.01)) {
-            $error = "Payment error: Cash (" . formatCurrency($cash_amount) . ") + Credited (" . formatCurrency($credited_amount) . ") exceeds Total Amount (" . formatCurrency($total_amount) . ").";
-        } elseif ($enable_due && $due_input > ($total_amount + 0.01)) {
-            $error = "Payment error: Due amount (" . formatCurrency($due_input) . ") cannot exceed Total Amount (" . formatCurrency($total_amount) . ").";
-        } else {
-            $due_amount = max(0, $total_amount - $cash_amount - $credited_amount);
-            if ($enable_due && $due_input > 0 && ($cash_amount + $credited_amount + $due_input <= $total_amount + 0.01)) {
-                $due_amount = $due_input;
-            }
-            if ($manual_prior_due > 0 && $manual_prior_due_action === 'carry_forward') {
-                $due_amount += $manual_prior_due;
-            }
-
-            // Determine payment type
-            if ($due_amount >= $total_amount && $total_amount > 0) {
-                $payment_type = 'Pending';
-            } elseif ($cash_amount > 0 && $credited_amount > 0) {
-                $payment_type = 'Cash + Credited';
-            } elseif ($cash_amount > 0) {
-                $payment_type = 'Cash';
-            } elseif ($credited_amount > 0) {
-                $payment_type = 'Credited';
+        if ($is_due_collection_only) {
+            $effective_due_mode = ($collect_prior_due && $prior_due_amount > 0) ? $prior_due_mode : $manual_prior_due_mode;
+            $total_amount = $effective_cleared_due;
+            $total_delivered_cases = 0;
+            $processed_items = [];
+            $discount = 0.00;
+            $due_amount = 0.00;
+            if ($effective_due_mode === 'upi' || $effective_due_mode === 'online') {
+                $cash_amount = 0.00;
+                $credited_amount = $effective_cleared_due;
+                $payment_type = 'Due Clearance - Online';
             } else {
-                $payment_type = 'Pending';
+                $cash_amount = $effective_cleared_due;
+                $credited_amount = 0.00;
+                $payment_type = 'Due Clearance - Cash';
+            }
+        } else {
+            $discount = $order ? (float)$order['discount'] : (float)($_POST['discount'] ?? ($reorder_source['discount'] ?? 0.00));
+            if ($discount > $base_subtotal) {
+                $discount = $base_subtotal;
+            }
+            $total_amount = max(0, $base_subtotal - $discount);
+
+            // Balance payments with respect to Due input if provided
+            if ($enable_due && $due_input > 0) {
+                if (!$enable_cash && !$enable_credit) {
+                    $cash_amount = max(0, $total_amount - $due_input);
+                }
             }
 
+            // Validation: Cash + Credit cannot exceed Total, and Due cannot exceed Total
+            if (($cash_amount + $credited_amount) > ($total_amount + 0.01)) {
+                $error = "Payment error: Cash (" . formatCurrency($cash_amount) . ") + Credited (" . formatCurrency($credited_amount) . ") exceeds Total Amount (" . formatCurrency($total_amount) . ").";
+            } elseif ($enable_due && $due_input > ($total_amount + 0.01)) {
+                $error = "Payment error: Due amount (" . formatCurrency($due_input) . ") cannot exceed Total Amount (" . formatCurrency($total_amount) . ").";
+            } else {
+                $due_amount = max(0, $total_amount - $cash_amount - $credited_amount);
+                if ($enable_due && $due_input > 0 && ($cash_amount + $credited_amount + $due_input <= $total_amount + 0.01)) {
+                    $due_amount = $due_input;
+                }
+                if ($manual_prior_due > 0 && $manual_prior_due_action === 'carry_forward') {
+                    $due_amount += $manual_prior_due;
+                }
+
+                // Determine payment type
+                if ($due_amount >= $total_amount && $total_amount > 0) {
+                    $payment_type = 'Pending';
+                } elseif ($cash_amount > 0 && $credited_amount > 0) {
+                    $payment_type = 'Cash + Credited';
+                } elseif ($cash_amount > 0) {
+                    $payment_type = 'Cash';
+                } elseif ($credited_amount > 0) {
+                    $payment_type = 'Credited';
+                } else {
+                    $payment_type = 'Pending';
+                }
+            }
+        }
+
+        if (empty($error)) {
             try {
                 $pdo->beginTransaction();
 
-                $primary_pid = $processed_items[0]['product_id'];
-                $primary_rate = $processed_items[0]['rate'];
-                foreach ($processed_items as $pi) {
-                    if (empty($pi['is_extra']) && $pi['rate'] > 0) {
-                        $primary_pid = $pi['product_id'];
-                        $primary_rate = $pi['rate'];
-                        break;
+                if ($is_due_collection_only) {
+                    $primary_pid = null;
+                    $primary_rate = 0.00;
+                } else {
+                    $primary_pid = $processed_items[0]['product_id'];
+                    $primary_rate = $processed_items[0]['rate'];
+                    foreach ($processed_items as $pi) {
+                        if (empty($pi['is_extra']) && $pi['rate'] > 0) {
+                            $primary_pid = $pi['product_id'];
+                            $primary_rate = $pi['rate'];
+                            break;
+                        }
                     }
                 }
 
                 if ($order) {
-                    // 1. Stock adjustments based on diff between previously booked items and delivered items (including vehicle extras)
-                    $oldItems = getOrderItems($pdo, $order_id);
-                    $oldQtyByPid = [];
-                    $loadedExtraByPid = [];
-                    foreach ($oldItems as $oi) {
-                        $p_id = (int)$oi['product_id'];
-                        if ($p_id > 0) {
-                            $oldQtyByPid[$p_id] = ($oldQtyByPid[$p_id] ?? 0) + (int)$oi['quantity'];
+                    if ($is_due_collection_only) {
+                        // Restore previously booked warehouse stock for this order
+                        $oldItems = getOrderItems($pdo, $order_id);
+                        foreach ($oldItems as $oi) {
+                            $p_id = (int)$oi['product_id'];
+                            $qty = (int)$oi['quantity'];
+                            if ($p_id > 0 && $qty > 0) {
+                                adjustProductStock($pdo, $p_id, $qty, "Restored: Order #{$order_id} converted to Due Clearance (0 cases delivered)");
+                            }
                         }
-                        if (!empty($oi['is_extra'])) {
-                            $loadedExtraByPid[$p_id] = ($loadedExtraByPid[$p_id] ?? 0) + (int)$oi['quantity'];
+
+                        // Determine assigned vehicle ID
+                        $assignedVehicleId = (int)($order['vehicle_id'] ?? 0);
+                        if ($assignedVehicleId <= 0) {
+                            $assignedVehicleId = (int)($_POST['vehicle_id'] ?? 0);
                         }
-                    }
-
-                    $newQtyByPid = [];
-                    $deliveredExtraByPid = [];
-                    foreach ($processed_items as $pi) {
-                        $p_id = (int)$pi['product_id'];
-                        if ($p_id > 0) {
-                            $newQtyByPid[$p_id] = ($newQtyByPid[$p_id] ?? 0) + (int)$pi['quantity'];
+                        if ($assignedVehicleId <= 0 && !empty($availVehicles)) {
+                            $assignedVehicleId = (int)$availVehicles[0]['id'];
                         }
-                        if (!empty($pi['is_extra'])) {
-                            $deliveredExtraByPid[$p_id] = ($deliveredExtraByPid[$p_id] ?? 0) + (int)$pi['quantity'];
+
+                        // Sync shop phone, location
+                        $shopSync = syncShopOrderDetails($pdo, $shop_name, $phone, $place, $zone_id, $assignedVehicleId);
+                        if (!empty($shopSync['phone']) && empty($phone)) $phone = $shopSync['phone'];
+                        if (!empty($shopSync['location']) && empty($place)) $place = $shopSync['location'];
+
+                        // If cases were loaded on vehicle specifically for this order, convert them to unassigned vehicle buffer
+                        if ($assignedVehicleId > 0) {
+                            $pdo->prepare("
+                                UPDATE vehicle_loads 
+                                SET order_id = NULL, 
+                                    notes = CONCAT(COALESCE(notes, ''), ' (Retained in vehicle buffer: order cleared due only)') 
+                                WHERE order_id = ? AND is_active = 1
+                            ")->execute([$order_id]);
                         }
-                    }
 
-                    $allProductIds = array_unique(array_merge(array_keys($oldQtyByPid), array_keys($newQtyByPid)));
-                    foreach ($allProductIds as $apid) {
-                        $oldQ = $oldQtyByPid[$apid] ?? 0;
-                        $newQ = $newQtyByPid[$apid] ?? 0;
-                        $diff = $newQ - $oldQ;
-                        if ($diff !== 0) {
-                            adjustProductStock($pdo, $apid, -$diff, "Order #{$order_id} delivered (including vehicle extras)");
-                        }
-                    }
+                        // Update orders record: 0 quantity, null product_id, status = 'delivered'
+                        $upOrd = $pdo->prepare("
+                            UPDATE orders SET 
+                                shop_name = ?, customer_name = ?, location = ?, 
+                                phone = ?, product_id = NULL, quantity = 0, 
+                                unit_price = 0.00, total_amount = ?, status = 'delivered', 
+                                vehicle_id = COALESCE(NULLIF(?, 0), vehicle_id),
+                                is_zone_read = 1, zone_read_at = COALESCE(zone_read_at, NOW()), updated_at = NOW() 
+                            WHERE order_id = ? AND zone_id = ?
+                        ");
+                        $upOrd->execute([
+                            $shop_name,
+                            $customer_name ?: $shop_name,
+                            $place,
+                            $phone,
+                            $total_amount,
+                            $assignedVehicleId,
+                            $order_id,
+                            $zone_id
+                        ]);
 
-                    // Determine assigned vehicle ID
-                    $assignedVehicleId = (int)($order['vehicle_id'] ?? 0);
-                    if ($assignedVehicleId <= 0) {
-                        $vChk = $pdo->prepare("SELECT vehicle_id FROM vehicle_loads WHERE order_id = ? ORDER BY id DESC LIMIT 1");
-                        $vChk->execute([$order_id]);
-                        $assignedVehicleId = (int)$vChk->fetchColumn();
-                    }
-                    if ($assignedVehicleId <= 0) {
-                        $assignedVehicleId = (int)($_POST['vehicle_id'] ?? 0);
-                    }
+                        // Delete previous order_items since 0 products were delivered
+                        $pdo->prepare("DELETE FROM order_items WHERE order_id = ?")->execute([$order_id]);
+                        $order_number = $order['order_number'] ?: ('#' . $order_id);
 
-                    // Sync shop phone, location, and match assigned vehicle from master shops table
-                    $shopSync = syncShopOrderDetails($pdo, $shop_name, $phone, $place, $zone_id, $assignedVehicleId);
-                    if (!empty($shopSync['vehicle_id']) && $assignedVehicleId <= 0) {
-                        $assignedVehicleId = (int)$shopSync['vehicle_id'];
-                    }
-                    if (!empty($shopSync['phone']) && empty($phone)) {
-                        $phone = $shopSync['phone'];
-                    }
-                    if (!empty($shopSync['location']) && empty($place)) {
-                        $place = $shopSync['location'];
-                    }
-
-                    if ($assignedVehicleId <= 0 && !empty($availVehicles)) {
-                        $assignedVehicleId = (int)$availVehicles[0]['id'];
-                    }
-                    if ($assignedVehicleId <= 0) {
-                        $vZoneDef = $pdo->prepare("SELECT id FROM vehicles WHERE zone_id = ? AND status != 'inactive' ORDER BY id ASC LIMIT 1");
-                        $vZoneDef->execute([$zone_id]);
-                        $assignedVehicleId = (int)$vZoneDef->fetchColumn();
-                    }
-                    if ($assignedVehicleId <= 0) {
-                        $vAny = $pdo->query("SELECT id FROM vehicles WHERE status != 'inactive' ORDER BY id ASC LIMIT 1");
-                        $assignedVehicleId = (int)$vAny->fetchColumn();
-                    }
-                    if ($assignedVehicleId <= 0) {
-                        $vZoneDef = $pdo->prepare("SELECT id FROM vehicles WHERE zone_id = ? AND status != 'inactive' ORDER BY id ASC LIMIT 1");
-                        $vZoneDef->execute([$zone_id]);
-                        $assignedVehicleId = (int)$vZoneDef->fetchColumn();
-                    }
-                    if ($assignedVehicleId <= 0) {
-                        $vAny = $pdo->query("SELECT id FROM vehicles WHERE status != 'inactive' ORDER BY id ASC LIMIT 1");
-                        $assignedVehicleId = (int)$vAny->fetchColumn();
-                    }
-
-                    if ($assignedVehicleId <= 0) {
-                        throw new Exception("Please assign a delivery vehicle before generating the delivery receipt.");
                     } else {
-                        assignOrderToVehicle($pdo, $order_id, $assignedVehicleId);
+                        // 1. Stock adjustments based on diff between previously booked items and delivered items (including vehicle extras)
+                        $oldItems = getOrderItems($pdo, $order_id);
+                        $oldQtyByPid = [];
+                        $loadedExtraByPid = [];
+                        foreach ($oldItems as $oi) {
+                            $p_id = (int)$oi['product_id'];
+                            if ($p_id > 0) {
+                                $oldQtyByPid[$p_id] = ($oldQtyByPid[$p_id] ?? 0) + (int)$oi['quantity'];
+                            }
+                            if (!empty($oi['is_extra'])) {
+                                $loadedExtraByPid[$p_id] = ($loadedExtraByPid[$p_id] ?? 0) + (int)$oi['quantity'];
+                            }
+                        }
+
+                        $newQtyByPid = [];
+                        $deliveredExtraByPid = [];
+                        foreach ($processed_items as $pi) {
+                            $p_id = (int)$pi['product_id'];
+                            if ($p_id > 0) {
+                                $newQtyByPid[$p_id] = ($newQtyByPid[$p_id] ?? 0) + (int)$pi['quantity'];
+                            }
+                            if (!empty($pi['is_extra'])) {
+                                $deliveredExtraByPid[$p_id] = ($deliveredExtraByPid[$p_id] ?? 0) + (int)$pi['quantity'];
+                            }
+                        }
+
+                        $allProductIds = array_unique(array_merge(array_keys($oldQtyByPid), array_keys($newQtyByPid)));
+                        foreach ($allProductIds as $apid) {
+                            $oldQ = $oldQtyByPid[$apid] ?? 0;
+                            $newQ = $newQtyByPid[$apid] ?? 0;
+                            $diff = $newQ - $oldQ;
+                            if ($diff !== 0) {
+                                adjustProductStock($pdo, $apid, -$diff, "Order #{$order_id} delivered (including vehicle extras)");
+                            }
+                        }
+
+                        // Determine assigned vehicle ID
+                        $assignedVehicleId = (int)($order['vehicle_id'] ?? 0);
+                        if ($assignedVehicleId <= 0) {
+                            $vChk = $pdo->prepare("SELECT vehicle_id FROM vehicle_loads WHERE order_id = ? ORDER BY id DESC LIMIT 1");
+                            $vChk->execute([$order_id]);
+                            $assignedVehicleId = (int)$vChk->fetchColumn();
+                        }
+                        if ($assignedVehicleId <= 0) {
+                            $assignedVehicleId = (int)($_POST['vehicle_id'] ?? 0);
+                        }
+
+                        // Sync shop phone, location, and match assigned vehicle from master shops table
+                        $shopSync = syncShopOrderDetails($pdo, $shop_name, $phone, $place, $zone_id, $assignedVehicleId);
+                        if (!empty($shopSync['vehicle_id']) && $assignedVehicleId <= 0) {
+                            $assignedVehicleId = (int)$shopSync['vehicle_id'];
+                        }
+                        if (!empty($shopSync['phone']) && empty($phone)) {
+                            $phone = $shopSync['phone'];
+                        }
+                        if (!empty($shopSync['location']) && empty($place)) {
+                            $place = $shopSync['location'];
+                        }
+
+                        if ($assignedVehicleId <= 0 && !empty($availVehicles)) {
+                            $assignedVehicleId = (int)$availVehicles[0]['id'];
+                        }
+                        if ($assignedVehicleId <= 0) {
+                            $vZoneDef = $pdo->prepare("SELECT id FROM vehicles WHERE zone_id = ? AND status != 'inactive' ORDER BY id ASC LIMIT 1");
+                            $vZoneDef->execute([$zone_id]);
+                            $assignedVehicleId = (int)$vZoneDef->fetchColumn();
+                        }
+                        if ($assignedVehicleId <= 0) {
+                            $vAny = $pdo->query("SELECT id FROM vehicles WHERE status != 'inactive' ORDER BY id ASC LIMIT 1");
+                            $assignedVehicleId = (int)$vAny->fetchColumn();
+                        }
+
+                        if ($assignedVehicleId <= 0) {
+                            throw new Exception("Please assign a delivery vehicle before generating the delivery receipt.");
+                        } else {
+                            assignOrderToVehicle($pdo, $order_id, $assignedVehicleId);
+                        }
+
+                        // 2. Update orders record
+                        $upOrd = $pdo->prepare("
+                            UPDATE orders SET 
+                                shop_name = ?, customer_name = ?, location = ?, 
+                                phone = ?, product_id = ?, quantity = ?, 
+                                unit_price = ?, total_amount = ?, status = 'delivered', 
+                                vehicle_id = COALESCE(NULLIF(?, 0), vehicle_id),
+                                is_zone_read = 1, zone_read_at = COALESCE(zone_read_at, NOW()), updated_at = NOW() 
+                            WHERE order_id = ? AND zone_id = ?
+                        ");
+                        $upOrd->execute([
+                            $shop_name,
+                            $customer_name ?: $shop_name,
+                            $place,
+                            $phone,
+                            $primary_pid,
+                            $total_delivered_cases,
+                            $primary_rate,
+                            $total_amount,
+                            $assignedVehicleId,
+                            $order_id,
+                            $zone_id
+                        ]);
+
+                        // 3. Sync order_items table with delivered items and rates
+                        $delOi = $pdo->prepare("DELETE FROM order_items WHERE order_id = ?");
+                        $delOi->execute([$order_id]);
+
+                        $insOi = $pdo->prepare("
+                            INSERT INTO order_items (order_id, product_id, quantity, price_at_purchase, is_extra, created_at, updated_at) 
+                            VALUES (?, ?, ?, ?, ?, NOW(), NOW())
+                        ");
+                        foreach ($processed_items as $pi) {
+                            $insOi->execute([$order_id, $pi['product_id'], $pi['quantity'], $pi['rate'], $pi['is_extra']]);
+                        }
+                        $order_number = $order['order_number'] ?: ('#' . $order_id);
                     }
-
-                    // 2. Update orders record
-                    $upOrd = $pdo->prepare("
-                        UPDATE orders SET 
-                            shop_name = ?, customer_name = ?, location = ?, 
-                            phone = ?, product_id = ?, quantity = ?, 
-                            unit_price = ?, total_amount = ?, status = 'delivered', 
-                            vehicle_id = COALESCE(NULLIF(?, 0), vehicle_id),
-                            is_zone_read = 1, zone_read_at = COALESCE(zone_read_at, NOW()), updated_at = NOW() 
-                        WHERE order_id = ? AND zone_id = ?
-                    ");
-                    $upOrd->execute([
-                        $shop_name,
-                        $customer_name ?: $shop_name,
-                        $place,
-                        $phone,
-                        $primary_pid,
-                        $total_delivered_cases,
-                        $primary_rate,
-                        $total_amount,
-                        $assignedVehicleId,
-                        $order_id,
-                        $zone_id
-                    ]);
-
-                    // 3. Sync order_items table with delivered items and rates
-                    $delOi = $pdo->prepare("DELETE FROM order_items WHERE order_id = ?");
-                    $delOi->execute([$order_id]);
-
-                    $insOi = $pdo->prepare("
-                        INSERT INTO order_items (order_id, product_id, quantity, price_at_purchase, is_extra, created_at, updated_at) 
-                        VALUES (?, ?, ?, ?, ?, NOW(), NOW())
-                    ");
-                    foreach ($processed_items as $pi) {
-                        $insOi->execute([$order_id, $pi['product_id'], $pi['quantity'], $pi['rate'], $pi['is_extra']]);
-                    }
-                    $order_number = $order['order_number'] ?: ('#' . $order_id);
 
                 } else {
                     // New direct spot delivery without prior order OR Reorder
-                    $assignedVehicleId = (int)($_POST['vehicle_id'] ?? 0);
+                    if ($is_due_collection_only) {
+                        $assignedVehicleId = (int)($_POST['vehicle_id'] ?? 0);
+                        if (!empty($availVehicleIds) && !in_array($assignedVehicleId, $availVehicleIds, true)) {
+                            $assignedVehicleId = (int)$availVehicles[0]['id'];
+                        } elseif ($assignedVehicleId <= 0 && !empty($availVehicles)) {
+                            $assignedVehicleId = (int)$availVehicles[0]['id'];
+                        }
 
-                    // Sync shop phone, location, and match assigned vehicle from master shops table
-                    $shopSync = syncShopOrderDetails($pdo, $shop_name, $phone, $place, $zone_id, $assignedVehicleId);
-                    if (!empty($shopSync['vehicle_id']) && $assignedVehicleId <= 0) {
-                        $assignedVehicleId = (int)$shopSync['vehicle_id'];
-                    }
-                    if (!empty($shopSync['phone']) && empty($phone)) {
-                        $phone = $shopSync['phone'];
-                    }
-                    if (!empty($shopSync['location']) && empty($place)) {
-                        $place = $shopSync['location'];
-                    }
+                        // Sync shop phone, location
+                        $shopSync = syncShopOrderDetails($pdo, $shop_name, $phone, $place, $zone_id, $assignedVehicleId);
+                        if (!empty($shopSync['phone']) && empty($phone)) $phone = $shopSync['phone'];
+                        if (!empty($shopSync['location']) && empty($place)) $place = $shopSync['location'];
 
-                    if ($assignedVehicleId <= 0 && !empty($availVehicles)) {
-                        $assignedVehicleId = (int)$availVehicles[0]['id'];
-                    }
-                    if ($assignedVehicleId <= 0) {
-                        $vZoneDef = $pdo->prepare("SELECT id FROM vehicles WHERE zone_id = ? AND status != 'inactive' ORDER BY id ASC LIMIT 1");
-                        $vZoneDef->execute([$zone_id]);
-                        $assignedVehicleId = (int)$vZoneDef->fetchColumn();
-                    }
-                    if ($assignedVehicleId <= 0) {
-                        $vAny = $pdo->query("SELECT id FROM vehicles WHERE status != 'inactive' ORDER BY id ASC LIMIT 1");
-                        $assignedVehicleId = (int)$vAny->fetchColumn();
-                    }
+                        $maxOrdStmt = $pdo->query("SELECT MAX(order_id) FROM orders");
+                        $nextOrdId = (int)$maxOrdStmt->fetchColumn() + 1;
+                        $order_number = '' . str_pad($nextOrdId, 3, '0', STR_PAD_LEFT);
 
-                    $maxOrdStmt = $pdo->query("SELECT MAX(order_id) FROM orders");
-                    $nextOrdId = (int)$maxOrdStmt->fetchColumn() + 1;
-                    $order_number = '' . str_pad($nextOrdId, 3, '0', STR_PAD_LEFT);
+                        $insOrd = $pdo->prepare("
+                            INSERT INTO orders (
+                                order_number, zone_id, vehicle_id, shop_name, customer_name, location, 
+                                phone, product_id, quantity, unit_price, discount, 
+                                total_amount, status, is_zone_read, is_reorder, parent_order_id, created_at, updated_at
+                            ) VALUES (
+                                ?, ?, ?, ?, ?, ?, 
+                                ?, NULL, 0, 0.00, 0.00, 
+                                ?, 'delivered', 1, 0, NULL, NOW(), NOW()
+                            )
+                        ");
+                        $insOrd->execute([
+                            $order_number,
+                            $zone_id,
+                            $assignedVehicleId > 0 ? $assignedVehicleId : null,
+                            $shop_name,
+                            $customer_name ?: $shop_name,
+                            $place,
+                            $phone,
+                            $total_amount
+                        ]);
+                        $order_id = (int)$pdo->lastInsertId();
 
-                    $is_reorder_post = ($reorder_id > 0 || !empty($_POST['is_reorder'])) ? 1 : 0;
-                    $parent_order_id_post = ($reorder_id > 0) ? $reorder_id : (!empty($_POST['parent_order_id']) ? (int)$_POST['parent_order_id'] : null);
+                    } else {
+                        $assignedVehicleId = (int)($_POST['vehicle_id'] ?? 0);
+                        if (!empty($availVehicleIds) && !in_array($assignedVehicleId, $availVehicleIds, true)) {
+                            $assignedVehicleId = (int)$availVehicles[0]['id'];
+                        }
 
-                    $insOrd = $pdo->prepare("
-                        INSERT INTO orders (
-                            order_number, zone_id, vehicle_id, shop_name, customer_name, location, 
-                            phone, product_id, quantity, unit_price, discount, 
-                            total_amount, status, is_zone_read, is_reorder, parent_order_id, created_at, updated_at
-                        ) VALUES (
-                            ?, ?, ?, ?, ?, ?, 
-                            ?, ?, ?, ?, ?, 
-                            ?, 'delivered', 1, ?, ?, NOW(), NOW()
-                        )
-                    ");
-                    $insOrd->execute([
-                        $order_number,
-                        $zone_id,
-                        $assignedVehicleId > 0 ? $assignedVehicleId : null,
-                        $shop_name,
-                        $customer_name ?: $shop_name,
-                        $place,
-                        $phone,
-                        $primary_pid,
-                        $total_delivered_cases,
-                        $primary_rate,
-                        $discount,
-                        $total_amount,
-                        $is_reorder_post,
-                        $parent_order_id_post
-                    ]);
-                    $order_id = (int)$pdo->lastInsertId();
+                        // Sync shop phone, location, and match assigned vehicle from master shops table
+                        $shopSync = syncShopOrderDetails($pdo, $shop_name, $phone, $place, $zone_id, $assignedVehicleId);
+                        if (!empty($shopSync['vehicle_id']) && $assignedVehicleId <= 0) {
+                            $assignedVehicleId = (int)$shopSync['vehicle_id'];
+                        }
+                        if (!empty($shopSync['phone']) && empty($phone)) {
+                            $phone = $shopSync['phone'];
+                        }
+                        if (!empty($shopSync['location']) && empty($place)) {
+                            $place = $shopSync['location'];
+                        }
 
-                    // Insert into order_items & deduct warehouse stock
-                    $insOi = $pdo->prepare("
-                        INSERT INTO order_items (order_id, product_id, quantity, price_at_purchase, is_extra, created_at, updated_at) 
-                        VALUES (?, ?, ?, ?, ?, NOW(), NOW())
-                    ");
-                    $deliveredExtraByPid = [];
-                    foreach ($processed_items as $pi) {
-                        adjustProductStock($pdo, $pi['product_id'], -$pi['quantity'], ($is_reorder_post ? "Reorder #{$order_number}" : "Direct delivery #{$order_number}"));
-                        $insOi->execute([$order_id, $pi['product_id'], $pi['quantity'], $pi['rate'], $pi['is_extra']]);
-                        $p_id = (int)$pi['product_id'];
-                        // In direct spot delivery, delivered products from vehicle storage are tracked for vehicle deduction
-                        $deliveredExtraByPid[$p_id] = ($deliveredExtraByPid[$p_id] ?? 0) + (int)$pi['quantity'];
+                        if ($assignedVehicleId <= 0 && !empty($availVehicles)) {
+                            $assignedVehicleId = (int)$availVehicles[0]['id'];
+                        }
+                        if ($assignedVehicleId <= 0) {
+                            $vZoneDef = $pdo->prepare("SELECT id FROM vehicles WHERE zone_id = ? AND status != 'inactive' ORDER BY id ASC LIMIT 1");
+                            $vZoneDef->execute([$zone_id]);
+                            $assignedVehicleId = (int)$vZoneDef->fetchColumn();
+                        }
+                        if ($assignedVehicleId <= 0) {
+                            $vAny = $pdo->query("SELECT id FROM vehicles WHERE status != 'inactive' ORDER BY id ASC LIMIT 1");
+                            $assignedVehicleId = (int)$vAny->fetchColumn();
+                        }
+
+                        $maxOrdStmt = $pdo->query("SELECT MAX(order_id) FROM orders");
+                        $nextOrdId = (int)$maxOrdStmt->fetchColumn() + 1;
+                        $order_number = '' . str_pad($nextOrdId, 3, '0', STR_PAD_LEFT);
+
+                        $is_reorder_post = ($reorder_id > 0 || !empty($_POST['is_reorder'])) ? 1 : 0;
+                        $parent_order_id_post = ($reorder_id > 0) ? $reorder_id : (!empty($_POST['parent_order_id']) ? (int)$_POST['parent_order_id'] : null);
+
+                        $insOrd = $pdo->prepare("
+                            INSERT INTO orders (
+                                order_number, zone_id, vehicle_id, shop_name, customer_name, location, 
+                                phone, product_id, quantity, unit_price, discount, 
+                                total_amount, status, is_zone_read, is_reorder, parent_order_id, created_at, updated_at
+                            ) VALUES (
+                                ?, ?, ?, ?, ?, ?, 
+                                ?, ?, ?, ?, ?, 
+                                ?, 'delivered', 1, ?, ?, NOW(), NOW()
+                            )
+                        ");
+                        $insOrd->execute([
+                            $order_number,
+                            $zone_id,
+                            $assignedVehicleId > 0 ? $assignedVehicleId : null,
+                            $shop_name,
+                            $customer_name ?: $shop_name,
+                            $place,
+                            $phone,
+                            $primary_pid,
+                            $total_delivered_cases,
+                            $primary_rate,
+                            $discount,
+                            $total_amount,
+                            $is_reorder_post,
+                            $parent_order_id_post
+                        ]);
+                        $order_id = (int)$pdo->lastInsertId();
+
+                        // Insert into order_items & deduct warehouse stock
+                        $insOi = $pdo->prepare("
+                            INSERT INTO order_items (order_id, product_id, quantity, price_at_purchase, is_extra, created_at, updated_at) 
+                            VALUES (?, ?, ?, ?, ?, NOW(), NOW())
+                        ");
+                        $deliveredExtraByPid = [];
+                        foreach ($processed_items as $pi) {
+                            adjustProductStock($pdo, $pi['product_id'], -$pi['quantity'], ($is_reorder_post ? "Reorder #{$order_number}" : "Direct delivery #{$order_number}"));
+                            $insOi->execute([$order_id, $pi['product_id'], $pi['quantity'], $pi['rate'], $pi['is_extra']]);
+                            $p_id = (int)$pi['product_id'];
+                            // In direct spot delivery, delivered products from vehicle storage are tracked for vehicle deduction
+                            $deliveredExtraByPid[$p_id] = ($deliveredExtraByPid[$p_id] ?? 0) + (int)$pi['quantity'];
+                        }
                     }
                 }
 
                 // 4. Retain any unbilled / remaining extra loaded cases on vehicle as active storage
-                if ($assignedVehicleId > 0) {
+                if (!$is_due_collection_only && $assignedVehicleId > 0) {
                     // Deactivate previous order load entries so delivered regular cases leave the vehicle
                     $pdo->prepare("UPDATE vehicle_loads SET is_active = 0 WHERE order_id = ?")->execute([$order_id]);
 
-                    // Reconcile pre-existing vehicle storage for products that were available in vehicle
+                    // Reconcile pre-existing vehicle storage for products that were available in vehicle (buffer stock only)
                     $prevVl = $pdo->prepare("
                         SELECT product_id, SUM(cases_loaded) as qty 
                         FROM vehicle_loads 
                         WHERE vehicle_id = ? 
                           AND is_active = 1 
                           AND product_id IS NOT NULL 
-                          AND (order_id IS NULL OR order_id != ?) 
+                          AND order_id IS NULL 
                         GROUP BY product_id
                     ");
-                    $prevVl->execute([$assignedVehicleId, $order_id]);
+                    $prevVl->execute([$assignedVehicleId]);
                     $prevVlRows = $prevVl->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
                     $loadedStorageByPid = [];
@@ -638,9 +782,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['generate_receipt'])) 
                             WHERE vehicle_id = ? 
                               AND is_active = 1 
                               AND product_id = ? 
-                              AND (order_id IS NULL OR order_id != ?)
+                              AND order_id IS NULL
                         ");
-                        $deactStmt->execute([$assignedVehicleId, $epid, $order_id]);
+                        $deactStmt->execute([$assignedVehicleId, $epid]);
 
                         // Retain remaining cases in vehicle storage
                         if ($remainingCases > 0) {
@@ -667,10 +811,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['generate_receipt'])) 
                 $bill_number = generateBillNumber($pdo);
 
                 // Handle clearance of prior pending dues if selected
-                $collect_prior_due = isset($_POST['collect_prior_due']);
-                $prior_due_amount  = $collect_prior_due ? (float)($_POST['prior_due_amount'] ?? 0) : 0.00;
-                $prior_due_mode    = trim($_POST['prior_due_mode'] ?? 'cash');
-
                 $settleResult = null;
                 if ($collect_prior_due && $prior_due_amount > 0) {
                     $settleResult = settleShopPriorDuesFifo(
@@ -679,36 +819,64 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['generate_receipt'])) 
                         $phone,
                         $prior_due_amount,
                         $prior_due_mode,
-                        "Cleared during delivery of Bill #{$bill_number} (Order #{$order_number})",
+                        "Cleared on Bill #{$bill_number} (Order #{$order_number})",
                         $order_id,
                         $zone_id
                     );
                 }
 
+                if ($manual_prior_due > 0 && $manual_prior_due_action === 'collect_now') {
+                    try {
+                        $cleanShopLower = strtolower($shop_name);
+                        $phone10 = substr(preg_replace('/[^0-9]/', '', $phone), -10);
+                        $upSh = $pdo->prepare("UPDATE shops SET pending_amount = GREATEST(0, pending_amount - ?) WHERE TRIM(LOWER(shop_name)) = ? OR RIGHT(REGEXP_REPLACE(phone, '[^0-9]', ''), 10) = ?");
+                        $upSh->execute([$manual_prior_due, $cleanShopLower, $phone10]);
+                    } catch (Exception $e) {}
+                }
+
                 $receipt_notes = trim($_POST['receipt_notes'] ?? '');
-                if (!empty($settleResult['total_cleared']) && $settleResult['total_cleared'] > 0) {
-                    $realBills = [];
+                if ($is_due_collection_only) {
+                    $modeLabel = ($prior_due_mode === 'upi' || $prior_due_mode === 'online') ? 'Online Payment' : 'Cash';
+                    $clearedSummary = "Due Clearance Receipt: Cleared Rs. " . number_format($effective_cleared_due, 2) . " earlier due ({$modeLabel})";
                     if (!empty($settleResult['cleared_receipts'])) {
+                        $realBills = [];
                         foreach ($settleResult['cleared_receipts'] as $c) {
                             $bNum = trim($c['bill_number'] ?? '');
                             if (!empty($bNum) && strtoupper($bNum) !== 'OPENING-BALANCE') {
                                 $realBills[] = 'Bill #' . $bNum;
                             }
                         }
+                        if (!empty($realBills)) {
+                            $clearedSummary .= " from " . implode(', ', $realBills);
+                        }
                     }
-                    $fromClause = !empty($realBills) ? (" from " . implode(', ', $realBills)) : "";
-                    $modeLabel = ($prior_due_mode === 'upi') ? 'Online Payment' : 'Cash';
-                    $clearedSummary = "Cleared Rs. " . number_format($settleResult['total_cleared'], 2) . " earlier due ({$modeLabel})" . $fromClause;
-                    $receipt_notes = !empty($receipt_notes) ? ($receipt_notes . " | " . $clearedSummary) : $clearedSummary;
-                }
+                    $receipt_notes = !empty($receipt_notes) ? ($clearedSummary . " | " . $receipt_notes) : $clearedSummary;
+                } else {
+                    if (!empty($settleResult['total_cleared']) && $settleResult['total_cleared'] > 0) {
+                        $realBills = [];
+                        if (!empty($settleResult['cleared_receipts'])) {
+                            foreach ($settleResult['cleared_receipts'] as $c) {
+                                $bNum = trim($c['bill_number'] ?? '');
+                                if (!empty($bNum) && strtoupper($bNum) !== 'OPENING-BALANCE') {
+                                    $realBills[] = 'Bill #' . $bNum;
+                                }
+                            }
+                        }
+                        $fromClause = !empty($realBills) ? (" from " . implode(', ', $realBills)) : "";
+                        $modeLabel = ($prior_due_mode === 'upi') ? 'Online Payment' : 'Cash';
+                        $clearedSummary = "Cleared Rs. " . number_format($settleResult['total_cleared'], 2) . " earlier due ({$modeLabel})" . $fromClause;
+                        $receipt_notes = !empty($receipt_notes) ? ($receipt_notes . " | " . $clearedSummary) : $clearedSummary;
+                    }
 
-                if ($manual_prior_due > 0) {
-                    if ($manual_prior_due_action === 'carry_forward') {
-                        $cNote = "Includes ₹" . number_format($manual_prior_due, 2) . " earlier balance carried forward" . ($manual_prior_due_notes ? " ({$manual_prior_due_notes})" : "");
-                        $receipt_notes = !empty($receipt_notes) ? ($receipt_notes . " | " . $cNote) : $cNote;
-                    } elseif ($manual_prior_due_action === 'collect_now') {
-                        $cNote = "Collected ₹" . number_format($manual_prior_due, 2) . " earlier shop due" . ($manual_prior_due_notes ? " ({$manual_prior_due_notes})" : "");
-                        $receipt_notes = !empty($receipt_notes) ? ($receipt_notes . " | " . $cNote) : $cNote;
+                    if ($manual_prior_due > 0) {
+                        if ($manual_prior_due_action === 'carry_forward') {
+                            $cNote = "Includes ₹" . number_format($manual_prior_due, 2) . " earlier balance carried forward" . ($manual_prior_due_notes ? " ({$manual_prior_due_notes})" : "");
+                            $receipt_notes = !empty($receipt_notes) ? ($receipt_notes . " | " . $cNote) : $cNote;
+                        } elseif ($manual_prior_due_action === 'collect_now') {
+                            $mModeLabel = ($manual_prior_due_mode === 'upi') ? 'Online Payment' : 'Cash';
+                            $cNote = "Collected ₹" . number_format($manual_prior_due, 2) . " earlier shop due ({$mModeLabel})" . ($manual_prior_due_notes ? " ({$manual_prior_due_notes})" : "");
+                            $receipt_notes = !empty($receipt_notes) ? ($receipt_notes . " | " . $cNote) : $cNote;
+                        }
                     }
                 }
 
@@ -1845,13 +2013,39 @@ foreach ($vehicle_products as $vPid => $vp) {
                     <input type="text" name="customer_name" id="customer_name" class="form-control" value="<?= htmlspecialchars($_POST['customer_name'] ?? $def_customer) ?>" placeholder="e.g. Ramesh">
                 </div> -->
 
+                <!-- Receipt Purpose Toggle: Product Delivery vs Clear Due Only -->
+                <div class="receipt-purpose-box" style="background: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 12px; padding: 12px 14px; margin-bottom: 18px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                        <span style="font-size: 13px; font-weight: 800; color: #1e293b; display: inline-flex; align-items: center; gap: 6px;">
+                            <i class='bx bx-check-shield' style="color: #2563eb; font-size: 18px;"></i> Receipt Type:
+                        </span>
+                        <span id="dueOnlyBadge" style="display: none; background: #fee2e2; color: #b91c1c; font-size: 11px; font-weight: 800; padding: 2px 8px; border-radius: 9999px; border: 1px solid #fecaca;">
+                            0 Cases &bull; Due Payment Only
+                        </span>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                        <label id="btnModeDelivery" class="receipt-mode-btn" onclick="toggleReceiptPurpose(0)" style="display: flex; align-items: center; justify-content: center; gap: 8px; padding: 10px 12px; border-radius: 8px; cursor: pointer; border: 2px solid #2563eb; background: #eff6ff; color: #1e40af; font-weight: 700; font-size: 13px; transition: all 0.2s;">
+                            <input type="radio" name="is_due_collection_only" value="0" id="radioModeDelivery" <?= (empty($_POST['is_due_collection_only'])) ? 'checked' : '' ?> onchange="toggleReceiptPurpose(0)" style="accent-color: #2563eb;">
+                            <span>💧 Product Delivery</span>
+                        </label>
+                        <label id="btnModeDueOnly" class="receipt-mode-btn" onclick="toggleReceiptPurpose(1)" style="display: flex; align-items: center; justify-content: center; gap: 8px; padding: 10px 12px; border-radius: 8px; cursor: pointer; border: 2px solid #cbd5e1; background: #ffffff; color: #475569; font-weight: 700; font-size: 13px; transition: all 0.2s;">
+                            <input type="radio" name="is_due_collection_only" value="1" id="radioModeDueOnly" <?= (!empty($_POST['is_due_collection_only']) && (int)$_POST['is_due_collection_only'] === 1) ? 'checked' : '' ?> onchange="toggleReceiptPurpose(1)" style="accent-color: #dc2626;">
+                            <span>🏷️ Clear Due</span>
+                        </label>
+                    </div>
+                    <!-- <div id="dueModeNotice" style="display: none; margin-top: 10px; background: #fef2f2; border: 1px dashed #fca5a5; border-radius: 8px; padding: 8px 12px; font-size: 12px; color: #991b1b; align-items: center; gap: 6px;">
+                        <i class='bx bx-info-circle' style="font-size: 16px; flex-shrink: 0;"></i>
+                        <span><strong>Due Clearance Mode Active:</strong> 0 product cases will be delivered. Vehicle loads and warehouse inventory will remain unchanged.</span>
+                    </div> -->
+                </div>
+
                 <!-- Product & Quantity -->
-                <div class="section-hdr" style="margin-bottom: 10px;">
+                <div class="section-hdr" id="productHeaderSection" style="margin-bottom: 10px;">
                     <i class='bx bx-box' style="color: #059669;"></i> Delivered Items &amp; Quantity (<span id="regularCountDisplay"><?= count(array_filter($grid_products, fn($p) => (int)$p['quantity'] > 0)) ?> <?= count(array_filter($grid_products, fn($p) => (int)$p['quantity'] > 0)) === 1 ? 'Product' : 'Products' ?></span>)
                 </div>
 
                 <!-- 3-Column Vehicle Products Grid -->
-                <div class="vehicle-product-selector-box" style="background: #ffffff; border: 1.5px solid #bfdbfe; border-radius: var(--radius-md); padding: 14px; margin-bottom: 16px; box-shadow: 0 2px 4px rgba(37,99,235,0.06);">
+                <div class="vehicle-product-selector-box" id="vehicleProductBox" style="background: #ffffff; border: 1.5px solid #bfdbfe; border-radius: var(--radius-md); padding: 14px; margin-bottom: 16px; box-shadow: 0 2px 4px rgba(37,99,235,0.06); transition: all 0.2s ease;">
                   
 
                     <!-- 3-Column Grid Headers -->
@@ -1998,7 +2192,7 @@ foreach ($vehicle_products as $vPid => $vp) {
                     <div style="background: #ffffff; border: 1.5px solid #fed7d7; border-radius: 8px; padding: 12px;">
                         <label class="chk-label" for="collect_prior_due" style="color: #0f172a;">
                             <input type="checkbox" name="collect_prior_due" id="collect_prior_due" class="chk-input" <?= isset($_POST['collect_prior_due']) ? 'checked' : '' ?> onchange="togglePriorDueBox(this.checked)">
-                            <span>Clear Earlier Due with this Delivery</span>
+                            <span id="lblCollectPriorDue">Clear Earlier Due with this Delivery</span>
                         </label>
 
                         <div id="priorDueInputFields" style="<?= isset($_POST['collect_prior_due']) ? 'display: block;' : 'display: none;' ?> margin-top: 10px; border-top: 1px dashed #e2e8f0; padding-top: 10px;">
@@ -2079,6 +2273,21 @@ foreach ($vehicle_products as $vPid => $vp) {
 
                         <div style="margin-top: 8px;">
                             <input type="text" name="manual_prior_due_notes" id="manual_prior_due_notes" class="form-control" placeholder="Optional reference note (e.g. Old ledger balance, unpaid order last week)" style="font-size: 12px;" value="<?= htmlspecialchars($_POST['manual_prior_due_notes'] ?? '') ?>">
+                        </div>
+
+                        <div id="manualPriorDuePaymentModeBox" style="margin-top: 10px; padding-top: 8px; border-top: 1px dashed #fecaca;">
+                            <label class="form-label" style="font-size: 11px; margin-bottom: 4px; font-weight: 700; color: #7f1d1d;">Payment Mode:</label>
+                            <div style="display: flex; gap: 16px; font-size: 13px; font-weight: 700;">
+                                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                                    <input type="checkbox" name="manual_prior_due_mode_cash" id="manual_prior_due_mode_cash" value="cash" class="chk-input" <?= (($_POST['manual_prior_due_mode'] ?? 'cash') === 'cash' || !isset($_POST['manual_prior_due_mode_upi'])) ? 'checked' : '' ?> onchange="onManualPriorDueModeChange('cash')" style="accent-color: #2563eb;">
+                                    <span>Cash</span>
+                                </label>
+                                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                                    <input type="checkbox" name="manual_prior_due_mode_upi" id="manual_prior_due_mode_upi" value="upi" class="chk-input" <?= (($_POST['manual_prior_due_mode'] ?? '') === 'upi' || isset($_POST['manual_prior_due_mode_upi'])) ? 'checked' : '' ?> onchange="onManualPriorDueModeChange('upi')" style="accent-color: #2563eb;">
+                                    <span>Online Payment</span>
+                                </label>
+                                <input type="hidden" name="manual_prior_due_mode" id="manual_prior_due_mode" value="<?= htmlspecialchars($_POST['manual_prior_due_mode'] ?? 'cash') ?>">
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -2719,7 +2928,11 @@ foreach ($vehicle_products as $vPid => $vp) {
 
             // Prior Due Payment Method separation
             const priorModeEl = document.querySelector('input[name="prior_due_mode"]:checked');
-            const priorDueMode = priorModeEl ? priorModeEl.value.toLowerCase() : 'cash';
+            let priorDueMode = priorModeEl ? priorModeEl.value.toLowerCase() : 'cash';
+            const manualModeEl = document.getElementById('manual_prior_due_mode');
+            if (manualCleared > 0 && dbPriorCleared <= 0 && manualModeEl) {
+                priorDueMode = manualModeEl.value.toLowerCase();
+            }
             const isPriorDueUpi = (priorDueMode === 'upi');
 
             const badgePriorMethod = document.getElementById('badgePriorDueMethod');
@@ -2806,22 +3019,42 @@ foreach ($vehicle_products as $vPid => $vp) {
                 }
             }
 
-            // Payment Sum Validation
-            if (paidSum > total + 0.01) {
+            // Payment Sum & Due Mode Validation
+            const radioModeDueOnly = document.getElementById('radioModeDueOnly');
+            const isDueOnly = (radioModeDueOnly && radioModeDueOnly.checked) || (totalCases <= 0 && totalPriorCleared > 0);
+
+            if (paidSum > total + 0.01 && !isDueOnly) {
                 liveError.style.display = 'block';
                 liveError.textContent = `Payment Error: Cash (₹${cashVal.toFixed(2)}) + Credit (₹${creditVal.toFixed(2)}) exceeds Total (₹${total.toFixed(2)})!`;
                 submitBtn.disabled = true;
                 submitBtn.style.opacity = '0.5';
                 submitBtn.style.cursor = 'not-allowed';
-            } else if (enableDue.checked && dueVal > total + 0.01) {
+            } else if (enableDue.checked && dueVal > total + 0.01 && !isDueOnly) {
                 liveError.style.display = 'block';
                 liveError.textContent = `Due amount (₹${dueVal.toFixed(2)}) cannot exceed Net Total (₹${total.toFixed(2)})!`;
                 submitBtn.disabled = true;
                 submitBtn.style.opacity = '0.5';
                 submitBtn.style.cursor = 'not-allowed';
+            } else if (isDueOnly) {
+                if (totalPriorCleared <= 0) {
+                    liveError.style.display = 'block';
+                    liveError.textContent = `Due Clearance Mode: Please specify the past due amount to clear below.`;
+                    submitBtn.disabled = true;
+                    submitBtn.style.opacity = '0.5';
+                    submitBtn.style.cursor = 'not-allowed';
+                } else {
+                    liveError.style.display = 'none';
+                    submitBtn.disabled = false;
+                    submitBtn.style.opacity = '1';
+                    submitBtn.style.cursor = 'pointer';
+                    const sSpan = submitBtn.querySelector('span');
+                    if (sSpan) {
+                        sSpan.innerHTML = `Generate Due Clearance Receipt (₹${totalPriorCleared.toFixed(2)})`;
+                    }
+                }
             } else if (totalCases <= 0) {
                 liveError.style.display = 'block';
-                liveError.textContent = `Please specify at least 1 delivered case.`;
+                liveError.textContent = `Please specify at least 1 delivered case, or select 'Clear Due Only'.`;
                 submitBtn.disabled = true;
                 submitBtn.style.opacity = '0.5';
                 submitBtn.style.cursor = 'not-allowed';
@@ -2830,12 +3063,123 @@ foreach ($vehicle_products as $vPid => $vp) {
                 submitBtn.disabled = false;
                 submitBtn.style.opacity = '1';
                 submitBtn.style.cursor = 'pointer';
+                const sSpan = submitBtn.querySelector('span');
+                if (sSpan) {
+                    sSpan.innerHTML = `<?= ($reorder_id > 0) ? 'Generate Reorder Bill &amp; Complete Delivery' : 'Generate Bill &amp; Complete Delivery' ?>`;
+                }
             }
+        }
+
+        function toggleReceiptPurpose(mode) {
+            const isDueOnly = (mode === 1);
+            const radioDueOnly = document.getElementById('radioModeDueOnly');
+            const radioDelivery = document.getElementById('radioModeDelivery');
+            const btnDueOnly = document.getElementById('btnModeDueOnly');
+            const btnDelivery = document.getElementById('btnModeDelivery');
+            const badgeDueOnly = document.getElementById('dueOnlyBadge');
+            const noticeDueMode = document.getElementById('dueModeNotice');
+            const vehicleProductBox = document.getElementById('vehicleProductBox');
+            const lblCollectPriorDue = document.getElementById('lblCollectPriorDue');
+
+            if (radioDueOnly) radioDueOnly.checked = isDueOnly;
+            if (radioDelivery) radioDelivery.checked = !isDueOnly;
+
+            if (isDueOnly) {
+                if (btnDueOnly) {
+                    btnDueOnly.style.borderColor = '#dc2626';
+                    btnDueOnly.style.background = '#fef2f2';
+                    btnDueOnly.style.color = '#991b1b';
+                }
+                if (btnDelivery) {
+                    btnDelivery.style.borderColor = '#cbd5e1';
+                    btnDelivery.style.background = '#ffffff';
+                    btnDelivery.style.color = '#475569';
+                }
+                if (badgeDueOnly) badgeDueOnly.style.display = 'inline-block';
+                if (noticeDueMode) noticeDueMode.style.display = 'flex';
+                if (lblCollectPriorDue) lblCollectPriorDue.textContent = 'Clear Past Due Now';
+
+                // Save quantities and zero out item counts
+                document.querySelectorAll('.item-qty-input').forEach(inp => {
+                    if (inp.value && inp.value !== '0') {
+                        inp.dataset.prevQty = inp.value;
+                    }
+                    inp.value = '0';
+                });
+
+                if (vehicleProductBox) {
+                    vehicleProductBox.style.display = 'none';
+                }
+                const productHeader = document.getElementById('productHeaderSection');
+                if (productHeader) {
+                    productHeader.style.display = 'none';
+                }
+
+                // Turn on prior due collection
+                const chkPrior = document.getElementById('collect_prior_due');
+                if (chkPrior) {
+                    chkPrior.checked = true;
+                    togglePriorDueBox(true);
+                }
+
+                // If DB prior due > 0, set full due
+                const secPrior = document.getElementById('priorDueSection');
+                const dbDue = secPrior ? (parseFloat(secPrior.dataset.totalDue) || 0) : 0;
+                if (dbDue > 0) {
+                    secPrior.style.display = 'block';
+                    setPriorDueFull();
+                } else {
+                    // Open manual prior due card if no DB dues found
+                    const card = document.getElementById('manualPriorDueCard');
+                    if (card && (card.style.display === 'none' || !card.style.display)) {
+                        toggleManualPriorDueCard();
+                    }
+                    const actSel = document.getElementById('manual_prior_due_action');
+                    if (actSel) actSel.value = 'collect_now';
+                }
+
+            } else {
+                if (btnDelivery) {
+                    btnDelivery.style.borderColor = '#2563eb';
+                    btnDelivery.style.background = '#eff6ff';
+                    btnDelivery.style.color = '#1e40af';
+                }
+                if (btnDueOnly) {
+                    btnDueOnly.style.borderColor = '#cbd5e1';
+                    btnDueOnly.style.background = '#ffffff';
+                    btnDueOnly.style.color = '#475569';
+                }
+                if (badgeDueOnly) badgeDueOnly.style.display = 'none';
+                if (noticeDueMode) noticeDueMode.style.display = 'none';
+                if (lblCollectPriorDue) lblCollectPriorDue.textContent = 'Clear Earlier Due with this Delivery';
+
+                // Restore previous quantities
+                document.querySelectorAll('.item-qty-input').forEach(inp => {
+                    if (inp.dataset.prevQty !== undefined && inp.dataset.prevQty !== '') {
+                        inp.value = inp.dataset.prevQty;
+                    }
+                });
+
+                if (vehicleProductBox) {
+                    vehicleProductBox.style.display = 'block';
+                    vehicleProductBox.style.opacity = '1';
+                    vehicleProductBox.style.pointerEvents = 'auto';
+                }
+                const productHeader = document.getElementById('productHeaderSection');
+                if (productHeader) {
+                    productHeader.style.display = 'flex';
+                }
+            }
+
+            recalculate();
         }
 
         function togglePriorDueBox(checked) {
             const box = document.getElementById('priorDueInputFields');
             const amountInput = document.getElementById('prior_due_amount');
+            const radioDueOnly = document.getElementById('radioModeDueOnly');
+            const vehicleProductBox = document.getElementById('vehicleProductBox');
+            const productHeader = document.getElementById('productHeaderSection');
 
             if (box) {
                 box.style.display = checked ? 'block' : 'none';
@@ -2844,6 +3188,19 @@ foreach ($vehicle_products as $vPid => $vp) {
             if (amountInput) {
                 amountInput.disabled = !checked;
                 amountInput.required = checked;
+            }
+
+            if (checked) {
+                const { totalCases } = calculateValues();
+                if (totalCases <= 0 && radioDueOnly && !radioDueOnly.checked) {
+                    toggleReceiptPurpose(1);
+                    return;
+                }
+            }
+
+            if (radioDueOnly && radioDueOnly.checked) {
+                if (vehicleProductBox) vehicleProductBox.style.display = 'none';
+                if (productHeader) productHeader.style.display = 'none';
             }
 
             recalculate();
@@ -2883,6 +3240,31 @@ foreach ($vehicle_products as $vPid => $vp) {
             if (notes) notes.value = '';
             if (card) card.style.display = 'none';
             if (btnText) btnText.textContent = 'Enter previous pending amount';
+            recalculate();
+        }
+
+        function onManualPriorDueModeChange(mode) {
+            const chkCash = document.getElementById('manual_prior_due_mode_cash');
+            const chkUpi = document.getElementById('manual_prior_due_mode_upi');
+            const hiddenMode = document.getElementById('manual_prior_due_mode');
+
+            if (mode === 'cash') {
+                if (chkCash && chkCash.checked) {
+                    if (chkUpi) chkUpi.checked = false;
+                    if (hiddenMode) hiddenMode.value = 'cash';
+                } else {
+                    if (chkUpi) chkUpi.checked = true;
+                    if (hiddenMode) hiddenMode.value = 'upi';
+                }
+            } else if (mode === 'upi') {
+                if (chkUpi && chkUpi.checked) {
+                    if (chkCash) chkCash.checked = false;
+                    if (hiddenMode) hiddenMode.value = 'upi';
+                } else {
+                    if (chkCash) chkCash.checked = true;
+                    if (hiddenMode) hiddenMode.value = 'cash';
+                }
+            }
             recalculate();
         }
 
@@ -3102,10 +3484,23 @@ foreach ($vehicle_products as $vPid => $vp) {
             if (clearBtn) clearBtn.style.display = 'inline-flex';
 
             if (shop.vehicle_id && parseInt(shop.vehicle_id) > 0) {
-                const vehInp = document.getElementById('assignedVehicleIdInput');
-                if (vehInp) vehInp.value = shop.vehicle_id;
+                const sVeh = parseInt(shop.vehicle_id);
                 const vehSel = document.getElementById('vehicleSelect');
-                if (vehSel) vehSel.value = shop.vehicle_id;
+                const vehInp = document.getElementById('assignedVehicleIdInput');
+                // Only switch vehicle if the shop's default vehicle is actually assigned to this zone
+                if (vehSel) {
+                    let exists = false;
+                    for (let i = 0; i < vehSel.options.length; i++) {
+                        if (parseInt(vehSel.options[i].value) === sVeh) {
+                            exists = true;
+                            break;
+                        }
+                    }
+                    if (exists) {
+                        vehSel.value = sVeh;
+                        if (vehInp) vehInp.value = sVeh;
+                    }
+                }
             }
 
             // 0ms INSTANT DISPLAY of known prior due from memory
@@ -3198,10 +3593,22 @@ foreach ($vehicle_products as $vPid => $vp) {
                         if (placeInp && match.location && !placeInp.value) placeInp.value = match.location;
                         if (phoneInp && match.phone && !phoneInp.value) phoneInp.value = match.phone;
                         if (match.vehicle_id && parseInt(match.vehicle_id) > 0) {
-                            const vehInp = document.getElementById('assignedVehicleIdInput');
-                            if (vehInp && !vehInp.value) vehInp.value = match.vehicle_id;
+                            const sVeh = parseInt(match.vehicle_id);
                             const vehSel = document.getElementById('vehicleSelect');
-                            if (vehSel && !vehSel.value) vehSel.value = match.vehicle_id;
+                            const vehInp = document.getElementById('assignedVehicleIdInput');
+                            if (vehSel) {
+                                let exists = false;
+                                for (let i = 0; i < vehSel.options.length; i++) {
+                                    if (parseInt(vehSel.options[i].value) === sVeh) {
+                                        exists = true;
+                                        break;
+                                    }
+                                }
+                                if (exists) {
+                                    vehSel.value = sVeh;
+                                    if (vehInp) vehInp.value = sVeh;
+                                }
+                            }
                         }
                         const dueAmt = parseFloat(match.pending_amount || 0);
                         if (dueAmt > 0) {
@@ -3421,6 +3828,12 @@ foreach ($vehicle_products as $vPid => $vp) {
             const { total } = calculateValues();
             cashInput.value = total.toFixed(2);
         }
+        // If loaded with Due Clearance Only active, initialize purpose toggle
+        const radioModeDueOnlyInit = document.getElementById('radioModeDueOnly');
+        if (radioModeDueOnlyInit && radioModeDueOnlyInit.checked) {
+            toggleReceiptPurpose(1);
+        }
+
         recalculate();
         syncDropdownWithOptions();
     </script>
@@ -3494,8 +3907,23 @@ foreach ($vehicle_products as $vPid => $vp) {
                 }
             });
 
-            if (items.length === 0) {
-                alert("Please select at least one item to deliver.");
+            const radioDueOnly = document.getElementById('radioModeDueOnly');
+            const isDueOnly = (radioDueOnly && radioDueOnly.checked) || (items.length === 0);
+            const collectPriorDue = document.getElementById('collect_prior_due');
+            const priorDueInput = document.getElementById('prior_due_amount');
+            const offlinePriorCleared = (collectPriorDue && collectPriorDue.checked) ? (parseFloat(priorDueInput ? priorDueInput.value : 0) || 0) : 0;
+            const manualPriorInput = document.getElementById('manual_prior_due');
+            const manualPriorAction = document.getElementById('manual_prior_due_action');
+            const manualCleared = (manualPriorAction && manualPriorAction.value === 'collect_now') ? (parseFloat(manualPriorInput ? manualPriorInput.value : 0) || 0) : 0;
+            const totalPriorCleared = offlinePriorCleared + manualCleared;
+
+            if (items.length === 0 && !isDueOnly) {
+                alert("Please select at least one item to deliver, or select 'Clear Due Only'.");
+                return;
+            }
+
+            if (isDueOnly && totalPriorCleared <= 0) {
+                alert("Please enter the due amount to clear.");
                 return;
             }
 
@@ -3505,12 +3933,9 @@ foreach ($vehicle_products as $vPid => $vp) {
 
             const priorModeEl = document.querySelector('input[name="prior_due_mode"]:checked');
             const priorDueMode = priorModeEl ? priorModeEl.value.toLowerCase() : 'cash';
-            const collectPriorDue = document.getElementById('collect_prior_due');
-            const priorDueInput = document.getElementById('prior_due_amount');
-            const offlinePriorCleared = (collectPriorDue && collectPriorDue.checked) ? (parseFloat(priorDueInput ? priorDueInput.value : 0) || 0) : 0;
 
-            // Validate cash + credit doesn't exceed total
-            if ((cashVal + creditVal) > (total + 0.01)) {
+            // Validate cash + credit doesn't exceed total (only if not due-only)
+            if (!isDueOnly && (cashVal + creditVal) > (total + 0.01)) {
                 alert("Payment error: Cash (₹" + cashVal.toFixed(2) + ") + Credit (₹" + creditVal.toFixed(2) + ") cannot exceed Total (₹" + total.toFixed(2) + ").");
                 return;
             }
@@ -3527,18 +3952,20 @@ foreach ($vehicle_products as $vPid => $vp) {
                 zone_slug: zoneInfo.zone_slug || <?= json_encode($zone_slug) ?>,
                 order_id: orderId,
                 vehicle_id: vehicleId,
+                is_due_collection_only: isDueOnly ? 1 : 0,
                 shop_name: shopName,
                 customer_name: customerName,
                 phone: phone,
                 location: location,
                 items: items,
-                total_amount: total,
-                cash_amount: cashVal,
-                credited_amount: creditVal,
-                due_amount: dueVal,
-                prior_due_amount: offlinePriorCleared,
+                delivered_quantity: isDueOnly ? 0 : items.reduce((sum, it) => sum + it.quantity, 0),
+                total_amount: isDueOnly ? totalPriorCleared : total,
+                cash_amount: isDueOnly ? (priorDueMode === 'cash' ? totalPriorCleared : 0) : cashVal,
+                credited_amount: isDueOnly ? (priorDueMode !== 'cash' ? totalPriorCleared : 0) : creditVal,
+                due_amount: isDueOnly ? 0 : dueVal,
+                prior_due_amount: totalPriorCleared,
                 prior_due_mode: priorDueMode,
-                payment_type: (cashVal > 0 && creditVal > 0) ? 'Cash + Credited' : (cashVal > 0 ? 'Cash' : (creditVal > 0 ? 'Credited' : 'Pending')),
+                payment_type: isDueOnly ? ('Due Clearance - ' + (priorDueMode === 'cash' ? 'Cash' : 'Online Payment')) : ((cashVal > 0 && creditVal > 0) ? 'Cash + Credited' : (cashVal > 0 ? 'Cash' : (creditVal > 0 ? 'Credited' : 'Pending'))),
                 company_gstin: zoneInfo.company_gstin || '29AAOCP8622L1ZM',
                 company_phone: zoneInfo.company_phone || '+91 63663 78967',
                 company_website: zoneInfo.company_website || 'liyasinternational.com',

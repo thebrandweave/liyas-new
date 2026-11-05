@@ -13,10 +13,11 @@ if ($order_id > 0) {
         $ord = $stmt->fetch(PDO::FETCH_ASSOC);
 
         if ($ord) {
-            // Delete order payments, receipts, order items
+            // Delete order payments, receipts, order items, and vehicle loads
             $pdo->prepare("DELETE FROM order_payments WHERE order_id = ?")->execute([$order_id]);
             $pdo->prepare("DELETE FROM receipts WHERE order_id = ?")->execute([$order_id]);
             $pdo->prepare("DELETE FROM order_items WHERE order_id = ?")->execute([$order_id]);
+            $pdo->prepare("DELETE FROM vehicle_loads WHERE order_id = ?")->execute([$order_id]);
             $pdo->prepare("DELETE FROM orders WHERE order_id = ?")->execute([$order_id]);
 
             if ($ord['status'] === 'delivered') {

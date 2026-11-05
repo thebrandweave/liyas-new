@@ -141,7 +141,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 $upd = $pdo->prepare("
                     UPDATE vehicle_loads 
-                    SET cases_loaded = ?, zone_id = ?, notes = ?, updated_at = NOW() 
+                    SET cases_loaded = ?, zone_id = ?, notes = ? 
                     WHERE id = ?
                 ");
                 $upd->execute([$cases, $zId, $notes, $loadId]);
@@ -154,6 +154,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         $redirectZone = $_GET['zone'] ?? 'all';
         header("Location: index.php?zone=" . urlencode($redirectZone));
+        exit;
+    }
+
+    // 2b. EDIT VEHICLE PRODUCT LOADS (BATCH UPDATE)
+    if ($action === 'edit_vehicle_loads_batch') {
+        $vId = (int)($_POST['vehicle_id'] ?? 0);
+        $loadsData = $_POST['loads'] ?? [];
+        if ($vId > 0 && is_array($loadsData)) {
+            $upd = $pdo->prepare("UPDATE vehicle_loads SET cases_loaded = ? WHERE id = ? AND vehicle_id = ? AND is_active = 1");
+            $del = $pdo->prepare("UPDATE vehicle_loads SET cases_loaded = 0, is_active = 0 WHERE id = ? AND vehicle_id = ? AND is_active = 1");
+            $totalUpdated = 0;
+            foreach ($loadsData as $lId => $newCases) {
+                $lId = (int)$lId;
+                $newCases = max(0, (int)$newCases);
+                if ($lId > 0) {
+                    if ($newCases === 0) {
+                        $del->execute([$lId, $vId]);
+                    } else {
+                        $upd->execute([$newCases, $lId, $vId]);
+                    }
+                    $totalUpdated++;
+                }
+            }
+            if (function_exists('quickLog')) {
+                quickLog($pdo, 'update', 'vehicle_load', $vId, "Updated product loads on vehicle #{$vId}");
+            }
+            $_SESSION['success_message'] = "Vehicle product loads updated successfully.";
+        }
+        $redirectZone = $_GET['zone'] ?? 'all';
+        header("Location: " . ($_SERVER['REQUEST_URI'] ?: ("index.php?zone=" . urlencode($redirectZone))));
         exit;
     }
 
@@ -175,7 +205,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             if ($loadRow) {
                 // Deactivate load entry
-                $del = $pdo->prepare("UPDATE vehicle_loads SET is_active = 0, updated_at = NOW() WHERE id = ?");
+                $del = $pdo->prepare("UPDATE vehicle_loads SET is_active = 0 WHERE id = ?");
                 $del->execute([$loadId]);
 
                 if (function_exists('quickLog')) {
@@ -1872,50 +1902,88 @@ if (!empty($searchQuery)) {
                                      
                                     </div>
                                 </div>
-                                <div style="display: flex; gap: 6px; flex-wrap: wrap;justify-content: flex-end;">
-                                    
+                                <div style="display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end;">
                                     <button type="button" class="btn-load-prod-plus" onclick="openLoadProductModal(<?= $vId ?>, '<?= htmlspecialchars(addslashes($vNum)) ?>')" title="Add line-sale product to this vehicle">
                                         <i class='bx bx-plus'></i> Load Product
+                                    </button>
+                                    <button type="button" class="btn-load-prod-edit" onclick="openVehicleBatchEditModal(<?= $vId ?>, '<?= htmlspecialchars(addslashes($vNum)) ?>', <?= htmlspecialchars(json_encode($loads)) ?>)" style="background: #ffffff; border: 1.5px solid #cbd5e1; color: #0f172a; padding: 6px 12px; border-radius: 8px; font-size: 12px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;" title="Edit loads for this vehicle">
+                                        <i class='bx bx-edit'></i> Edit Loads
                                     </button>
                                 </div>
                             </div>
 
-                            <!-- Total On-Board Combined Cargo Breakdown -->
-                            <?php if (!empty($combinedCargo)): ?>
-                                <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 12px; margin-bottom: 14px;">
-                                    <div style="font-size: 11px; font-weight: 800; text-transform: uppercase; color: #64748b; margin-bottom: 6px; display: flex; align-items: center; gap: 4px;">
-                                        <i class='bx bx-layer'></i> Vehicle Storage (<?= count($combinedCargo) ?> Products):
-                                    </div>
-                                    <div style="display: flex; flex-wrap: wrap; gap: 6px;">
-                                        <?php foreach ($combinedCargo as $cc): ?>
-                                            <div style="background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px; padding: 4px 8px; font-size: 12px; display: flex; align-items: center; gap: 6px;">
-                                                <strong style="color: #0f172a;"><?= htmlspecialchars($cc['name']) ?></strong>
-                                                <span style="background: #eff6ff; color: #1e40af; font-weight: 800; padding: 1px 6px; border-radius: 4px; font-size: 11px;">
-                                                    <?= (int)$cc['total_cases'] ?> cs
-                                                </span>
-                                                <?php if ($cc['order_cases'] > 0 && $cc['buffer_cases'] > 0): ?>
-                                                    <small style="color: #64748b; font-size: 10px;">(<?= $cc['order_cases'] ?> ord + <?= $cc['buffer_cases'] ?> line)</small>
-                                                <?php elseif ($cc['order_cases'] > 0): ?>
-                                                    <small style="color: #2563eb; font-size: 10px;">(Orders)</small>
-                                                <?php else: ?>
-                                                    <small style="color: #059669; font-size: 12px;">(Extra)</small>
-                                                <?php endif; ?>
+                            <!-- Vehicle Product Loads: Line by Line with Clean Text and Case Count Without Colors -->
+                            <?php
+                                $displayLoads = [];
+                                if (!empty($loads)) {
+                                    foreach ($loads as $ld) {
+                                        $displayLoads[] = [
+                                            'load_id'    => (int)$ld['load_id'],
+                                            'name'       => $ld['product_name'],
+                                            'cases'      => (int)$ld['cases_loaded'],
+                                            'zone_id'    => (int)($ld['zone_id'] ?? 0),
+                                            'notes'      => $ld['notes'] ?? '',
+                                            'case_stock' => (int)($ld['case_stock'] ?? 0)
+                                        ];
+                                    }
+                                } elseif (!empty($combinedCargo)) {
+                                    foreach ($combinedCargo as $cc) {
+                                        $displayLoads[] = [
+                                            'load_id'    => 0,
+                                            'name'       => $cc['name'],
+                                            'cases'      => (int)$cc['total_cases'],
+                                            'zone_id'    => 0,
+                                            'notes'      => '',
+                                            'case_stock' => 0
+                                        ];
+                                    }
+                                }
+                            ?>
+                            <div class="veh-clean-loads-box" style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 14px; margin-bottom: 14px;">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid #e2e8f0;">
+                                    <span style="font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #0f172a;">
+                                        Product Loads (<?= count($displayLoads) ?>)
+                                    </span>
+                                    <button type="button" onclick="openVehicleBatchEditModal(<?= $vId ?>, '<?= htmlspecialchars(addslashes($vNum)) ?>', <?= htmlspecialchars(json_encode($loads)) ?>)" style="background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px; padding: 3px 9px; font-size: 11px; font-weight: 700; color: #0f172a; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;">
+                                        <i class='bx bx-edit'></i> Edit Loads
+                                    </button>
+                                </div>
+
+                                <?php if (!empty($displayLoads)): ?>
+                                    <div style="display: flex; flex-direction: column; gap: 6px;">
+                                        <?php foreach ($displayLoads as $dl): ?>
+                                            <div style="display: flex; justify-content: space-between; align-items: center; padding: 5px 0; border-bottom: 1px solid #f1f5f9; font-size: 13px; color: #0f172a;">
+                                                <span style="font-weight: 600; color: #0f172a;"><?= htmlspecialchars($dl['name']) ?></span>
+                                                <div style="display: flex; align-items: center; gap: 12px;">
+                                                    <span style="font-weight: 700; color: #0f172a;"><?= (int)$dl['cases'] ?> Cases</span>
+                                                    <?php if (!empty($dl['load_id'])): ?>
+                                                        <button type="button" onclick="openEditProductLoadModal(<?= (int)$dl['load_id'] ?>, '<?= htmlspecialchars(addslashes($dl['name'])) ?>', <?= (int)$dl['cases'] ?>, <?= (int)$dl['zone_id'] ?>, '<?= htmlspecialchars(addslashes($dl['notes'])) ?>', <?= (int)$dl['case_stock'] ?>)" style="background: #ffffff; border: 1px solid #cbd5e1; border-radius: 4px; padding: 2px 8px; font-size: 11px; font-weight: 600; color: #0f172a; cursor: pointer;" title="Edit <?= htmlspecialchars($dl['name']) ?> load">
+                                                            Edit
+                                                        </button>
+                                                    <?php endif; ?>
+                                                </div>
                                             </div>
                                         <?php endforeach; ?>
                                     </div>
-                                </div>
-                            <?php endif; ?>
+                                <?php else: ?>
+                                    <div style="font-size: 12px; color: #64748b; font-style: italic; padding: 4px 0;">No product loads currently on vehicle.</div>
+                                <?php endif; ?>
+                            </div>
 
                           
 
                  
                         </div>
 
-                        <!-- Card Footer Operations: Edit Vehicle, Reset & Delete -->
+                        <!-- Card Footer Operations: Edit Vehicle, Edit Loads, Reset & Delete -->
                         <div class="veh-card-footer">
-                            <button type="button" class="btn-footer-action" onclick="openEditVehicleModal(<?= htmlspecialchars(json_encode($v)) ?>)" title="Edit vehicle details">
-                                <i class='bx bx-edit-alt'></i> Edit Vehicle
+                            <button type="button" class="btn-footer-action" onclick="openVehicleBatchEditModal(<?= $vId ?>, '<?= htmlspecialchars(addslashes($vNum)) ?>', <?= htmlspecialchars(json_encode($loads)) ?>)" title="Edit product loads on vehicle">
+                                <i class='bx bx-layer'></i> Edit Loads
                             </button>
+
+                            <!-- <button type="button" class="btn-footer-action" onclick="openEditVehicleModal(<?= htmlspecialchars(json_encode($v)) ?>)" title="Edit vehicle details">
+                                <i class='bx bx-edit-alt'></i> Edit Vehicle
+                            </button> -->
 
                             <button type="button" class="btn-footer-action" style="color: #d97706;" onclick="confirmResetLoad(<?= $vId ?>, '<?= htmlspecialchars(addslashes($vNum)) ?>', <?= $totalCases ?>)" title="Clear vehicle load for next trip">
                                 <i class='bx bx-reset'></i> Reset Load
@@ -2103,32 +2171,14 @@ if (!empty($searchQuery)) {
                 <input type="hidden" name="action" value="edit_product_load">
                 <input type="hidden" name="load_id" id="editLoadId" value="">
 
-                <div class="form-group">
+                <div class="form-group" style="margin-bottom: 16px;">
                     <label class="form-label">Product</label>
                     <input type="text" id="editProductNameDisplay" class="form-control" readonly style="background: #f1f5f9; font-weight: 700;">
-                    <div id="editProductStockHint" style="display: none; margin-top: 6px; font-size: 12px; color: #475569; align-items: center; gap: 6px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px 10px;"></div>
                 </div>
 
-                <div class="grid-2">
-                    <div class="form-group">
-                        <label class="form-label">Number of Cases *</label>
-                        <input type="text" name="cases" id="editLoadCasesInput" class="form-control" min="1" required>
-                    </div>
-
-                    <div class="form-group">
-                        <label class="form-label">Operating Zone</label>
-                        <select name="zone_id" id="editLoadZoneSelect" class="form-control">
-                            <option value="">-- None / All Zones --</option>
-                            <?php foreach ($zonesList as $z): ?>
-                                <option value="<?= (int)$z['id'] ?>"><?= htmlspecialchars($z['name']) ?></option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
-                </div>
-
-                <div class="form-group">
-                    <label class="form-label">Notes</label>
-                    <input type="text" name="notes" id="editLoadNotesInput" class="form-control" placeholder="e.g. Linesale extra stock">
+                <div class="form-group" style="margin-bottom: 20px;">
+                    <label class="form-label">Number of Cases *</label>
+                    <input type="number" name="cases" id="editLoadCasesInput" class="form-control" min="1" required style="font-size: 16px; font-weight: 700;">
                 </div>
 
                 <div class="modal-btns-row">
@@ -2136,6 +2186,40 @@ if (!empty($searchQuery)) {
                         <i class='bx bx-check'></i> Update Quantity
                     </button>
                     <button type="button" class="btn-header" onclick="closeEditProductLoadModal()">
+                        Cancel
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- ========================================================
+         MODAL 2b: EDIT VEHICLE LOADS (BATCH)
+         ======================================================== -->
+    <div id="modalBatchEditLoads" class="modal-backdrop" onclick="if(event.target===this) closeVehicleBatchEditModal()">
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <h3 class="modal-title">
+                    <i class='bx bx-edit' style="color: #0f172a;"></i>
+                    <span id="batchEditModalTitle">Edit Vehicle Product Loads</span>
+                </h3>
+                <button type="button" class="modal-close" onclick="closeVehicleBatchEditModal()">&times;</button>
+            </div>
+            <form method="POST" action="">
+                <input type="hidden" name="action" value="edit_vehicle_loads_batch">
+                <input type="hidden" name="vehicle_id" id="batchEditVehId" value="">
+
+              
+
+                <div id="batchEditLoadsContainer" style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px;">
+                    <!-- Dynamically populated -->
+                </div>
+
+                <div class="modal-btns-row">
+                    <button type="submit" class="btn-header btn-header-primary" style="background: #0f172a; border-color: #0f172a; color: #ffffff;">
+                        <i class='bx bx-check'></i> Save Loads
+                    </button>
+                    <button type="button" class="btn-header" onclick="closeVehicleBatchEditModal()">
                         Cancel
                     </button>
                 </div>
@@ -2572,29 +2656,56 @@ if (!empty($searchQuery)) {
         }
 
         // Modal 2: Edit Product Load
-        function openEditProductLoadModal(loadId, prodName, cases, zoneId, notes, currentStock = null) {
+        function openEditProductLoadModal(loadId, prodName, cases, zoneId = null, notes = null, currentStock = null) {
             document.getElementById('editLoadId').value = loadId;
             document.getElementById('editProductNameDisplay').value = prodName;
             document.getElementById('editLoadCasesInput').value = cases;
-            document.getElementById('editLoadZoneSelect').value = zoneId || '';
-            document.getElementById('editLoadNotesInput').value = notes || '';
+            const zSel = document.getElementById('editLoadZoneSelect');
+            if (zSel) zSel.value = zoneId || '';
+            const nInp = document.getElementById('editLoadNotesInput');
+            if (nInp) nInp.value = notes || '';
             document.getElementById('editProductModalTitle').textContent = `Edit Load: ${prodName}`;
-
-            const hint = document.getElementById('editProductStockHint');
-            if (hint) {
-                if (currentStock !== null && currentStock !== undefined) {
-                    hint.style.display = 'flex';
-                    hint.innerHTML = `<i class='bx bx-archive' style="color: #2563eb; font-size: 15px;"></i> Warehouse Available Stock: <strong style="color: #0f172a; margin-left: 4px;">${currentStock} Cases</strong>`;
-                } else {
-                    hint.style.display = 'none';
-                }
-            }
 
             const m = document.getElementById('modalEditProductLoad');
             if (m) m.classList.add('open');
         }
         function closeEditProductLoadModal() {
             const m = document.getElementById('modalEditProductLoad');
+            if (m) m.classList.remove('open');
+        }
+
+        // Modal 2b: Edit Vehicle Loads (Batch)
+        function openVehicleBatchEditModal(vId, vNum, loads) {
+            document.getElementById('batchEditVehId').value = vId;
+            document.getElementById('batchEditModalTitle').textContent = `Edit Loads: ${vNum}`;
+            const container = document.getElementById('batchEditLoadsContainer');
+            container.innerHTML = '';
+
+            if (!loads || loads.length === 0) {
+                container.innerHTML = '<div style="font-size: 13px; color: #64748b; padding: 10px 0;">No active product loads to edit on this vehicle. Click &ldquo;Load Product&rdquo; above to add cases.</div>';
+            } else {
+                loads.forEach(ld => {
+                    const row = document.createElement('div');
+                    row.style.cssText = 'display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 14px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;';
+                    row.innerHTML = `
+                        <div style="flex: 1;">
+                            <div style="font-weight: 700; font-size: 13px; color: #0f172a;">${ld.product_name}</div>
+                            <div style="font-size: 11px; color: #64748b; margin-top: 2px;">Currently Loaded: ${ld.cases_loaded} cases</div>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <input type="number" name="loads[${ld.load_id}]" value="${ld.cases_loaded}" min="0" required class="form-control" style="font-weight: 700; text-align: center; width: 90px; height: 38px;">
+                            <span style="font-size: 13px; font-weight: 600; color: #475569;">Cases</span>
+                        </div>
+                    `;
+                    container.appendChild(row);
+                });
+            }
+
+            const m = document.getElementById('modalBatchEditLoads');
+            if (m) m.classList.add('open');
+        }
+        function closeVehicleBatchEditModal() {
+            const m = document.getElementById('modalBatchEditLoads');
             if (m) m.classList.remove('open');
         }
 

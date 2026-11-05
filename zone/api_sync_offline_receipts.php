@@ -63,13 +63,14 @@ foreach ($data['receipts'] as $rec) {
         $existingOrderId = (int)($rec['order_id'] ?? 0);
 
         $items = $rec['items'] ?? [];
-        if (empty($items)) {
+        $isDueOnly = !empty($rec['is_due_collection_only']) || (empty($items) && $totalAmount > 0);
+        if (empty($items) && !$isDueOnly) {
             throw new Exception("No items specified for receipt {$offlineId}");
         }
 
         $totalCases = 0;
-        $primaryPid = (int)($items[0]['product_id'] ?? 1);
-        $primaryRate = (float)($items[0]['rate'] ?? 0);
+        $primaryPid = (!empty($items[0]['product_id'])) ? (int)$items[0]['product_id'] : null;
+        $primaryRate = (!empty($items[0]['rate'])) ? (float)$items[0]['rate'] : 0.00;
         foreach ($items as $it) {
             $totalCases += (int)($it['quantity'] ?? 0);
         }
@@ -77,33 +78,60 @@ foreach ($data['receipts'] as $rec) {
         // 1. Process Order (Update existing booked order OR create new direct delivery order)
         if ($existingOrderId > 0) {
             $order_id = $existingOrderId;
-            $upOrd = $pdo->prepare("
-                UPDATE orders SET 
-                    shop_name = ?, customer_name = ?, location = ?, 
-                    phone = ?, product_id = ?, quantity = ?, 
-                    unit_price = ?, total_amount = ?, status = 'delivered', 
-                    vehicle_id = COALESCE(NULLIF(?, 0), vehicle_id),
-                    is_zone_read = 1, zone_read_at = COALESCE(zone_read_at, NOW()), updated_at = NOW() 
-                WHERE order_id = ? AND zone_id = ?
-            ");
-            $upOrd->execute([
-                $shopName, $customerName, $place, $phone,
-                $primaryPid, $totalCases, $primaryRate, $totalAmount,
-                $assignedVehicleId, $order_id, $zone_id
-            ]);
-
-            // Sync order_items
-            $pdo->prepare("DELETE FROM order_items WHERE order_id = ?")->execute([$order_id]);
-            $insOi = $pdo->prepare("
-                INSERT INTO order_items (order_id, product_id, quantity, price_at_purchase, is_extra, created_at, updated_at) 
-                VALUES (?, ?, ?, ?, ?, ?, NOW())
-            ");
-            foreach ($items as $it) {
-                $insOi->execute([
-                    $order_id, (int)$it['product_id'], (int)$it['quantity'], 
-                    (float)$it['rate'], !empty($it['is_extra']) ? 1 : 0, $receiptDate
+            if ($isDueOnly) {
+                // Restore stock for previously booked items
+                $oldItems = getOrderItems($pdo, $order_id);
+                foreach ($oldItems as $oi) {
+                    $p_id = (int)$oi['product_id'];
+                    $qty = (int)$oi['quantity'];
+                    if ($p_id > 0 && $qty > 0) {
+                        adjustProductStock($pdo, $p_id, $qty, "Restored: Offline Order #{$order_id} converted to Due Clearance (0 delivery)");
+                    }
+                }
+                $upOrd = $pdo->prepare("
+                    UPDATE orders SET 
+                        shop_name = ?, customer_name = ?, location = ?, 
+                        phone = ?, product_id = NULL, quantity = 0, 
+                        unit_price = 0.00, total_amount = ?, status = 'delivered', 
+                        vehicle_id = COALESCE(NULLIF(?, 0), vehicle_id),
+                        is_zone_read = 1, zone_read_at = COALESCE(zone_read_at, NOW()), updated_at = NOW() 
+                    WHERE order_id = ? AND zone_id = ?
+                ");
+                $upOrd->execute([
+                    $shopName, $customerName, $place, $phone,
+                    $totalAmount,
+                    $assignedVehicleId, $order_id, $zone_id
                 ]);
-                adjustProductStock($pdo, (int)$it['product_id'], -(int)$it['quantity'], "Offline Order #{$order_id} delivered");
+                $pdo->prepare("DELETE FROM order_items WHERE order_id = ?")->execute([$order_id]);
+            } else {
+                $upOrd = $pdo->prepare("
+                    UPDATE orders SET 
+                        shop_name = ?, customer_name = ?, location = ?, 
+                        phone = ?, product_id = ?, quantity = ?, 
+                        unit_price = ?, total_amount = ?, status = 'delivered', 
+                        vehicle_id = COALESCE(NULLIF(?, 0), vehicle_id),
+                        is_zone_read = 1, zone_read_at = COALESCE(zone_read_at, NOW()), updated_at = NOW() 
+                    WHERE order_id = ? AND zone_id = ?
+                ");
+                $upOrd->execute([
+                    $shopName, $customerName, $place, $phone,
+                    $primaryPid, $totalCases, $primaryRate, $totalAmount,
+                    $assignedVehicleId, $order_id, $zone_id
+                ]);
+
+                // Sync order_items
+                $pdo->prepare("DELETE FROM order_items WHERE order_id = ?")->execute([$order_id]);
+                $insOi = $pdo->prepare("
+                    INSERT INTO order_items (order_id, product_id, quantity, price_at_purchase, is_extra, created_at, updated_at) 
+                    VALUES (?, ?, ?, ?, ?, ?, NOW())
+                ");
+                foreach ($items as $it) {
+                    $insOi->execute([
+                        $order_id, (int)$it['product_id'], (int)$it['quantity'], 
+                        (float)$it['rate'], !empty($it['is_extra']) ? 1 : 0, $receiptDate
+                    ]);
+                    adjustProductStock($pdo, (int)$it['product_id'], -(int)$it['quantity'], "Offline Order #{$order_id} delivered");
+                }
             }
 
             $ordNumStmt = $pdo->prepare("SELECT order_number FROM orders WHERE order_id = ?");
@@ -146,21 +174,23 @@ foreach ($data['receipts'] as $rec) {
             ]);
             $order_id = (int)$pdo->lastInsertId();
 
-            $insOi = $pdo->prepare("
-                INSERT INTO order_items (order_id, product_id, quantity, price_at_purchase, is_extra, created_at, updated_at) 
-                VALUES (?, ?, ?, ?, ?, ?, NOW())
-            ");
-            foreach ($items as $it) {
-                $insOi->execute([
-                    $order_id, (int)$it['product_id'], (int)$it['quantity'], 
-                    (float)$it['rate'], !empty($it['is_extra']) ? 1 : 0, $receiptDate
-                ]);
-                adjustProductStock($pdo, (int)$it['product_id'], -(int)$it['quantity'], "Offline Direct Delivery #{$order_number}");
+            if (!$isDueOnly) {
+                $insOi = $pdo->prepare("
+                    INSERT INTO order_items (order_id, product_id, quantity, price_at_purchase, is_extra, created_at, updated_at) 
+                    VALUES (?, ?, ?, ?, ?, ?, NOW())
+                ");
+                foreach ($items as $it) {
+                    $insOi->execute([
+                        $order_id, (int)$it['product_id'], (int)$it['quantity'], 
+                        (float)$it['rate'], !empty($it['is_extra']) ? 1 : 0, $receiptDate
+                    ]);
+                    adjustProductStock($pdo, (int)$it['product_id'], -(int)$it['quantity'], "Offline Direct Delivery #{$order_number}");
+                }
             }
         }
 
-        // 2. Vehicle Storage Reconciliation
-        if ($assignedVehicleId > 0) {
+        // 2. Vehicle Storage Reconciliation (only for physical item deliveries)
+        if (!$isDueOnly && $assignedVehicleId > 0) {
             $pdo->prepare("UPDATE vehicle_loads SET is_active = 0 WHERE order_id = ?")->execute([$order_id]);
             $pdo->prepare("UPDATE vehicles SET total_deliveries_done = total_deliveries_done + 1, updated_at = NOW() WHERE id = ?")->execute([$assignedVehicleId]);
         }

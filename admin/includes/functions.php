@@ -1088,9 +1088,19 @@ function addVehicleRecord(PDO $pdo, array $data): array {
 function recordVehicleLoad(PDO $pdo, int $vehicleId, ?int $zoneId, int $cases, ?int $orderId = null, ?string $notes = null, ?string $shopName = null, ?int $productId = null): bool {
 	if ($cases <= 0 && $orderId === null) return false;
 	try {
+		$isActive = 1;
+		if ($orderId !== null && $orderId > 0) {
+			$chkSt = $pdo->prepare("SELECT status FROM orders WHERE order_id = ?");
+			$chkSt->execute([$orderId]);
+			$st = strtolower(trim($chkSt->fetchColumn() ?: ''));
+			if ($st === 'delivered' || $st === 'cancelled') {
+				$isActive = 0;
+			}
+		}
+
 		$stmt = $pdo->prepare("
 			INSERT INTO vehicle_loads (vehicle_id, zone_id, product_id, order_id, cases_loaded, shop_name, is_active, notes)
-			VALUES (:vehicle_id, :zone_id, :product_id, :order_id, :cases_loaded, :shop_name, 1, :notes)
+			VALUES (:vehicle_id, :zone_id, :product_id, :order_id, :cases_loaded, :shop_name, :is_active, :notes)
 		");
 		$stmt->execute([
 			':vehicle_id'    => $vehicleId,
@@ -1099,10 +1109,13 @@ function recordVehicleLoad(PDO $pdo, int $vehicleId, ?int $zoneId, int $cases, ?
 			':order_id'      => $orderId,
 			':cases_loaded'  => $cases,
 			':shop_name'     => !empty($shopName) ? trim($shopName) : null,
+			':is_active'     => $isActive,
 			':notes'         => $notes
 		]);
-		// Auto update vehicle status to loading if currently active
-		$pdo->prepare("UPDATE vehicles SET status = 'loading' WHERE id = ? AND status = 'active'")->execute([$vehicleId]);
+		// Auto update vehicle status to loading if currently active and load is active
+		if ($isActive === 1) {
+			$pdo->prepare("UPDATE vehicles SET status = 'loading' WHERE id = ? AND status = 'active'")->execute([$vehicleId]);
+		}
 		return true;
 	} catch (Exception $e) {
 		error_log("Error in recordVehicleLoad: " . $e->getMessage());
@@ -1171,11 +1184,13 @@ function syncOrderVehicleLoads(PDO $pdo, int $orderId, ?int $vehicleId = null): 
 		if ($vehicleId <= 0) return;
 
 		// Fetch order details
-		$oStmt = $pdo->prepare("SELECT zone_id, order_number, shop_name, customer_name, product_id, quantity FROM orders WHERE order_id = ?");
+		$oStmt = $pdo->prepare("SELECT zone_id, order_number, shop_name, customer_name, product_id, quantity, status FROM orders WHERE order_id = ?");
 		$oStmt->execute([$orderId]);
 		$order = $oStmt->fetch(PDO::FETCH_ASSOC);
 		if (!$order) return;
 
+		$orderStatus = strtolower(trim($order['status'] ?? ''));
+		$isActive = ($orderStatus === 'delivered' || $orderStatus === 'cancelled') ? 0 : 1;
 		$zoneId = !empty($order['zone_id']) ? (int)$order['zone_id'] : null;
 		$shop = $order['shop_name'] ?: ($order['customer_name'] ?: 'Order');
 		$notes = "Order #" . ($order['order_number'] ?: $orderId);
@@ -1187,7 +1202,7 @@ function syncOrderVehicleLoads(PDO $pdo, int $orderId, ?int $vehicleId = null): 
 
 		$ins = $pdo->prepare("
 			INSERT INTO vehicle_loads (vehicle_id, zone_id, product_id, order_id, cases_loaded, shop_name, is_active, notes, created_at)
-			VALUES (?, ?, ?, ?, ?, ?, 1, ?, NOW())
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())
 		");
 
 		if (!empty($items)) {
@@ -1196,14 +1211,14 @@ function syncOrderVehicleLoads(PDO $pdo, int $orderId, ?int $vehicleId = null): 
 				$qty = (int)($it['quantity'] ?? 0);
 				if ($qty > 0) {
 					$extraTag = !empty($it['is_extra']) ? ' (Extra)' : '';
-					$ins->execute([$vehicleId, $zoneId, $pid ?: null, $orderId, $qty, $shop, $notes . $extraTag]);
+					$ins->execute([$vehicleId, $zoneId, $pid ?: null, $orderId, $qty, $shop, $isActive, $notes . $extraTag]);
 				}
 			}
 		} elseif (!empty($order['product_id']) && (int)$order['quantity'] > 0) {
-			$ins->execute([$vehicleId, $zoneId, (int)$order['product_id'], $orderId, (int)$order['quantity'], $shop, $notes]);
+			$ins->execute([$vehicleId, $zoneId, (int)$order['product_id'], $orderId, (int)$order['quantity'], $shop, $isActive, $notes]);
 		} else {
 			$cases = max(1, (int)$order['quantity']);
-			$ins->execute([$vehicleId, $zoneId, null, $orderId, $cases, $shop, $notes]);
+			$ins->execute([$vehicleId, $zoneId, null, $orderId, $cases, $shop, $isActive, $notes]);
 		}
 	} catch (Exception $e) {
 		error_log("Error in syncOrderVehicleLoads: " . $e->getMessage());
@@ -1248,8 +1263,11 @@ function assignOrderToVehicle(PDO $pdo, int $orderId, int $vehicleId): array {
 		// 2. Synchronize itemized vehicle_loads
 		syncOrderVehicleLoads($pdo, $orderId, $vehicleId);
 
-		// 3. Update vehicle status to 'loading'
-		$pdo->prepare("UPDATE vehicles SET status = 'loading' WHERE id = ? AND status = 'active'")->execute([$vehicleId]);
+		// 3. Update vehicle status to 'loading' only if order is still active
+		$orderSt = strtolower(trim($order['status'] ?? ''));
+		if ($orderSt !== 'delivered' && $orderSt !== 'cancelled') {
+			$pdo->prepare("UPDATE vehicles SET status = 'loading' WHERE id = ? AND status = 'active'")->execute([$vehicleId]);
+		}
 
 		return ['success' => true, 'cases_loaded' => $cases, 'message' => "Order assigned. {$cases} cases loaded onto vehicle."];
 	} catch (Exception $e) {
@@ -1286,6 +1304,27 @@ function getShopPendingDueDetails(PDO $pdo, string $shopName, string $phone = ''
 
 	try {
 		$zoneSql = ($zoneId !== null && $zoneId > 0) ? " AND o.zone_id = " . (int)$zoneId : "";
+		$whereShopOrPhone = "";
+		$shopOrPhoneParams = [$excludeOrderId];
+
+		if (!empty($cleanShop)) {
+			$whereShopOrPhone = "AND (
+				TRIM(LOWER(o.shop_name)) = ? 
+				OR TRIM(LOWER(o.customer_name)) = ?
+			)";
+			$shopOrPhoneParams[] = $cleanShop;
+			$shopOrPhoneParams[] = $cleanShop;
+		} elseif (!empty($phone10) && strlen($phone10) >= 7) {
+			$whereShopOrPhone = "AND (
+				REPLACE(REPLACE(REPLACE(REPLACE(o.phone, ' ', ''), '-', ''), '+91', ''), '+', '') LIKE ?
+				OR RIGHT(REGEXP_REPLACE(o.phone, '[^0-9]', ''), 10) = ?
+			)";
+			$shopOrPhoneParams[] = $phoneLike;
+			$shopOrPhoneParams[] = $phone10;
+		} else {
+			return ['has_due' => false, 'total_due' => 0.0, 'due_count' => 0, 'receipts' => []];
+		}
+
 		$sql = "
 			SELECT 
 				r.id as receipt_id,
@@ -1311,27 +1350,12 @@ function getShopPendingDueDetails(PDO $pdo, string $shopName, string $phone = ''
 			  AND o.status != 'cancelled'
 			  AND o.order_id != ?
 			  {$zoneSql}
-			  AND (
-				  (? != '' AND (
-					  TRIM(LOWER(o.shop_name)) = ? 
-					  OR TRIM(LOWER(o.customer_name)) = ? 
-					  OR (LENGTH(?) >= 4 AND (TRIM(LOWER(o.shop_name)) LIKE CONCAT(?, '%') OR ? LIKE CONCAT(TRIM(LOWER(o.shop_name)), '%')))
-				  ))
-				  OR (? != '' AND LENGTH(?) >= 7 AND (
-					  REPLACE(REPLACE(REPLACE(REPLACE(o.phone, ' ', ''), '-', ''), '+91', ''), '+', '') LIKE ?
-					  OR RIGHT(REGEXP_REPLACE(o.phone, '[^0-9]', ''), 10) = ?
-				  ))
-			  )
+			  {$whereShopOrPhone}
 			ORDER BY r.id ASC
 		";
 
 		$stmt = $pdo->prepare($sql);
-		$stmt->execute([
-			$excludeOrderId,
-			$cleanShop, $cleanShop, $cleanShop,
-			$cleanShop, $cleanShop, $cleanShop,
-			$phone10, $phone10, $phoneLike, $phone10
-		]);
+		$stmt->execute($shopOrPhoneParams);
 		$rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
 		$totalDue = 0.0;
@@ -1355,13 +1379,7 @@ function getShopPendingDueDetails(PDO $pdo, string $shopName, string $phone = ''
 				$shopParams[] = $cleanShop;
 				$shopConds[] = "TRIM(LOWER(CONCAT(shop_name, '-', COALESCE(location, '')))) = ?";
 				$shopParams[] = $cleanShop;
-				if (strlen($cleanShop) >= 4) {
-					$shopConds[] = "(TRIM(LOWER(shop_name)) LIKE CONCAT(?, '%') OR ? LIKE CONCAT(TRIM(LOWER(shop_name)), '%'))";
-					$shopParams[] = $cleanShop;
-					$shopParams[] = $cleanShop;
-				}
-			}
-			if (!empty($phone10) && strlen($phone10) >= 7) {
+			} elseif (!empty($phone10) && strlen($phone10) >= 7) {
 				$shopConds[] = "(REPLACE(REPLACE(REPLACE(REPLACE(phone, ' ', ''), '-', ''), '+91', ''), '+', '') LIKE ? OR RIGHT(REGEXP_REPLACE(phone, '[^0-9]', ''), 10) = ?)";
 				$shopParams[] = $phoneLike;
 				$shopParams[] = $phone10;
