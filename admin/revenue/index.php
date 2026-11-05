@@ -326,53 +326,46 @@ if ($payment_filter === 'paid') {
     $where_clauses[] = "r.id IS NOT NULL AND (r.due_amount <= 0 OR r.due_amount IS NULL) AND o.status != 'cancelled'";
 } elseif ($payment_filter === 'due') {
     $where_clauses[] = "r.due_amount > 0 AND o.status != 'cancelled'";
-} elseif ($payment_filter === 'shop_due') {
-    $where_clauses[] = "(
-        EXISTS (
-            SELECT 1 FROM shops s 
-            WHERE s.pending_amount > 0 
-              AND (
-                  (TRIM(LOWER(s.shop_name)) = TRIM(LOWER(o.shop_name)) AND TRIM(o.shop_name) != '')
-                  OR (o.phone != '' AND LENGTH(o.phone) >= 7 AND (s.phone = o.phone OR s.phone LIKE CONCAT('%', RIGHT(o.phone, 10))))
-              )
-        )
-        OR EXISTS (
-            SELECT 1 FROM receipts r2 
-            JOIN orders o2 ON r2.order_id = o2.order_id 
-            WHERE r2.due_amount > 0 
-              AND o2.status != 'cancelled' 
-              AND o2.order_id != o.order_id 
-              AND (
-                  (TRIM(LOWER(o2.shop_name)) = TRIM(LOWER(o.shop_name)) AND TRIM(o.shop_name) != '')
-                  OR (TRIM(LOWER(o2.customer_name)) = TRIM(LOWER(o.customer_name)) AND TRIM(o.customer_name) != '')
-                  OR (o.phone != '' AND LENGTH(o.phone) >= 7 AND (o2.phone = o.phone OR o2.phone LIKE CONCAT('%', RIGHT(o.phone, 10))))
-              )
-        )
-    ) AND o.status != 'cancelled'";
-} elseif ($payment_filter === 'all_dues') {
-    $where_clauses[] = "(
-        r.due_amount > 0
-        OR EXISTS (
-            SELECT 1 FROM shops s 
-            WHERE s.pending_amount > 0 
-              AND (
-                  (TRIM(LOWER(s.shop_name)) = TRIM(LOWER(o.shop_name)) AND TRIM(o.shop_name) != '')
-                  OR (o.phone != '' AND LENGTH(o.phone) >= 7 AND (s.phone = o.phone OR s.phone LIKE CONCAT('%', RIGHT(o.phone, 10))))
-              )
-        )
-        OR EXISTS (
-            SELECT 1 FROM receipts r2 
-            JOIN orders o2 ON r2.order_id = o2.order_id 
-            WHERE r2.due_amount > 0 
-              AND o2.status != 'cancelled' 
-              AND o2.order_id != o.order_id 
-              AND (
-                  (TRIM(LOWER(o2.shop_name)) = TRIM(LOWER(o.shop_name)) AND TRIM(o.shop_name) != '')
-                  OR (TRIM(LOWER(o2.customer_name)) = TRIM(LOWER(o.customer_name)) AND TRIM(o.customer_name) != '')
-                  OR (o.phone != '' AND LENGTH(o.phone) >= 7 AND (o2.phone = o.phone OR o2.phone LIKE CONCAT('%', RIGHT(o.phone, 10))))
-              )
-        )
-    ) AND o.status != 'cancelled'";
+} elseif ($payment_filter === 'shop_due' || $payment_filter === 'all_dues') {
+    // Fast pre-resolution of shops with pending dues (zero slow correlated subquery overhead)
+    $dueShopNames = [];
+    try {
+        $dueShopNames = $pdo->query("
+            SELECT DISTINCT TRIM(shop_name) 
+            FROM shops 
+            WHERE pending_amount > 0 AND shop_name IS NOT NULL AND shop_name != ''
+        ")->fetchAll(PDO::FETCH_COLUMN) ?: [];
+    } catch (Exception $e) {}
+
+    $unpaidOrderShopNames = [];
+    try {
+        $unpaidOrderShopNames = $pdo->query("
+            SELECT DISTINCT TRIM(o.shop_name) 
+            FROM receipts r 
+            JOIN orders o ON r.order_id = o.order_id 
+            WHERE r.due_amount > 0 AND o.status != 'cancelled' AND o.shop_name IS NOT NULL AND o.shop_name != ''
+        ")->fetchAll(PDO::FETCH_COLUMN) ?: [];
+    } catch (Exception $e) {}
+
+    $allDueNames = array_values(array_unique(array_filter(array_merge($dueShopNames, $unpaidOrderShopNames))));
+
+    if (!empty($allDueNames)) {
+        $inList = implode(', ', array_map(function($n) use ($pdo) {
+            return $pdo->quote($n);
+        }, $allDueNames));
+
+        if ($payment_filter === 'shop_due') {
+            $where_clauses[] = "(o.shop_name IN ($inList) OR o.customer_name IN ($inList)) AND o.status != 'cancelled'";
+        } else {
+            $where_clauses[] = "(r.due_amount > 0 OR o.shop_name IN ($inList) OR o.customer_name IN ($inList)) AND o.status != 'cancelled'";
+        }
+    } else {
+        if ($payment_filter === 'shop_due') {
+            $where_clauses[] = "1=0";
+        } else {
+            $where_clauses[] = "r.due_amount > 0 AND o.status != 'cancelled'";
+        }
+    }
 } elseif ($payment_filter === 'cash') {
     $where_clauses[] = "r.cash_amount > 0 AND o.status != 'cancelled'";
 } elseif ($payment_filter === 'credit') {
@@ -598,28 +591,43 @@ try {
 } catch (Exception $e) {}
 
 // 1. Overall Revenue KPIs
-$kpi_stmt = $pdo->prepare("
-    SELECT 
-        COUNT(DISTINCT o.order_id) as total_orders_count,
-        SUM(CASE WHEN o.status = 'delivered' THEN 1 ELSE 0 END) as delivered_orders_count,
-        COALESCE(SUM(CASE WHEN o.status = 'delivered' THEN COALESCE(r.total_amount, o.total_amount, 0) ELSE 0 END), 0) as total_delivered_sales,
-        COALESCE(SUM(CASE WHEN o.status != 'cancelled' THEN r.cash_amount ELSE 0 END), 0) as total_cash_collected,
-        COALESCE(SUM(CASE WHEN o.status != 'cancelled' THEN COALESCE(r.credited_amount, 0) ELSE 0 END), 0) as total_credited_amount,
-        COALESCE(SUM(CASE WHEN o.status != 'cancelled' THEN r.due_amount ELSE 0 END), 0) as total_outstanding_due
-    FROM orders o
-    LEFT JOIN zones z ON o.zone_id = z.id
-    LEFT JOIN receipts r ON o.order_id = r.order_id
-    WHERE $where_sql
-");
-foreach ($params as $k => $v) {
-    if ($k === ':zone_id' || $k === ':order_id_search') {
-        $kpi_stmt->bindValue($k, $v, PDO::PARAM_INT);
-    } else {
-        $kpi_stmt->bindValue($k, $v, PDO::PARAM_STR);
+$kpis = [
+    'total_orders_count'     => 0,
+    'delivered_orders_count' => 0,
+    'total_delivered_sales'  => 0.0,
+    'total_cash_collected'   => 0.0,
+    'total_credited_amount'  => 0.0,
+    'total_outstanding_due'  => 0.0,
+];
+try {
+    $kpi_stmt = $pdo->prepare("
+        SELECT 
+            COUNT(DISTINCT o.order_id) as total_orders_count,
+            SUM(CASE WHEN o.status = 'delivered' THEN 1 ELSE 0 END) as delivered_orders_count,
+            COALESCE(SUM(CASE WHEN o.status = 'delivered' THEN COALESCE(r.total_amount, o.total_amount, 0) ELSE 0 END), 0) as total_delivered_sales,
+            COALESCE(SUM(CASE WHEN o.status != 'cancelled' THEN r.cash_amount ELSE 0 END), 0) as total_cash_collected,
+            COALESCE(SUM(CASE WHEN o.status != 'cancelled' THEN COALESCE(r.credited_amount, 0) ELSE 0 END), 0) as total_credited_amount,
+            COALESCE(SUM(CASE WHEN o.status != 'cancelled' THEN r.due_amount ELSE 0 END), 0) as total_outstanding_due
+        FROM orders o
+        LEFT JOIN zones z ON o.zone_id = z.id
+        LEFT JOIN receipts r ON o.order_id = r.order_id
+        WHERE $where_sql
+    ");
+    foreach ($params as $k => $v) {
+        if ($k === ':zone_id' || $k === ':order_id_search') {
+            $kpi_stmt->bindValue($k, $v, PDO::PARAM_INT);
+        } else {
+            $kpi_stmt->bindValue($k, $v, PDO::PARAM_STR);
+        }
     }
+    $kpi_stmt->execute();
+    $fetchedKpis = $kpi_stmt->fetch(PDO::FETCH_ASSOC);
+    if ($fetchedKpis) {
+        $kpis = $fetchedKpis;
+    }
+} catch (Exception $e) {
+    error_log("Error executing KPI query: " . $e->getMessage());
 }
-$kpi_stmt->execute();
-$kpis = $kpi_stmt->fetch(PDO::FETCH_ASSOC);
 
 // 2. Zone-by-Zone Financial Breakdown (respects period filter if specified)
 $zone_date_clause = !empty($date_clauses) ? (" AND (" . implode(" AND ", $date_clauses) . ")") : "";
@@ -641,18 +649,23 @@ $zone_breakdown_sql = "
     GROUP BY z.id
     ORDER BY total_sales DESC, z.name ASC
 ";
-$zone_breakdown_stmt = $pdo->prepare($zone_breakdown_sql);
+$zone_breakdowns = [];
+try {
+    $zone_breakdown_stmt = $pdo->prepare($zone_breakdown_sql);
 
-foreach ($date_params as $key => $value) {
-    $zone_breakdown_stmt->bindValue(
-        $key,
-        $value,
-        PDO::PARAM_STR
-    );
+    foreach ($date_params as $key => $value) {
+        $zone_breakdown_stmt->bindValue(
+            $key,
+            $value,
+            PDO::PARAM_STR
+        );
+    }
+
+    $zone_breakdown_stmt->execute();
+    $zone_breakdowns = $zone_breakdown_stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+} catch (Exception $e) {
+    error_log("Error executing zone breakdown query: " . $e->getMessage());
 }
-
-$zone_breakdown_stmt->execute();
-$zone_breakdowns = $zone_breakdown_stmt->fetchAll(PDO::FETCH_ASSOC);
 
 // All-Zones Master Aggregation
 $all_zones_summary = [
@@ -678,67 +691,77 @@ foreach ($zone_breakdowns as $zb) {
 }
 
 // 3. Count matching orders for pagination
-$count_stmt = $pdo->prepare("
-    SELECT COUNT(DISTINCT o.order_id)
-    FROM orders o
-    LEFT JOIN zones z ON o.zone_id = z.id
-    LEFT JOIN receipts r ON o.order_id = r.order_id
-    WHERE $where_sql
-");
-foreach ($params as $k => $v) {
-    if ($k === ':zone_id' || $k === ':order_id_search') {
-        $count_stmt->bindValue($k, $v, PDO::PARAM_INT);
-    } else {
-        $count_stmt->bindValue($k, $v, PDO::PARAM_STR);
+$total_matching_orders = 0;
+try {
+    $count_stmt = $pdo->prepare("
+        SELECT COUNT(DISTINCT o.order_id)
+        FROM orders o
+        LEFT JOIN zones z ON o.zone_id = z.id
+        LEFT JOIN receipts r ON o.order_id = r.order_id
+        WHERE $where_sql
+    ");
+    foreach ($params as $k => $v) {
+        if ($k === ':zone_id' || $k === ':order_id_search') {
+            $count_stmt->bindValue($k, $v, PDO::PARAM_INT);
+        } else {
+            $count_stmt->bindValue($k, $v, PDO::PARAM_STR);
+        }
     }
+    $count_stmt->execute();
+    $total_matching_orders = (int)$count_stmt->fetchColumn();
+} catch (Exception $e) {
+    error_log("Error executing count query: " . $e->getMessage());
 }
-$count_stmt->execute();
-$total_matching_orders = (int)$count_stmt->fetchColumn();
 $total_pages = ceil($total_matching_orders / $per_page);
 
 // 4. Fetch orders listing with complete financial details
-$orders_sql = "
-    SELECT 
-        o.*,
-        z.name as zone_name,
-        z.slug as zone_slug,
-        p.product_name,
-        p.name as fallback_product_name,
-        r.id as receipt_id,
-        r.bill_number,
-        r.delivered_quantity,
-        r.cash_amount as receipt_cash,
-        r.credited_amount as receipt_credit,
-        r.due_amount as receipt_due,
-        r.payment_type as receipt_pay_type,
-        r.notes as receipt_notes,
-        r.created_at as receipt_date,
-        (SELECT COUNT(*) FROM order_payments op WHERE op.order_id = o.order_id) AS payments_count,
-        (SELECT COUNT(*) FROM order_items oi WHERE oi.order_id = o.order_id) AS items_count,
-        (SELECT GROUP_CONCAT(CONCAT(COALESCE(p2.product_name, p2.name), ' (', oi2.quantity, 'cs', IF(oi2.is_extra = 1 OR oi2.price_at_purchase = 0, ' - Extra', ''), ')') SEPARATOR ', ') 
-         FROM order_items oi2 
-         JOIN products p2 ON oi2.product_id = p2.product_id 
-         WHERE oi2.order_id = o.order_id) AS items_summary
-    FROM orders o
-    LEFT JOIN zones z ON o.zone_id = z.id
-    LEFT JOIN products p ON o.product_id = p.product_id
-    LEFT JOIN receipts r ON o.order_id = r.order_id
-    WHERE $where_sql
-    ORDER BY o.created_at DESC
-    LIMIT :limit OFFSET :offset
-";
-$orders_stmt = $pdo->prepare($orders_sql);
-foreach ($params as $k => $v) {
-    if ($k === ':zone_id' || $k === ':order_id_search') {
-        $orders_stmt->bindValue($k, $v, PDO::PARAM_INT);
-    } else {
-        $orders_stmt->bindValue($k, $v, PDO::PARAM_STR);
+$orders = [];
+try {
+    $orders_sql = "
+        SELECT 
+            o.*,
+            z.name as zone_name,
+            z.slug as zone_slug,
+            p.product_name,
+            p.name as fallback_product_name,
+            r.id as receipt_id,
+            r.bill_number,
+            r.delivered_quantity,
+            r.cash_amount as receipt_cash,
+            r.credited_amount as receipt_credit,
+            r.due_amount as receipt_due,
+            r.payment_type as receipt_pay_type,
+            r.notes as receipt_notes,
+            r.created_at as receipt_date,
+            (SELECT COUNT(*) FROM order_payments op WHERE op.order_id = o.order_id) AS payments_count,
+            (SELECT COUNT(*) FROM order_items oi WHERE oi.order_id = o.order_id) AS items_count,
+            (SELECT GROUP_CONCAT(CONCAT(COALESCE(p2.product_name, p2.name), ' (', oi2.quantity, 'cs', IF(oi2.is_extra = 1 OR oi2.price_at_purchase = 0, ' - Extra', ''), ')') SEPARATOR ', ') 
+             FROM order_items oi2 
+             JOIN products p2 ON oi2.product_id = p2.product_id 
+             WHERE oi2.order_id = o.order_id) AS items_summary
+        FROM orders o
+        LEFT JOIN zones z ON o.zone_id = z.id
+        LEFT JOIN products p ON o.product_id = p.product_id
+        LEFT JOIN receipts r ON o.order_id = r.order_id
+        WHERE $where_sql
+        ORDER BY o.created_at DESC
+        LIMIT :limit OFFSET :offset
+    ";
+    $orders_stmt = $pdo->prepare($orders_sql);
+    foreach ($params as $k => $v) {
+        if ($k === ':zone_id' || $k === ':order_id_search') {
+            $orders_stmt->bindValue($k, $v, PDO::PARAM_INT);
+        } else {
+            $orders_stmt->bindValue($k, $v, PDO::PARAM_STR);
+        }
     }
+    $orders_stmt->bindValue(':limit', (int)$per_page, PDO::PARAM_INT);
+    $orders_stmt->bindValue(':offset', (int)$offset, PDO::PARAM_INT);
+    $orders_stmt->execute();
+    $orders = $orders_stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+} catch (Exception $e) {
+    error_log("Error executing orders query: " . $e->getMessage());
 }
-$orders_stmt->bindValue(':limit', (int)$per_page, PDO::PARAM_INT);
-$orders_stmt->bindValue(':offset', (int)$offset, PDO::PARAM_INT);
-$orders_stmt->execute();
-$orders = $orders_stmt->fetchAll(PDO::FETCH_ASSOC);
 
 // Attach shop earlier dues for each order row
 foreach ($orders as &$o) {
@@ -754,31 +777,35 @@ foreach ($orders as &$o) {
 unset($o);
 
 // Helper for WhatsApp URL
-function makeWhatsAppLink($phone, $shop, $orderNum, $amount) {
-    $clean = preg_replace('/[^0-9]/', '', $phone ?? '');
-    if (empty($clean)) return '';
-    if (strlen($clean) === 10) $clean = '91' . $clean;
-    $msg = "Hello {$shop}, regarding Liyas Water Order #{$orderNum} (Total: {$amount}).";
-    return "https://wa.me/{$clean}?text=" . rawurlencode($msg);
+if (!function_exists('makeWhatsAppLink')) {
+    function makeWhatsAppLink($phone, $shop, $orderNum, $amount) {
+        $clean = preg_replace('/[^0-9]/', '', $phone ?? '');
+        if (empty($clean)) return '';
+        if (strlen($clean) === 10) $clean = '91' . $clean;
+        $msg = "Hello {$shop}, regarding Liyas Water Order #{$orderNum} (Total: {$amount}).";
+        return "https://wa.me/{$clean}?text=" . rawurlencode($msg);
+    }
 }
 
 // URL builder helper for 1-tap card filters & micro-drill downs
-function buildFilterUrl($overrides = [], $anchor = 'orders-register') {
-    $params = $_GET;
-    unset($params['page']); // Reset pagination when applying a new filter
-    foreach ($overrides as $k => $v) {
-        if ($v === null || $v === '') {
-            unset($params[$k]);
-        } else {
-            $params[$k] = $v;
+if (!function_exists('buildFilterUrl')) {
+    function buildFilterUrl($overrides = [], $anchor = 'orders-register') {
+        $params = $_GET;
+        unset($params['page']); // Reset pagination when applying a new filter
+        foreach ($overrides as $k => $v) {
+            if ($v === null || $v === '') {
+                unset($params[$k]);
+            } else {
+                $params[$k] = $v;
+            }
         }
+        $query = http_build_query($params);
+        $url = 'index.php' . ($query ? '?' . $query : '');
+        if ($anchor) {
+            $url .= '#' . $anchor;
+        }
+        return $url;
     }
-    $query = http_build_query($params);
-    $url = 'index.php' . ($query ? '?' . $query : '');
-    if ($anchor) {
-        $url .= '#' . $anchor;
-    }
-    return $url;
 }
 
 $cleanBaseUrl = rtrim(BASE_URL, '/');
