@@ -2026,11 +2026,11 @@ foreach ($vehicle_products as $vPid => $vp) {
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
                         <label id="btnModeDelivery" class="receipt-mode-btn" onclick="toggleReceiptPurpose(0)" style="display: flex; align-items: center; justify-content: center; gap: 8px; padding: 10px 12px; border-radius: 8px; cursor: pointer; border: 2px solid #2563eb; background: #eff6ff; color: #1e40af; font-weight: 700; font-size: 13px; transition: all 0.2s;">
                             <input type="radio" name="is_due_collection_only" value="0" id="radioModeDelivery" <?= (empty($_POST['is_due_collection_only'])) ? 'checked' : '' ?> onchange="toggleReceiptPurpose(0)" style="accent-color: #2563eb;">
-                            <span>💧 Product Delivery</span>
+                            <span>Delivery</span>
                         </label>
                         <label id="btnModeDueOnly" class="receipt-mode-btn" onclick="toggleReceiptPurpose(1)" style="display: flex; align-items: center; justify-content: center; gap: 8px; padding: 10px 12px; border-radius: 8px; cursor: pointer; border: 2px solid #cbd5e1; background: #ffffff; color: #475569; font-weight: 700; font-size: 13px; transition: all 0.2s;">
                             <input type="radio" name="is_due_collection_only" value="1" id="radioModeDueOnly" <?= (!empty($_POST['is_due_collection_only']) && (int)$_POST['is_due_collection_only'] === 1) ? 'checked' : '' ?> onchange="toggleReceiptPurpose(1)" style="accent-color: #dc2626;">
-                            <span>🏷️ Clear Due</span>
+                            <span>Clear Due</span>
                         </label>
                     </div>
                     <!-- <div id="dueModeNotice" style="display: none; margin-top: 10px; background: #fef2f2; border: 1px dashed #fca5a5; border-radius: 8px; padding: 8px 12px; font-size: 12px; color: #991b1b; align-items: center; gap: 6px;">
