@@ -11,6 +11,11 @@ if (isset($_GET['action']) && $_GET['action'] === 'get_payment_history') {
     header('Content-Type: application/json; charset=utf-8');
     $reqOrderId = (int)($_GET['order_id'] ?? 0);
     $historyData = getOrderPaymentHistory($pdo, $reqOrderId);
+    if (!empty($historyData['success']) && !empty($historyData['order'])) {
+        $sName = $historyData['order']['shop_name'] ?: ($historyData['order']['customer_name'] ?? '');
+        $sPhone = $historyData['order']['phone'] ?? '';
+        $historyData['shop_earlier_dues'] = getShopPendingDueDetails($pdo, $sName, $sPhone, $reqOrderId);
+    }
     echo json_encode($historyData);
     exit;
 }
@@ -188,6 +193,55 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['settle_due_balance'])
     $redirectCurrentRevenuePage();
 }
 
+// Handle clear / settle shop's earlier pending due (FIFO across prior bills and opening balance)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['settle_shop_prior_due'])) {
+    $submittedToken = $_POST['settle_token'] ?? '';
+    $sessionToken = $_SESSION['due_settle_token'] ?? '';
+
+    if (empty($submittedToken) || $submittedToken !== $sessionToken) {
+        $_SESSION['flash_msg'] = [
+            'type' => 'error',
+            'text' => "This due settlement request was already processed or expired. Refresh avoided duplicate payment."
+        ];
+        $redirectCurrentRevenuePage();
+    }
+    $_SESSION['due_settle_token'] = bin2hex(random_bytes(16));
+
+    $order_id     = (int)($_POST['order_id'] ?? 0);
+    $shop_name    = trim($_POST['shop_name'] ?? '');
+    $phone        = trim($_POST['phone'] ?? '');
+    $clear_amount = isset($_POST['clear_amount']) && is_numeric($_POST['clear_amount']) ? (float)$_POST['clear_amount'] : 0.0;
+    $settle_mode  = trim($_POST['settle_mode'] ?? 'cash');
+    $ref_no       = trim($_POST['ref_no'] ?? '');
+    $clear_notes  = trim($_POST['clear_notes'] ?? '');
+
+    if ($clear_amount > 0 && (!empty($shop_name) || !empty($phone))) {
+        $auditNote = "Cleared via Revenue module";
+        if (!empty($ref_no)) { $auditNote .= " (Ref: {$ref_no})"; }
+        if (!empty($clear_notes)) { $auditNote .= " - Note: {$clear_notes}"; }
+
+        $res = settleShopPriorDuesFifo($pdo, $shop_name, $phone, $clear_amount, $settle_mode, $auditNote, $order_id);
+        if (!empty($res['success']) && (float)$res['total_cleared'] > 0) {
+            $displayName = !empty($shop_name) ? $shop_name : $phone;
+            $_SESSION['flash_msg'] = [
+                'type' => 'success',
+                'text' => "Successfully cleared ₹" . number_format($res['total_cleared'], 2) . " earlier pending due for '{$displayName}' via " . ucfirst($settle_mode) . "! Remaining earlier due: ₹" . number_format($res['remaining_balance'], 2)
+            ];
+        } else {
+            $_SESSION['flash_msg'] = [
+                'type' => 'error',
+                'text' => "Could not settle earlier due: No outstanding earlier dues found or invalid clearance amount."
+            ];
+        }
+    } else {
+        $_SESSION['flash_msg'] = [
+            'type' => 'error',
+            'text' => "Invalid amount or shop details for earlier due settlement."
+        ];
+    }
+    $redirectCurrentRevenuePage();
+}
+
 // Filters from GET request
 $zone_filter    = $_GET['zone'] ?? 'all';
 $payment_filter = $_GET['payment_status'] ?? 'all';
@@ -272,6 +326,53 @@ if ($payment_filter === 'paid') {
     $where_clauses[] = "r.id IS NOT NULL AND (r.due_amount <= 0 OR r.due_amount IS NULL) AND o.status != 'cancelled'";
 } elseif ($payment_filter === 'due') {
     $where_clauses[] = "r.due_amount > 0 AND o.status != 'cancelled'";
+} elseif ($payment_filter === 'shop_due') {
+    $where_clauses[] = "(
+        EXISTS (
+            SELECT 1 FROM shops s 
+            WHERE s.pending_amount > 0 
+              AND (
+                  (TRIM(LOWER(s.shop_name)) = TRIM(LOWER(o.shop_name)) AND TRIM(o.shop_name) != '')
+                  OR (o.phone != '' AND LENGTH(o.phone) >= 7 AND (s.phone = o.phone OR s.phone LIKE CONCAT('%', RIGHT(o.phone, 10))))
+              )
+        )
+        OR EXISTS (
+            SELECT 1 FROM receipts r2 
+            JOIN orders o2 ON r2.order_id = o2.order_id 
+            WHERE r2.due_amount > 0 
+              AND o2.status != 'cancelled' 
+              AND o2.order_id != o.order_id 
+              AND (
+                  (TRIM(LOWER(o2.shop_name)) = TRIM(LOWER(o.shop_name)) AND TRIM(o.shop_name) != '')
+                  OR (TRIM(LOWER(o2.customer_name)) = TRIM(LOWER(o.customer_name)) AND TRIM(o.customer_name) != '')
+                  OR (o.phone != '' AND LENGTH(o.phone) >= 7 AND (o2.phone = o.phone OR o2.phone LIKE CONCAT('%', RIGHT(o.phone, 10))))
+              )
+        )
+    ) AND o.status != 'cancelled'";
+} elseif ($payment_filter === 'all_dues') {
+    $where_clauses[] = "(
+        r.due_amount > 0
+        OR EXISTS (
+            SELECT 1 FROM shops s 
+            WHERE s.pending_amount > 0 
+              AND (
+                  (TRIM(LOWER(s.shop_name)) = TRIM(LOWER(o.shop_name)) AND TRIM(o.shop_name) != '')
+                  OR (o.phone != '' AND LENGTH(o.phone) >= 7 AND (s.phone = o.phone OR s.phone LIKE CONCAT('%', RIGHT(o.phone, 10))))
+              )
+        )
+        OR EXISTS (
+            SELECT 1 FROM receipts r2 
+            JOIN orders o2 ON r2.order_id = o2.order_id 
+            WHERE r2.due_amount > 0 
+              AND o2.status != 'cancelled' 
+              AND o2.order_id != o.order_id 
+              AND (
+                  (TRIM(LOWER(o2.shop_name)) = TRIM(LOWER(o.shop_name)) AND TRIM(o.shop_name) != '')
+                  OR (TRIM(LOWER(o2.customer_name)) = TRIM(LOWER(o.customer_name)) AND TRIM(o.customer_name) != '')
+                  OR (o.phone != '' AND LENGTH(o.phone) >= 7 AND (o2.phone = o.phone OR o2.phone LIKE CONCAT('%', RIGHT(o.phone, 10))))
+              )
+        )
+    ) AND o.status != 'cancelled'";
 } elseif ($payment_filter === 'cash') {
     $where_clauses[] = "r.cash_amount > 0 AND o.status != 'cancelled'";
 } elseif ($payment_filter === 'credit') {
@@ -341,6 +442,16 @@ if (isset($_GET['export']) && in_array($_GET['export'], ['csv', 'excel'])) {
     $exp_stmt->execute();
     $export_rows = $exp_stmt->fetchAll(PDO::FETCH_ASSOC);
 
+    // Compute earlier shop due for each exported order
+    foreach ($export_rows as &$row) {
+        $sName = !empty($row['shop_name']) ? $row['shop_name'] : (!empty($row['customer_name']) ? $row['customer_name'] : '');
+        $sPhone = $row['phone'] ?? '';
+        $ordId = (int)$row['order_id'];
+        $dueDetails = getShopPendingDueDetails($pdo, $sName, $sPhone, $ordId);
+        $row['earlier_due'] = (float)($dueDetails['total_due'] ?? 0);
+    }
+    unset($row);
+
     $filename_base = "Liyas_Revenue_Report_" . date('Y-m-d_His');
 
     if ($exp_format === 'csv') {
@@ -363,7 +474,9 @@ if (isset($_GET['export']) && in_array($_GET['export'], ['csv', 'excel'])) {
             'Total Amount',
             'Cash Paid',
             'Credited',
-            'Due Balance'
+            'Bill Due',
+            'Earlier Due',
+            'Total Due'
         ];
         fputcsv($out, $headers);
 
@@ -386,6 +499,7 @@ if (isset($_GET['export']) && in_array($_GET['export'], ['csv', 'excel'])) {
             $cash = ($status === 'cancelled') ? 0.00 : (float)($row['receipt_cash'] ?? 0);
             $credit = ($status === 'cancelled') ? 0.00 : (float)($row['receipt_credit'] ?? 0);
             $due = ($status === 'cancelled') ? 0.00 : (float)($row['receipt_due'] ?? 0);
+            $earlierDue = (float)($row['earlier_due'] ?? 0);
 
             fputcsv($out, [
                 $ordNum,
@@ -397,7 +511,9 @@ if (isset($_GET['export']) && in_array($_GET['export'], ['csv', 'excel'])) {
                 number_format($totAmt, 2, '.', ''),
                 number_format($cash, 2, '.', ''),
                 number_format($credit, 2, '.', ''),
-                number_format($due, 2, '.', '')
+                number_format($due, 2, '.', ''),
+                number_format($earlierDue, 2, '.', ''),
+                number_format($due + $earlierDue, 2, '.', '')
             ]);
         }
         fclose($out);
@@ -429,7 +545,9 @@ if (isset($_GET['export']) && in_array($_GET['export'], ['csv', 'excel'])) {
         echo '<th class="num">Total Amount</th>';
         echo '<th class="num">Cash Paid</th>';
         echo '<th class="num">Credited</th>';
-        echo '<th class="num col-due-hdr" style=" color: #991b1b;">Due Balance</th>';
+        echo '<th class="num col-due-hdr" style=" color: #991b1b;">Bill Due</th>';
+        echo '<th class="num col-due-hdr" style=" color: #b91c1c;">Earlier Due</th>';
+        echo '<th class="num col-due-hdr" style=" color: #7f1d1d; font-weight: 800;">Total Due</th>';
         echo '</tr></thead><tbody>';
 
         foreach ($export_rows as $row) {
@@ -451,6 +569,7 @@ if (isset($_GET['export']) && in_array($_GET['export'], ['csv', 'excel'])) {
             $cash = ($status === 'cancelled') ? 0.00 : (float)($row['receipt_cash'] ?? 0);
             $credit = ($status === 'cancelled') ? 0.00 : (float)($row['receipt_credit'] ?? 0);
             $due = ($status === 'cancelled') ? 0.00 : (float)($row['receipt_due'] ?? 0);
+            $earlierDue = (float)($row['earlier_due'] ?? 0);
 
             echo '<tr>';
             echo '<td>' . $ordNum . '</td>';
@@ -463,12 +582,20 @@ if (isset($_GET['export']) && in_array($_GET['export'], ['csv', 'excel'])) {
             echo '<td class="num">' . number_format($cash, 2) . '</td>';
             echo '<td class="num">' . number_format($credit, 2) . '</td>';
             echo '<td class="num col-due-cell" style="background-color: #fef2f2; color: #b91c1c;">' . number_format($due, 2) . '</td>';
+            echo '<td class="num col-due-cell" style="background-color: #fff1f2; color: #b91c1c;">' . number_format($earlierDue, 2) . '</td>';
+            echo '<td class="num col-due-cell" style="background-color: #fee2e2; color: #7f1d1d; font-weight: bold;">' . number_format($due + $earlierDue, 2) . '</td>';
             echo '</tr>';
         }
         echo '</tbody></table></body></html>';
         exit;
     }
 }
+
+// Total master shops opening pending dues
+$totalMasterShopDues = 0.0;
+try {
+    $totalMasterShopDues = (float)$pdo->query("SELECT COALESCE(SUM(pending_amount), 0) FROM shops")->fetchColumn();
+} catch (Exception $e) {}
 
 // 1. Overall Revenue KPIs
 $kpi_stmt = $pdo->prepare("
@@ -612,6 +739,19 @@ $orders_stmt->bindValue(':limit', (int)$per_page, PDO::PARAM_INT);
 $orders_stmt->bindValue(':offset', (int)$offset, PDO::PARAM_INT);
 $orders_stmt->execute();
 $orders = $orders_stmt->fetchAll(PDO::FETCH_ASSOC);
+
+// Attach shop earlier dues for each order row
+foreach ($orders as &$o) {
+    $sName = !empty($o['shop_name']) ? $o['shop_name'] : (!empty($o['customer_name']) ? $o['customer_name'] : '');
+    $sPhone = $o['phone'] ?? '';
+    $ordId = (int)$o['order_id'];
+
+    $dueDetails = getShopPendingDueDetails($pdo, $sName, $sPhone, $ordId);
+    $o['earlier_due'] = (float)($dueDetails['total_due'] ?? 0);
+    $o['earlier_due_count'] = (int)($dueDetails['due_count'] ?? 0);
+    $o['earlier_due_details'] = $dueDetails['receipts'] ?? [];
+}
+unset($o);
 
 // Helper for WhatsApp URL
 function makeWhatsAppLink($phone, $shop, $orderNum, $amount) {
@@ -1538,13 +1678,13 @@ $cleanBaseUrl = rtrim(BASE_URL, '/');
                         </div>
                     </div>
 
-                    <?php $isDueActive = ($payment_filter === 'due'); ?>
+                    <?php $isDueActive = in_array($payment_filter, ['due', 'shop_due', 'all_dues']); ?>
                     <div class="kpi-card kpi-due <?= $isDueActive ? 'is-kpi-active' : '' ?>"
                          tabindex="0"
                          role="button"
-                         onclick="window.location.href='<?= htmlspecialchars(buildFilterUrl(['payment_status' => 'due'])) ?>'"
-                         onkeydown="if(event.key==='Enter'||event.key===' '){ window.location.href='<?= htmlspecialchars(buildFilterUrl(['payment_status' => 'due'])) ?>'; }"
-                         title="Click to view all orders with outstanding due">
+                         onclick="window.location.href='<?= htmlspecialchars(buildFilterUrl(['payment_status' => 'all_dues'])) ?>'"
+                         onkeydown="if(event.key==='Enter'||event.key===' '){ window.location.href='<?= htmlspecialchars(buildFilterUrl(['payment_status' => 'all_dues'])) ?>'; }"
+                         title="Click to view all orders with bill due or earlier shop due">
                         <div class="kpi-card-header">
                             <span class="kpi-label">Outstanding Due</span>
                             <div class="kpi-icon-box">
@@ -1556,10 +1696,15 @@ $cleanBaseUrl = rtrim(BASE_URL, '/');
                                 <?= formatCurrency($kpis['total_outstanding_due']) ?>
                             </div>
                             <div class="kpi-subtext" style="color: #ef4444;">
-                                <span>Pending receivables</span>
+                                <span>Pending bill receivables</span>
+                                <?php if ($totalMasterShopDues > 0): ?>
+                                    <span style="font-size: 11px; color: #b91c1c; display: block; margin-top: 2px;">
+                                        + <?= formatCurrency($totalMasterShopDues) ?> Shop Opening Dues
+                                    </span>
+                                <?php endif; ?>
                             </div>
                             <div class="kpi-filter-hint">
-                                <i class='bx bx-filter-alt'></i> <?= $isDueActive ? 'Active Filter: Due Orders' : 'Click to filter due orders' ?>
+                                <i class='bx bx-filter-alt'></i> <?= $isDueActive ? 'Active Filter: Dues' : 'Click to filter all dues' ?>
                             </div>
                         </div>
                     </div>
@@ -1614,7 +1759,9 @@ $cleanBaseUrl = rtrim(BASE_URL, '/');
                             <select name="payment_status" id="f_pay" class="select-filter">
                                 <option value="all" <?= ($payment_filter === 'all') ? 'selected' : '' ?>>All Payment States</option>
                                 <option value="paid" <?= ($payment_filter === 'paid') ? 'selected' : '' ?>>✅ Fully Paid (No Due)</option>
-                                <option value="due" <?= ($payment_filter === 'due') ? 'selected' : '' ?>>⚠️ Has Outstanding Due</option>
+                                <option value="due" <?= ($payment_filter === 'due') ? 'selected' : '' ?>>⚠️ Has Bill Due</option>
+                                <option value="shop_due" <?= ($payment_filter === 'shop_due') ? 'selected' : '' ?>>🕒 Shop Has Earlier Due</option>
+                                <option value="all_dues" <?= ($payment_filter === 'all_dues') ? 'selected' : '' ?>>🚨 Any Due (Bill or Earlier)</option>
                                 <option value="cash" <?= ($payment_filter === 'cash') ? 'selected' : '' ?>>💵 Cash Collected</option>
                                 <option value="credit" <?= ($payment_filter === 'credit') ? 'selected' : '' ?>>💳 Credited Amount</option>
                                 <option value="unbilled" <?= ($payment_filter === 'unbilled') ? 'selected' : '' ?>>📄 Unbilled / Pending Receipt</option>
@@ -1709,7 +1856,9 @@ $cleanBaseUrl = rtrim(BASE_URL, '/');
                 if ($payment_filter !== 'all' && !empty($payment_filter)) {
                     $payMap = [
                         'paid'     => 'Fully Paid (₹0 Due)',
-                        'due'      => 'Has Outstanding Due',
+                        'due'      => 'Has Bill Due',
+                        'shop_due' => 'Shop Has Earlier Due',
+                        'all_dues' => 'Has Any Due (Bill or Earlier)',
                         'cash'     => 'Cash Collected',
                         'credit'   => 'Credited Sales',
                         'unbilled' => 'Unbilled / Pending Receipt'
@@ -1824,6 +1973,8 @@ $cleanBaseUrl = rtrim(BASE_URL, '/');
                                         $due     = (float)$o['receipt_due'];
                                         $status  = strtolower($o['status']);
                                         $waLink  = makeWhatsAppLink($phone, $shop, $ordNum, formatCurrency($totAmt));
+                                        $earlierDue = (float)($o['earlier_due'] ?? 0);
+                                        $earlierDueCount = (int)($o['earlier_due_count'] ?? 0);
                                     ?>
                                     <tr>
                                         <!-- Order & Bill -->
@@ -1852,7 +2003,14 @@ $cleanBaseUrl = rtrim(BASE_URL, '/');
 
                                         <!-- Customer / Shop -->
                                         <td>
-                                            <div style="font-weight: 700; color: #0f172a;"><?= $shop ?></div>
+                                            <div style="font-weight: 700; color: #0f172a; display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                                                <span><?= $shop ?></span>
+                                                <?php if ($earlierDue > 0): ?>
+                                                    <span style="background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; font-size: 10.5px; font-weight: 700; padding: 1.5px 6px; border-radius: 4px; display: inline-flex; align-items: center; gap: 3px;" title="Shop has earlier pending due of <?= formatCurrency($earlierDue) ?> (opening balance / previous bills)">
+                                                        <i class='bx bxs-error-circle'></i> Earlier Due: <?= formatCurrency($earlierDue) ?>
+                                                    </span>
+                                                <?php endif; ?>
+                                            </div>
                                          <div style="font-size: 12px; color: #64748b; margin-top: 2px;">
     <i class='bx bx-map'></i>
     <?= nl2br(htmlspecialchars(wordwrap($o['location'] ?: 'Area', 30, "\n", true))) ?>
@@ -1958,8 +2116,8 @@ $cleanBaseUrl = rtrim(BASE_URL, '/');
                                                 <span style="color: #94a3b8; font-size: 11px;">Voided</span>
                                             <?php elseif ($due > 0): ?>
                                                 <div>
-                                                    <button type="button" class="badge-due-danger" onclick="openPaymentHistoryModal(<?= $ordId ?>)" style="border: none; cursor: pointer;" title="Click to view payment installments & history">
-                                                        <?= formatCurrency($due) ?>
+                                                    <button type="button" class="badge-due-danger" onclick="openPaymentHistoryModal(<?= $ordId ?>)" style="border: none; cursor: pointer;" title="Bill Due: <?= formatCurrency($due) ?>. Click to view payment installments & history">
+                                                        Bill Due: <?= formatCurrency($due) ?>
                                                     </button>
                                                 </div>
                                                 <?php if ((int)($o['payments_count'] ?? 0) > 1): ?>
@@ -1969,17 +2127,62 @@ $cleanBaseUrl = rtrim(BASE_URL, '/');
                                                         </button>
                                                     </div>
                                                 <?php endif; ?>
-                                                <button type="button" class="btn-tbl" onclick="openRevenueDueModal(<?= $ordId ?>, '<?= htmlspecialchars($ordNum, ENT_QUOTES) ?>', '<?= htmlspecialchars($shop, ENT_QUOTES) ?>', <?= (float)$due ?>)" style="margin-top: 4px; padding: 2px 6px; font-size: 11px; background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; cursor: pointer; border-radius: 4px; display: inline-flex; align-items: center; gap: 3px; font-weight: 700; white-space: nowrap;" title="Custom Due Clearance">
-                                                    <i class='bx bx-check-circle'></i> Clear Due
-                                                </button>
+                                                <?php if ($earlierDue > 0): ?>
+                                                    <div style="margin-top: 4px;">
+                                                        <button type="button" onclick="openShopEarlierDueModal(<?= $ordId ?>, '<?= htmlspecialchars($shop, ENT_QUOTES) ?>', '<?= htmlspecialchars($phone, ENT_QUOTES) ?>', <?= (float)$earlierDue ?>)" style="border: 1px solid #fca5a5; background: #fff1f2; color: #b91c1c; font-size: 10.5px; font-weight: 800; padding: 2px 6px; border-radius: 4px; display: inline-flex; align-items: center; gap: 3px; cursor: pointer;" title="Shop earlier pending due: <?= formatCurrency($earlierDue) ?>. Click to settle.">
+                                                            <i class='bx bx-time-five'></i> Earlier: <?= formatCurrency($earlierDue) ?>
+                                                        </button>
+                                                    </div>
+                                                    <div style="font-size: 10.5px; font-weight: 800; color: #991b1b; margin-top: 3px;">
+                                                        Total Due: <?= formatCurrency($due + $earlierDue) ?>
+                                                    </div>
+                                                <?php endif; ?>
+                                                <div style="margin-top: 4px; display: flex; gap: 4px; justify-content: center; flex-wrap: wrap;">
+                                                    <button type="button" class="btn-tbl" onclick="openRevenueDueModal(<?= $ordId ?>, '<?= htmlspecialchars($ordNum, ENT_QUOTES) ?>', '<?= htmlspecialchars($shop, ENT_QUOTES) ?>', <?= (float)$due ?>)" style="padding: 2px 6px; font-size: 11px; background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; cursor: pointer; border-radius: 4px; display: inline-flex; align-items: center; gap: 3px; font-weight: 700; white-space: nowrap;" title="Custom Due Clearance">
+                                                        <i class='bx bx-check-circle'></i> Clear Bill Due
+                                                    </button>
+                                                    <?php if ($earlierDue > 0): ?>
+                                                        <button type="button" class="btn-tbl" onclick="openShopEarlierDueModal(<?= $ordId ?>, '<?= htmlspecialchars($shop, ENT_QUOTES) ?>', '<?= htmlspecialchars($phone, ENT_QUOTES) ?>', <?= (float)$earlierDue ?>)" style="padding: 2px 6px; font-size: 11px; background: #fff1f2; color: #b91c1c; border: 1px solid #fecdd3; cursor: pointer; border-radius: 4px; display: inline-flex; align-items: center; gap: 3px; font-weight: 700; white-space: nowrap;" title="Settle Earlier Due">
+                                                            <i class='bx bx-time-five'></i> Clear Earlier
+                                                        </button>
+                                                    <?php endif; ?>
+                                                </div>
                                             <?php elseif (!empty($billNum)): ?>
-                                                <button type="button" class="badge-settled" onclick="openPaymentHistoryModal(<?= $ordId ?>)" style="border: none; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;" title="Click to view payment & clearance timeline">
-                                                    Settled (₹0) <i class='bx bx-history' style="font-size: 13px;"></i>
-                                                </button>
+                                                <div>
+                                                    <button type="button" class="badge-settled" onclick="openPaymentHistoryModal(<?= $ordId ?>)" style="border: none; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;" title="Click to view payment & clearance timeline">
+                                                        Settled (₹0) <i class='bx bx-history' style="font-size: 13px;"></i>
+                                                    </button>
+                                                </div>
+                                                <?php if ($earlierDue > 0): ?>
+                                                    <div style="margin-top: 4px;">
+                                                        <button type="button" onclick="openShopEarlierDueModal(<?= $ordId ?>, '<?= htmlspecialchars($shop, ENT_QUOTES) ?>', '<?= htmlspecialchars($phone, ENT_QUOTES) ?>', <?= (float)$earlierDue ?>)" style="border: 1px solid #fca5a5; background: #fff1f2; color: #b91c1c; font-size: 11px; font-weight: 800; padding: 2px 7px; border-radius: 4px; display: inline-flex; align-items: center; gap: 3px; cursor: pointer;" title="Shop has earlier due of <?= formatCurrency($earlierDue) ?>. Click to settle.">
+                                                            <i class='bx bxs-error-circle'></i> Earlier Due: <?= formatCurrency($earlierDue) ?>
+                                                        </button>
+                                                    </div>
+                                                    <div style="margin-top: 3px;">
+                                                        <button type="button" class="btn-tbl" onclick="openShopEarlierDueModal(<?= $ordId ?>, '<?= htmlspecialchars($shop, ENT_QUOTES) ?>', '<?= htmlspecialchars($phone, ENT_QUOTES) ?>', <?= (float)$earlierDue ?>)" style="padding: 2px 6px; font-size: 10.5px; background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; cursor: pointer; border-radius: 4px; display: inline-flex; align-items: center; gap: 3px; font-weight: 700; white-space: nowrap;" title="Settle shop's earlier pending due">
+                                                            <i class='bx bx-check-circle'></i> Settle Earlier Due
+                                                        </button>
+                                                    </div>
+                                                <?php endif; ?>
                                             <?php else: ?>
-                                                <a href="<?= htmlspecialchars(buildFilterUrl(['payment_status' => 'unbilled'])) ?>" style="text-decoration: none; color: #94a3b8; font-size: 11px; font-weight: 600; display: inline-flex; align-items: center; gap: 3px;" title="Filter unbilled orders">
-                                                    <i class='bx bx-receipt'></i> Unbilled
-                                                </a>
+                                                <div>
+                                                    <a href="<?= htmlspecialchars(buildFilterUrl(['payment_status' => 'unbilled'])) ?>" style="text-decoration: none; color: #94a3b8; font-size: 11px; font-weight: 600; display: inline-flex; align-items: center; gap: 3px;" title="Filter unbilled orders">
+                                                        <i class='bx bx-receipt'></i> Unbilled
+                                                    </a>
+                                                </div>
+                                                <?php if ($earlierDue > 0): ?>
+                                                    <div style="margin-top: 4px;">
+                                                        <button type="button" onclick="openShopEarlierDueModal(<?= $ordId ?>, '<?= htmlspecialchars($shop, ENT_QUOTES) ?>', '<?= htmlspecialchars($phone, ENT_QUOTES) ?>', <?= (float)$earlierDue ?>)" style="border: 1px solid #fca5a5; background: #fff1f2; color: #b91c1c; font-size: 11px; font-weight: 800; padding: 2px 7px; border-radius: 4px; display: inline-flex; align-items: center; gap: 3px; cursor: pointer;" title="Shop has earlier due of <?= formatCurrency($earlierDue) ?>. Click to settle.">
+                                                            <i class='bx bxs-error-circle'></i> Earlier Due: <?= formatCurrency($earlierDue) ?>
+                                                        </button>
+                                                    </div>
+                                                    <div style="margin-top: 3px;">
+                                                        <button type="button" class="btn-tbl" onclick="openShopEarlierDueModal(<?= $ordId ?>, '<?= htmlspecialchars($shop, ENT_QUOTES) ?>', '<?= htmlspecialchars($phone, ENT_QUOTES) ?>', <?= (float)$earlierDue ?>)" style="padding: 2px 6px; font-size: 10.5px; background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; cursor: pointer; border-radius: 4px; display: inline-flex; align-items: center; gap: 3px; font-weight: 700; white-space: nowrap;" title="Settle shop's earlier pending due">
+                                                            <i class='bx bx-check-circle'></i> Settle Earlier Due
+                                                        </button>
+                                                    </div>
+                                                <?php endif; ?>
                                             <?php endif; ?>
                                         </td>
 
@@ -2022,6 +2225,12 @@ $cleanBaseUrl = rtrim(BASE_URL, '/');
                                                 <?php if ($due > 0): ?>
                                                     <button type="button" class="btn-tbl" onclick="openRevenueDueModal(<?= $ordId ?>, '<?= htmlspecialchars($ordNum, ENT_QUOTES) ?>', '<?= htmlspecialchars($shop, ENT_QUOTES) ?>', <?= (float)$due ?>)" style="background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; cursor: pointer;" title="Custom Due Clearance (<?= formatCurrency($due) ?>)">
                                                         <i class='bx bx-money'></i>
+                                                    </button>
+                                                <?php endif; ?>
+
+                                                <?php if ($earlierDue > 0): ?>
+                                                    <button type="button" class="btn-tbl" onclick="openShopEarlierDueModal(<?= $ordId ?>, '<?= htmlspecialchars($shop, ENT_QUOTES) ?>', '<?= htmlspecialchars($phone, ENT_QUOTES) ?>', <?= (float)$earlierDue ?>)" style="background: #fff1f2; color: #b91c1c; border-color: #fca5a5;" title="Settle Earlier Shop Due (<?= formatCurrency($earlierDue) ?>)">
+                                                        <i class='bx bx-time-five'></i>
                                                     </button>
                                                 <?php endif; ?>
 
@@ -2156,6 +2365,32 @@ $cleanBaseUrl = rtrim(BASE_URL, '/');
         document.getElementById('revModalClearAmount').value = activeModalDueVal.toFixed(2);
     }
 
+    let activeEarlierDueVal = 0;
+
+    function openShopEarlierDueModal(orderId, shopName, phone, earlierDueAmount) {
+        activeEarlierDueVal = parseFloat(earlierDueAmount) || 0;
+        document.getElementById('earlierDueModalOrderId').value = orderId || 0;
+        document.getElementById('earlierDueModalShopName').value = shopName || '';
+        document.getElementById('earlierDueModalPhone').value = phone || '';
+        document.getElementById('earlierDueModalSubtitle').textContent = shopName + (phone ? ' • ' + phone : '');
+        document.getElementById('earlierDueModalShopDisp').textContent = shopName || 'Shop';
+        document.getElementById('earlierDueModalDueDisplay').textContent = '₹' + activeEarlierDueVal.toFixed(2);
+
+        const clearAmtInput = document.getElementById('earlierDueModalClearAmount');
+        clearAmtInput.value = activeEarlierDueVal.toFixed(2);
+        clearAmtInput.max = activeEarlierDueVal.toFixed(2);
+
+        document.getElementById('shopEarlierDueModal').style.display = 'flex';
+    }
+
+    function closeShopEarlierDueModal() {
+        document.getElementById('shopEarlierDueModal').style.display = 'none';
+    }
+
+    function setEarlierModalFullDue() {
+        document.getElementById('earlierDueModalClearAmount').value = activeEarlierDueVal.toFixed(2);
+    }
+
     // Payment & Due Clearance History Modal Logic
     let currentHistoryData = null;
 
@@ -2217,11 +2452,47 @@ $cleanBaseUrl = rtrim(BASE_URL, '/');
         if (dueAmt <= 0.001) {
             dueElem.textContent = '₹0.00';
             dueElem.style.color = '#15803d';
-            dueBadge.innerHTML = '<span style="background: #dcfce7; color: #166534; font-weight: 700; padding: 2px 8px; border-radius: 999px; font-size: 11px;">✅ Fully Settled</span>';
+            dueBadge.innerHTML = '<span style="background: #dcfce7; color: #166534; font-weight: 700; padding: 2px 8px; border-radius: 999px; font-size: 11px;">✅ Bill Settled</span>';
         } else {
             dueElem.textContent = '₹' + dueAmt.toLocaleString('en-IN', {minimumFractionDigits: 2});
             dueElem.style.color = '#dc2626';
-            dueBadge.innerHTML = '<span style="background: #fee2e2; color: #991b1b; font-weight: 700; padding: 2px 8px; border-radius: 999px; font-size: 11px;">⚠️ Balance Pending</span>';
+            dueBadge.innerHTML = '<span style="background: #fee2e2; color: #991b1b; font-weight: 700; padding: 2px 8px; border-radius: 999px; font-size: 11px;">⚠️ Bill Due Pending</span>';
+        }
+
+        // Shop earlier due alert in payment modal
+        const earlierAlert = document.getElementById('payHistEarlierDueAlert');
+        if (earlierAlert) {
+            if (data.shop_earlier_dues && data.shop_earlier_dues.has_due && parseFloat(data.shop_earlier_dues.total_due) > 0) {
+                const eDue = parseFloat(data.shop_earlier_dues.total_due);
+                const count = data.shop_earlier_dues.due_count || 1;
+                earlierAlert.style.display = 'flex';
+                earlierAlert.style.justifyContent = 'space-between';
+                earlierAlert.style.alignItems = 'center';
+                earlierAlert.style.flexWrap = 'wrap';
+                earlierAlert.style.gap = '10px';
+                const safeShop = (shop || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+                const safePhone = (ord.phone || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+                earlierAlert.innerHTML = `
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <div style="width: 36px; height: 36px; border-radius: 8px; background: #fee2e2; color: #dc2626; display: flex; align-items: center; justify-content: center; font-size: 20px;">
+                            <i class='bx bx-time-five'></i>
+                        </div>
+                        <div>
+                            <div style="font-size: 13px; font-weight: 800; color: #991b1b;">
+                                Shop Has Earlier Pending Due: ₹${eDue.toLocaleString('en-IN', {minimumFractionDigits: 2})}
+                            </div>
+                            <div style="font-size: 11.5px; color: #7f1d1d; margin-top: 1px;">
+                                This shop has ${count} unpaid earlier item(s) (opening balance / previous bills).
+                            </div>
+                        </div>
+                    </div>
+                    <button type="button" onclick="closePaymentHistoryModal(); openShopEarlierDueModal(${ord.order_id}, '${safeShop}', '${safePhone}', ${eDue});" style="padding: 7px 14px; background: #dc2626; color: #ffffff; border: none; border-radius: 7px; font-size: 12px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; box-shadow: 0 1px 2px rgba(220,38,38,0.2);">
+                        <i class='bx bx-money'></i> Settle Earlier Due
+                    </button>
+                `;
+            } else {
+                earlierAlert.style.display = 'none';
+            }
         }
 
         // Render Ledger Rows
@@ -2300,6 +2571,7 @@ $cleanBaseUrl = rtrim(BASE_URL, '/');
 
         // Modal footer settle button
         const clearBtn = document.getElementById('payHistClearDueBtn');
+        const clearEarlierBtn = document.getElementById('payHistClearEarlierDueBtn');
         if (dueAmt > 0) {
             clearBtn.style.display = 'inline-flex';
             clearBtn.onclick = function() {
@@ -2308,6 +2580,20 @@ $cleanBaseUrl = rtrim(BASE_URL, '/');
             };
         } else {
             clearBtn.style.display = 'none';
+        }
+
+        if (clearEarlierBtn) {
+            if (data.shop_earlier_dues && data.shop_earlier_dues.has_due && parseFloat(data.shop_earlier_dues.total_due) > 0) {
+                const eDue = parseFloat(data.shop_earlier_dues.total_due);
+                clearEarlierBtn.style.display = 'inline-flex';
+                clearEarlierBtn.innerHTML = `<i class='bx bx-time-five'></i> Settle Earlier Due (₹${eDue.toFixed(2)})`;
+                clearEarlierBtn.onclick = function() {
+                    closePaymentHistoryModal();
+                    openShopEarlierDueModal(ord.order_id, shop, ord.phone || '', eDue);
+                };
+            } else {
+                clearEarlierBtn.style.display = 'none';
+            }
         }
     }
     </script>
@@ -2390,6 +2676,86 @@ $cleanBaseUrl = rtrim(BASE_URL, '/');
         </div>
     </div>
 
+    <!-- Shop Earlier Due Settlement Modal Dialog -->
+    <div id="shopEarlierDueModal" style="display: none; position: fixed; inset: 0; background: rgba(15, 23, 42, 0.6); backdrop-filter: blur(4px); z-index: 9999; align-items: center; justify-content: center; padding: 20px;">
+        <div style="background: #fff; border-radius: 14px; max-width: 480px; width: 100%; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25); border: 1px solid #e2e8f0; overflow: hidden;">
+            <div style="background: linear-gradient(135deg, #991b1b 0%, #b91c1c 100%); color: #fff; padding: 16px 20px; display: flex; align-items: center; justify-content: space-between;">
+                <div>
+                    <h3 style="font-size: 16px; font-weight: 700; margin: 0; color: #fff; display: flex; align-items: center; gap: 6px;">
+                        <i class='bx bx-time-five'></i> Settle Shop Earlier Due
+                    </h3>
+                    <div style="font-size: 12px; color: #fecaca; margin-top: 2px;" id="earlierDueModalSubtitle">Shop Details</div>
+                </div>
+                <button type="button" onclick="closeShopEarlierDueModal()" style="background: rgba(255,255,255,0.2); border: none; color: #fff; width: 28px; height: 28px; border-radius: 50%; cursor: pointer; font-size: 18px; display: flex; align-items: center; justify-content: center;">&times;</button>
+            </div>
+            <form action="index.php<?= !empty($_SERVER['QUERY_STRING']) ? '?' . htmlspecialchars($_SERVER['QUERY_STRING']) : '' ?>" method="POST" style="padding: 20px;" onsubmit="return confirm('Confirm clearing earlier pending due amount?');">
+                <input type="hidden" name="settle_shop_prior_due" value="1">
+                <input type="hidden" name="settle_token" value="<?= htmlspecialchars($due_settle_token) ?>">
+                <input type="hidden" name="order_id" id="earlierDueModalOrderId" value="0">
+                <input type="hidden" name="shop_name" id="earlierDueModalShopName" value="">
+                <input type="hidden" name="phone" id="earlierDueModalPhone" value="">
+
+                <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 10px 14px; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <div style="font-size: 11px; text-transform: uppercase; color: #991b1b; font-weight: 700;">Customer / Shop</div>
+                        <div style="font-size: 13px; font-weight: 700; color: #0f172a;" id="earlierDueModalShopDisp">-</div>
+                    </div>
+                    <div style="text-align: right;">
+                        <div style="font-size: 11px; text-transform: uppercase; color: #991b1b; font-weight: 700;">Earlier Pending Due</div>
+                        <div style="font-size: 16px; font-weight: 800; color: #dc2626;" id="earlierDueModalDueDisplay">₹0.00</div>
+                    </div>
+                </div>
+
+                <div style="margin-bottom: 12px;">
+                    <label style="display: block; font-size: 12px; font-weight: 700; color: #374151; margin-bottom: 4px;">
+                        Clearance Amount (₹) <span style="color: #ef4444;">*</span>
+                    </label>
+                    <div style="display: flex; gap: 8px;">
+                        <input type="number" step="0.01" min="0.01" name="clear_amount" id="earlierDueModalClearAmount" required style="flex: 1; padding: 8px 12px; border: 1.5px solid #d1d5db; border-radius: 8px; font-size: 14px; font-weight: 700; color: #0f172a;">
+                        <button type="button" onclick="setEarlierModalFullDue()" style="padding: 6px 12px; font-size: 12px; font-weight: 700; background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; border-radius: 8px; cursor: pointer; white-space: nowrap;">
+                            Full Due
+                        </button>
+                    </div>
+                </div>
+
+                <div style="margin-bottom: 12px;">
+                    <label style="display: block; font-size: 12px; font-weight: 700; color: #374151; margin-bottom: 4px;">
+                        Payment Mode <span style="color: #ef4444;">*</span>
+                    </label>
+                    <select name="settle_mode" id="earlierDueModalSettleMode" required style="width: 100%; padding: 8px 12px; border: 1.5px solid #d1d5db; border-radius: 8px; font-size: 13px; background: #fff;">
+                        <option value="cash" selected>💵 Cash Payment (In-Hand Cash)</option>
+                        <option value="upi">📱 UPI / Online Transfer (Credited Sales)</option>
+                        <option value="bank">🏦 Bank Transfer / NEFT / Cheque (Credited Sales)</option>
+                        <option value="credit">📑 Credit Adjustment (Credited Sales)</option>
+                    </select>
+                </div>
+
+                <div style="margin-bottom: 12px;">
+                    <label style="display: block; font-size: 12px; font-weight: 600; color: #374151; margin-bottom: 4px;">
+                        Transaction / Reference No. (Optional)
+                    </label>
+                    <input type="text" name="ref_no" placeholder="e.g. UPI-987654 / Chq-1234" style="width: 100%; padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 13px; box-sizing: border-box;">
+                </div>
+
+                <div style="margin-bottom: 18px;">
+                    <label style="display: block; font-size: 12px; font-weight: 600; color: #374151; margin-bottom: 4px;">
+                        Remarks / Settlement Notes (Optional)
+                    </label>
+                    <input type="text" name="clear_notes" placeholder="e.g. Cleared by shopkeeper against earlier balance" style="width: 100%; padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 13px; box-sizing: border-box;">
+                </div>
+
+                <div style="display: flex; gap: 10px; justify-content: flex-end;">
+                    <button type="button" onclick="closeShopEarlierDueModal()" style="padding: 8px 16px; background: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer;">
+                        Cancel
+                    </button>
+                    <button type="submit" style="padding: 8px 18px; background: #b91c1c; color: #fff; border: none; border-radius: 8px; font-weight: 700; font-size: 13px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;">
+                        <i class='bx bx-check-shield'></i> Confirm Earlier Due Clearance
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <!-- Payment & Due Clearance Audit History Modal -->
     <div id="paymentHistoryModal" style="display: none; position: fixed; inset: 0; background: rgba(15, 23, 42, 0.65); backdrop-filter: blur(4px); z-index: 99999; align-items: center; justify-content: center; padding: 20px;">
         <div style="background: #ffffff; border-radius: 16px; max-width: 820px; width: 100%; max-height: 90vh; display: flex; flex-direction: column; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.35); border: 1px solid #e2e8f0; overflow: hidden;">
@@ -2456,6 +2822,9 @@ $cleanBaseUrl = rtrim(BASE_URL, '/');
 
                     </div>
 
+                    <!-- Shop Earlier Due Alert Container (in payment modal) -->
+                    <div id="payHistEarlierDueAlert" style="display: none; background: #fff5f5; border: 1.5px solid #fecaca; border-radius: 10px; padding: 12px 16px; margin-bottom: 20px;"></div>
+
                     <!-- Chronological Payment Ledger Table -->
                     <div style="border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden; margin-bottom: 18px;">
                         <div style="background: #f8fafc; padding: 10px 16px; border-bottom: 1px solid #e2e8f0; display: flex; align-items: center; justify-content: space-between;">
@@ -2501,6 +2870,9 @@ $cleanBaseUrl = rtrim(BASE_URL, '/');
                     <i class='bx bx-shield-quarter' style="color: #059669;"></i> Real-time payment verification ledger
                 </div>
                 <div style="display: flex; gap: 8px;">
+                    <button type="button" id="payHistClearEarlierDueBtn" style="display: none; padding: 8px 16px; background: #dc2626; color: #fff; border: none; border-radius: 8px; font-size: 13px; font-weight: 700; cursor: pointer; align-items: center; gap: 5px;">
+                        <i class='bx bx-time-five'></i> Settle Earlier Due
+                    </button>
                     <button type="button" id="payHistClearDueBtn" style="display: none; padding: 8px 16px; background: #059669; color: #fff; border: none; border-radius: 8px; font-size: 13px; font-weight: 700; cursor: pointer; align-items: center; gap: 5px;">
                         <i class='bx bx-money-withdraw'></i> Clear Due Balance Now
                     </button>
