@@ -33,7 +33,7 @@ $error_message = $_SESSION['error_message'] ?? '';
 unset($_SESSION['success_message'], $_SESSION['error_message']);
 
 // --- POST HANDLERS (Add, Edit, Delete) ---
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
     $action = $_POST['action'] ?? '';
 
     if ($action === 'add') {
@@ -129,9 +129,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
+// Build live map of unpaid order dues for each shop
+$shopOrderDuesData = getAllShopsOrderDuesMap($pdo);
+$shopOrderDuesMap = $shopOrderDuesData['shop_order_dues'] ?? [];
+$totalOrderDuesSum = (float)($shopOrderDuesData['total_order_dues'] ?? 0.0);
+$shopIdsWithOrderDues = array_keys($shopOrderDuesMap);
+
 // --- FILTER & SEARCH ---
 $search = trim($_GET['search'] ?? '');
 $vehicleFilter = isset($_GET['vehicle_id']) && $_GET['vehicle_id'] !== '' ? $_GET['vehicle_id'] : 'all';
+$duesFilter = isset($_GET['dues']) && $_GET['dues'] === 'only';
 
 $params = [];
 $whereClauses = ["1=1"];
@@ -153,6 +160,15 @@ if ($vehicleFilter !== 'all') {
     }
 }
 
+if ($duesFilter) {
+    if (!empty($shopIdsWithOrderDues)) {
+        $inShopIds = implode(',', array_map('intval', $shopIdsWithOrderDues));
+        $whereClauses[] = "(s.pending_amount > 0 OR s.id IN ({$inShopIds}))";
+    } else {
+        $whereClauses[] = "s.pending_amount > 0";
+    }
+}
+
 $whereSql = implode(' AND ', $whereClauses);
 
 // Fetch Shops
@@ -170,17 +186,41 @@ try {
     ");
     $stmt->execute($params);
     $shops = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    // Attach live order dues and calculate composite total due for each shop
+    foreach ($shops as &$s) {
+        $sId = (int)$s['id'];
+        $sOpening = (float)($s['pending_amount'] ?? 0.0);
+        $sOrderInfo = $shopOrderDuesMap[$sId] ?? null;
+        $sOrderDue = (float)($sOrderInfo['order_due'] ?? 0.0);
+        $s['opening_due'] = $sOpening;
+        $s['order_due'] = $sOrderDue;
+        $s['total_due'] = $sOpening + $sOrderDue;
+        $s['order_receipt_count'] = (int)($sOrderInfo['receipt_count'] ?? 0);
+        $s['order_receipts'] = $sOrderInfo['receipts'] ?? [];
+    }
+    unset($s);
 } catch (Exception $e) {}
 
 // Stats
 $totalShops = 0;
+$totalOpeningBalance = 0.0;
 $totalPendingDues = 0.0;
 $shopsWithDuesCount = 0;
 $vehicleStats = [];
 try {
     $totalShops = (int)$pdo->query("SELECT COUNT(*) FROM shops")->fetchColumn();
-    $totalPendingDues = (float)$pdo->query("SELECT COALESCE(SUM(pending_amount), 0) FROM shops")->fetchColumn();
-    $shopsWithDuesCount = (int)$pdo->query("SELECT COUNT(*) FROM shops WHERE pending_amount > 0")->fetchColumn();
+    $totalOpeningBalance = (float)$pdo->query("SELECT COALESCE(SUM(pending_amount), 0) FROM shops")->fetchColumn();
+    $totalPendingDues = $totalOpeningBalance + $totalOrderDuesSum;
+
+    // Distinct shops with dues count (opening balance > 0 OR order dues > 0)
+    $shopsWithOpeningDue = $pdo->query("SELECT id FROM shops WHERE pending_amount > 0")->fetchAll(PDO::FETCH_COLUMN) ?: [];
+    $allShopIdsWithDues = array_unique(array_merge(
+        array_map('intval', $shopsWithOpeningDue),
+        array_map('intval', $shopIdsWithOrderDues)
+    ));
+    $shopsWithDuesCount = count($allShopIdsWithDues);
+
     $vStatsStmt = $pdo->query("
         SELECT vehicle_id, COUNT(*) as cnt 
         FROM shops 
@@ -558,16 +598,21 @@ try {
                         </div>
                     </a>
 
-                    <!-- Outstanding Creditors / Pending Dues Summary Card -->
-                    <div class="stat-card-box" style="border-color: #fecaca; background: #fff5f5;" title="Total unpaid pending amounts across all registered shops">
+                                        <!-- Outstanding Creditors / Pending Dues Summary Card (Filterable) -->
+                    <a href="index.php?dues=only<?= $vehicleFilter !== 'all' ? '&vehicle_id=' . urlencode($vehicleFilter) : '' ?><?= !empty($search) ? '&search=' . urlencode($search) : '' ?>" class="stat-card-box" style="text-decoration: none; <?= $duesFilter ? 'border-color: #dc2626; background: #fef2f2;' : 'border-color: #fecaca; background: #fff5f5;' ?>" title="Click to filter shops with pending dues (Opening Balance + Orders Due)">
                         <div class="stat-icon" style="background: #fee2e2; color: #dc2626;">
                             <i class='bx bx-error-circle'></i>
                         </div>
                         <div>
                             <div class="stat-num" style="color: #b91c1c;">₹<?= number_format($totalPendingDues, 2) ?></div>
-                            <div class="stat-label">Pending Dues (<?= $shopsWithDuesCount ?> shops)</div>
+                            <div class="stat-label" style="display: flex; align-items: center; gap: 6px;">
+                                <span>Pending Dues (<?= $shopsWithDuesCount ?> shops)</span>
+                                <?php if ($duesFilter): ?>
+                                    <span style="font-size: 10px; background: #dc2626; color: #fff; padding: 1px 6px; border-radius: 9999px; font-weight: 700;">Filtered</span>
+                                <?php endif; ?>
+                            </div>
                         </div>
-                    </div>
+                    </a>
 
                     <?php foreach ($vehiclesList as $v): 
                         $vId = (int)$v['vehicle_id'];
@@ -608,6 +653,9 @@ try {
                 <!-- Filter & Search Bar -->
                 <div class="shop-filter-bar">
                     <form method="GET" action="index.php" style="display: flex; gap: 10px; flex-wrap: wrap; width: 100%; justify-content: space-between; align-items: center;">
+                        <?php if ($duesFilter): ?>
+                            <input type="hidden" name="dues" value="only">
+                        <?php endif; ?>
                         <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
                             <div class="search-pill-input">
                                 <i class='bx bx-search' style="color: #64748b; font-size: 16px;"></i>
@@ -628,7 +676,14 @@ try {
                                 Filter
                             </button>
 
-                            <?php if (!empty($search) || $vehicleFilter !== 'all'): ?>
+                            <?php if ($duesFilter): ?>
+                                <span style="display: inline-flex; align-items: center; gap: 5px; background: #fee2e2; color: #b91c1c; border: 1px solid #fecaca; padding: 5px 10px; border-radius: 6px; font-size: 12px; font-weight: 700;">
+                                    <i class='bx bx-filter'></i> Only Shops with Dues
+                                    <a href="index.php?<?= http_build_query(array_merge(array_diff_key($_GET, ['dues' => '']))) ?>" style="color: #dc2626; text-decoration: none; margin-left: 4px; font-weight: 800;" title="Clear dues filter">&times;</a>
+                                </span>
+                            <?php endif; ?>
+
+                            <?php if (!empty($search) || $vehicleFilter !== 'all' || $duesFilter): ?>
                                 <a href="index.php" class="btn-act-outline" style="color: #ef4444;" title="Reset filters">
                                     <i class='bx bx-x'></i> Reset
                                 </a>
@@ -653,7 +708,7 @@ try {
                                     <th>Phone</th>
                                     <th>Assigned Vehicle</th>
                                     <th>Territory / Route</th>
-                                    <th style="text-align: right; width: 135px;">Pending Due</th>
+                                    <th style="text-align: right; width: 145px;">Pending Due</th>
                                     <th style="text-align: right; width: 110px;">Actions</th>
                                 </tr>
                             </thead>
@@ -717,10 +772,40 @@ try {
                                                 </span>
                                             </td>
                                             <td style="text-align: right;">
-                                                <?php if ((float)($s['pending_amount'] ?? 0) > 0): ?>
-                                                    <span style="display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 6px; background: #fef2f2; color: #b91c1c; font-weight: 800; font-size: 12.5px; border: 1px solid #fecaca;" title="Unpaid pending due">
-                                                        <i class='bx bxs-error-circle'></i> ₹<?= number_format((float)$s['pending_amount'], 2) ?>
+                                                <?php 
+                                                $sTotalDue = (float)($s['total_due'] ?? 0);
+                                                $sOpening = (float)($s['opening_due'] ?? 0);
+                                                $sOrderDue = (float)($s['order_due'] ?? 0);
+                                                $sReceiptCount = (int)($s['order_receipt_count'] ?? 0);
+
+                                                if ($sTotalDue > 0): 
+                                                    $tooltipParts = [];
+                                                    if ($sOpening > 0) {
+                                                        $tooltipParts[] = "Opening Balance (Excel): ₹" . number_format($sOpening, 2);
+                                                    }
+                                                    if ($sOrderDue > 0) {
+                                                        $tooltipParts[] = "Order Dues: ₹" . number_format($sOrderDue, 2) . " (" . $sReceiptCount . " unpaid order" . ($sReceiptCount > 1 ? 's' : '') . ")";
+                                                    }
+                                                    $dueTooltip = "Total Outstanding Due: ₹" . number_format($sTotalDue, 2) . " [" . implode(' + ', $tooltipParts) . "]";
+                                                ?>
+                                                    <span style="display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 6px; background: #fef2f2; color: #b91c1c; font-weight: 800; font-size: 12.5px; border: 1px solid #fecaca;" title="<?= htmlspecialchars($dueTooltip) ?>">
+                                                        <i class='bx bxs-error-circle'></i> ₹<?= number_format($sTotalDue, 2) ?>
                                                     </span>
+                                                    <?php if ($sOrderDue > 0 && $sOpening > 0): ?>
+                                                        <div style="font-size: 10px; color: #64748b; font-weight: 600; margin-top: 2px;" title="<?= htmlspecialchars($dueTooltip) ?>">
+                                                            <span>OB: ₹<?= number_format($sOpening, 0) ?></span> | <a href="../revenue/index.php?payment_status=due&search=<?= urlencode($s['shop_name']) ?>" style="color: #dc2626; text-decoration: underline;" target="_blank" title="View unpaid order receipts">Orders: ₹<?= number_format($sOrderDue, 0) ?></a>
+                                                        </div>
+                                                    <?php elseif ($sOrderDue > 0 && $sOpening <= 0): ?>
+                                                        <div style="font-size: 10px; color: #dc2626; font-weight: 600; margin-top: 2px;">
+                                                            <a href="../revenue/index.php?payment_status=due&search=<?= urlencode($s['shop_name']) ?>" style="color: #dc2626; text-decoration: underline;" target="_blank" title="View <?= $sReceiptCount ?> unpaid order receipt<?= $sReceiptCount > 1 ? 's' : '' ?>">
+                                                                <?= $sReceiptCount ?> Order<?= $sReceiptCount > 1 ? 's' : '' ?> Due
+                                                            </a>
+                                                        </div>
+                                                    <?php elseif ($sOpening > 0 && $sOrderDue <= 0): ?>
+                                                        <div style="font-size: 10px; color: #94a3b8; font-weight: 500; margin-top: 2px;" title="Opening balance from creditors list">
+                                                            Opening Balance
+                                                        </div>
+                                                    <?php endif; ?>
                                                 <?php else: ?>
                                                     <span style="color: #94a3b8; font-size: 12px; font-weight: 500;">₹0.00</span>
                                                 <?php endif; ?>
@@ -777,8 +862,9 @@ try {
                         <input type="text" name="phone" class="s-form-input" placeholder="e.g. 9876543210">
                     </div>
                     <div class="s-form-group">
-                        <label>Pending / Due Amount (₹)</label>
+                        <label>Opening / Baseline Pending Due (₹)</label>
                         <input type="number" step="0.01" min="0" name="pending_amount" class="s-form-input" placeholder="0.00" value="0.00">
+                        <small style="color: #64748b; font-size: 11px; display: block; margin-top: 4px;">Initial baseline due. Unpaid orders will be added to this amount automatically.</small>
                     </div>
                     <div class="s-form-group">
                         <label>Assigned Delivery Vehicle & Route</label>
@@ -824,8 +910,13 @@ try {
                         <input type="text" name="phone" id="edit_phone" class="s-form-input">
                     </div>
                     <div class="s-form-group">
-                        <label>Pending / Due Amount (₹)</label>
+                        <label>Opening / Baseline Pending Due (₹)</label>
                         <input type="number" step="0.01" min="0" name="pending_amount" id="edit_pending_amount" class="s-form-input" placeholder="0.00">
+                        <small style="color: #64748b; font-size: 11px; display: block; margin-top: 4px;">Baseline balance from creditors Excel or manual setup. Unpaid order dues are automatically added on top.</small>
+                    </div>
+                    <div id="edit_order_due_notice" style="display: none; background: #fff5f5; border: 1.5px solid #fecaca; border-radius: 8px; padding: 10px 12px; margin-bottom: 14px; font-size: 12px; color: #991b1b;">
+                        <i class='bx bx-info-circle' style="font-size: 16px; vertical-align: middle; margin-right: 4px;"></i>
+                        <span id="edit_order_due_text"></span>
                     </div>
                     <div class="s-form-group">
                         <label>Assigned Delivery Vehicle & Route</label>
@@ -859,8 +950,23 @@ try {
             document.getElementById('edit_shop_name').value = shop.shop_name || '';
             document.getElementById('edit_location').value = shop.location || '';
             document.getElementById('edit_phone').value = shop.phone || '';
-            document.getElementById('edit_pending_amount').value = shop.pending_amount || '0.00';
+            document.getElementById('edit_pending_amount').value = parseFloat(shop.pending_amount || 0).toFixed(2);
             document.getElementById('edit_vehicle_id').value = shop.vehicle_id || '';
+
+            const noticeBox = document.getElementById('edit_order_due_notice');
+            const noticeText = document.getElementById('edit_order_due_text');
+            const orderDue = parseFloat(shop.order_due || 0);
+            if (noticeBox && noticeText) {
+                if (orderDue > 0) {
+                    noticeBox.style.display = 'block';
+                    const orderCnt = parseInt(shop.order_receipt_count || 1);
+                    const totalDue = parseFloat(shop.total_due || 0);
+                    noticeText.innerHTML = 'This shop currently has <strong>₹' + orderDue.toFixed(2) + '</strong> in unpaid order dues (' + orderCnt + ' order' + (orderCnt > 1 ? 's' : '') + '). <strong>Combined Total Outstanding Due: ₹' + totalDue.toFixed(2) + '</strong>.';
+                } else {
+                    noticeBox.style.display = 'none';
+                }
+            }
+
             document.getElementById('editShopModal').classList.add('active');
         }
         window.onclick = function(e) {

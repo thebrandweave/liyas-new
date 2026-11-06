@@ -1431,6 +1431,183 @@ function getShopPendingDueDetails(PDO $pdo, string $shopName, string $phone = ''
 }
 
 /**
+ * Efficiently build a map of outstanding order dues mapped to master shop IDs.
+ * Matches unpaid receipts (r.due_amount > 0, o.status != 'cancelled') against shops.
+ *
+ * @param PDO $pdo
+ * @return array ['shop_order_dues' => [...], 'total_order_dues' => float, 'unmatched_orders' => [...]]
+ */
+function getAllShopsOrderDuesMap(PDO $pdo): array {
+	$shopOrderDues = [];
+	$totalOrderDues = 0.0;
+	$unmatchedOrders = [];
+
+	try {
+		// 1. Fetch all unpaid order dues
+		$dueStmt = $pdo->query("
+			SELECT 
+				r.id as receipt_id,
+				r.order_id,
+				r.bill_number,
+				r.due_amount,
+				r.created_at as receipt_date,
+				o.order_number,
+				o.shop_name,
+				o.customer_name,
+				o.phone,
+				o.location as order_location,
+				o.zone_id,
+				o.vehicle_id
+			FROM receipts r
+			JOIN orders o ON r.order_id = o.order_id
+			WHERE r.due_amount > 0 AND o.status != 'cancelled'
+			ORDER BY r.id ASC
+		");
+		$dueOrders = $dueStmt ? ($dueStmt->fetchAll(PDO::FETCH_ASSOC) ?: []) : [];
+
+		if (empty($dueOrders)) {
+			return [
+				'shop_order_dues' => [],
+				'total_order_dues' => 0.0,
+				'unmatched_orders' => []
+			];
+		}
+
+		// 2. Fetch all shops for in-memory matching
+		$shopsStmt = $pdo->query("
+			SELECT id, shop_name, location, phone, zone_id, vehicle_id 
+			FROM shops
+		");
+		$allShops = $shopsStmt ? ($shopsStmt->fetchAll(PDO::FETCH_ASSOC) ?: []) : [];
+
+		$indexedShops = [];
+		foreach ($allShops as $s) {
+			$sId = (int)$s['id'];
+			$sName = trim(strtolower($s['shop_name'] ?? ''));
+			$sLoc = trim(strtolower($s['location'] ?? ''));
+			$sCleanPhone = preg_replace('/[^0-9]/', '', $s['phone'] ?? '');
+			$sP10 = strlen($sCleanPhone) >= 7 ? (strlen($sCleanPhone) >= 10 ? substr($sCleanPhone, -10) : $sCleanPhone) : '';
+
+			$names = [];
+			if ($sName !== '') {
+				$names[] = $sName;
+				if ($sLoc !== '') {
+					$names[] = trim($sName . ' ' . $sLoc);
+					$names[] = trim($sName . '-' . $sLoc);
+				}
+			}
+
+			$indexedShops[$sId] = [
+				'id' => $sId,
+				'name' => $sName,
+				'loc' => $sLoc,
+				'names' => $names,
+				'p10' => $sP10,
+				'zone_id' => !empty($s['zone_id']) ? (int)$s['zone_id'] : null,
+				'vehicle_id' => !empty($s['vehicle_id']) ? (int)$s['vehicle_id'] : null,
+			];
+		}
+
+		foreach ($dueOrders as $ord) {
+			$dueAmt = (float)$ord['due_amount'];
+			if ($dueAmt <= 0) continue;
+			$totalOrderDues += $dueAmt;
+
+			$oShop = trim(strtolower($ord['shop_name'] ?? ''));
+			$oCust = trim(strtolower($ord['customer_name'] ?? ''));
+			$oLoc = trim(strtolower($ord['order_location'] ?? ''));
+			$oCleanPhone = preg_replace('/[^0-9]/', '', $ord['phone'] ?? '');
+			$oP10 = strlen($oCleanPhone) >= 7 ? (strlen($oCleanPhone) >= 10 ? substr($oCleanPhone, -10) : $oCleanPhone) : '';
+			$oZone = !empty($ord['zone_id']) ? (int)$ord['zone_id'] : null;
+			$oVeh = !empty($ord['vehicle_id']) ? (int)$ord['vehicle_id'] : null;
+
+			$oNames = [];
+			if ($oShop !== '') {
+				$oNames[] = $oShop;
+				if ($oLoc !== '') {
+					$oNames[] = trim($oShop . ' ' . $oLoc);
+					$oNames[] = trim($oShop . '-' . $oLoc);
+				}
+			}
+			if ($oCust !== '' && !in_array($oCust, $oNames, true)) {
+				$oNames[] = $oCust;
+				if ($oLoc !== '') {
+					$oNames[] = trim($oCust . ' ' . $oLoc);
+				}
+			}
+
+			$bestShopId = null;
+			$bestScore = 0;
+
+			foreach ($indexedShops as $sId => $s) {
+				$score = 0;
+
+				// Check phone match
+				$phoneMatch = (!empty($oP10) && !empty($s['p10']) && $oP10 === $s['p10']);
+
+				// Check name match
+				$nameMatch = false;
+				foreach ($s['names'] as $sn) {
+					if (in_array($sn, $oNames, true)) {
+						$nameMatch = true;
+						break;
+					}
+				}
+
+				if ($phoneMatch && $nameMatch) {
+					$score = 100;
+				} elseif ($phoneMatch) {
+					$score = 80;
+				} elseif ($nameMatch) {
+					$score = 40;
+					if ($oZone && $s['zone_id'] && $oZone === $s['zone_id']) {
+						$score += 25;
+					}
+					if ($oVeh && $s['vehicle_id'] && $oVeh === $s['vehicle_id']) {
+						$score += 15;
+					}
+				}
+
+				if ($score > $bestScore) {
+					$bestScore = $score;
+					$bestShopId = $sId;
+				}
+			}
+
+			if ($bestShopId && $bestScore >= 40) {
+				if (!isset($shopOrderDues[$bestShopId])) {
+					$shopOrderDues[$bestShopId] = [
+						'order_due' => 0.0,
+						'receipt_count' => 0,
+						'receipts' => []
+					];
+				}
+				$shopOrderDues[$bestShopId]['order_due'] += $dueAmt;
+				$shopOrderDues[$bestShopId]['receipt_count']++;
+				$shopOrderDues[$bestShopId]['receipts'][] = [
+					'receipt_id' => $ord['receipt_id'],
+					'order_id' => $ord['order_id'],
+					'bill_number' => $ord['bill_number'],
+					'order_number' => $ord['order_number'],
+					'due_amount' => $dueAmt,
+					'receipt_date' => $ord['receipt_date']
+				];
+			} else {
+				$unmatchedOrders[] = $ord;
+			}
+		}
+	} catch (Exception $e) {
+		error_log("Error in getAllShopsOrderDuesMap: " . $e->getMessage());
+	}
+
+	return [
+		'shop_order_dues' => $shopOrderDues,
+		'total_order_dues' => $totalOrderDues,
+		'unmatched_orders' => $unmatchedOrders
+	];
+}
+
+/**
  * Settle a shop's prior pending dues FIFO across unpaid receipts
  */
 function settleShopPriorDuesFifo(PDO $pdo, string $shopName, string $phone, float $amountToClear, string $mode = 'cash', string $referenceNote = '', int $excludeOrderId = 0, ?int $zoneId = null): array {
