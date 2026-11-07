@@ -292,6 +292,22 @@ function buildRewardsUrl(array $overrides = []): string {
     return 'index.php' . (!empty($queryParts) ? '?' . http_build_query($queryParts) : '');
 }
 
+// Check and ensure manual_completed_orders column exists in rewards table
+$hasManualCol = false;
+try {
+    $colCheck = $pdo->query("SHOW COLUMNS FROM rewards LIKE 'manual_completed_orders'")->fetch();
+    if (!$colCheck) {
+        $pdo->exec("ALTER TABLE rewards ADD COLUMN manual_completed_orders INT DEFAULT NULL AFTER completed_orders");
+        $hasManualCol = true;
+    } else {
+        $hasManualCol = true;
+    }
+} catch (Exception $e) {
+    $hasManualCol = false;
+}
+
+$manualColSql = $hasManualCol ? "MAX(rew.manual_completed_orders)" : "NULL";
+
 // Fetch all distinct shops with delivery orders stats (both period activity and lifetime progress)
 $shopsQuery = "
     SELECT 
@@ -312,7 +328,7 @@ $shopsQuery = "
         COALESCE(SUM(CASE WHEN o.status = 'delivered' THEN COALESCE(r.delivered_quantity, o.quantity) ELSE 0 END), 0) AS lifetime_cases_delivered,
 
         MAX(rew.reward_status) AS db_reward_status,
-        MAX(rew.manual_completed_orders) AS db_manual_completed_orders,
+        {$manualColSql} AS db_manual_completed_orders,
         MAX(rew.completed_orders) AS db_completed_orders,
         MAX(rew.reward_threshold) AS db_reward_threshold,
         MAX(rew.id) AS reward_id
@@ -326,9 +342,22 @@ $shopsQuery = "
     ORDER BY " . ($filterDate !== 'all' ? "period_completed_orders DESC, period_total_orders DESC, " : "") . "lifetime_completed_orders DESC, shop_name ASC
 ";
 
-$stmt = $pdo->prepare($shopsQuery);
-$stmt->execute($queryParams);
-$allShops = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+$allShops = [];
+try {
+    $stmt = $pdo->prepare($shopsQuery);
+    $stmt->execute($queryParams);
+    $allShops = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+} catch (Exception $e) {
+    error_log("Error executing shopsQuery: " . $e->getMessage());
+    try {
+        $safeFallbackQuery = str_replace("{$manualColSql} AS db_manual_completed_orders,", "NULL AS db_manual_completed_orders,", $shopsQuery);
+        $fallbackStmt = $pdo->prepare($safeFallbackQuery);
+        $fallbackStmt->execute($queryParams);
+        $allShops = $fallbackStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    } catch (Exception $e2) {
+        error_log("Fallback query also failed: " . $e2->getMessage());
+    }
+}
 
 $eligibleCount = 0;
 $inProgressCount = 0;
