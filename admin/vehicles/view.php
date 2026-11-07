@@ -193,6 +193,65 @@ foreach ($activeZoneBreakdown as $zb) {
 $capacity = (int)($vehicle['capacity_cases'] ?? 100);
 $capacityPercent = $capacity > 0 ? min(100, round(($activeLoadedCases / $capacity) * 100)) : 0;
 
+// Query total delivered cases per product for this vehicle
+$vProductsList = [];
+try {
+    $vProdStmt = $pdo->query("
+        SELECT 
+            product_id, 
+            COALESCE(NULLIF(product_name, ''), name) as display_name,
+            net_content, 
+            net_content_unit
+        FROM products 
+        ORDER BY product_id ASC
+        LIMIT 4
+    ");
+    $allProds = $vProdStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+    // Aggregate cases from order_items for delivered orders of this vehicle
+    $vItemsStmt = $pdo->prepare("
+        SELECT 
+            oi.product_id, 
+            COALESCE(SUM(oi.quantity), 0) as total_cases
+        FROM order_items oi
+        JOIN orders o ON oi.order_id = o.order_id
+        WHERE o.vehicle_id = ? 
+          AND o.status = 'delivered'
+        GROUP BY oi.product_id
+    ");
+    $vItemsStmt->execute([$vehicleId]);
+    $vItemCounts = $vItemsStmt->fetchAll(PDO::FETCH_KEY_PAIR) ?: [];
+
+    // Aggregate cases from legacy orders without order_items
+    $vLegacyStmt = $pdo->prepare("
+        SELECT 
+            o.product_id,
+            COALESCE(SUM(COALESCE(o.quantity, 1)), 0) as total_cases
+        FROM orders o
+        WHERE o.vehicle_id = ? 
+          AND o.status = 'delivered'
+          AND o.product_id IS NOT NULL
+          AND NOT EXISTS (SELECT 1 FROM order_items oi WHERE oi.order_id = o.order_id)
+        GROUP BY o.product_id
+    ");
+    $vLegacyStmt->execute([$vehicleId]);
+    $vLegacyCounts = $vLegacyStmt->fetchAll(PDO::FETCH_KEY_PAIR) ?: [];
+
+    foreach ($allProds as $p) {
+        $pId = (int)$p['product_id'];
+        $cases = (int)($vItemCounts[$pId] ?? 0) + (int)($vLegacyCounts[$pId] ?? 0);
+        $vProductsList[] = [
+            'product_id'   => $pId,
+            'name'         => $p['display_name'],
+            'net_content'  => $p['net_content'],
+            'unit'         => $p['net_content_unit'],
+            'total_cases'  => $cases
+        ];
+    }
+} catch (Exception $e) {
+    error_log("Error fetching vehicle product delivery totals: " . $e->getMessage());
+}
+
 // URL builder helper for maintaining filter state
 function buildViewFilterUrl(array $overrides = []): string {
     global $vehicleId;
@@ -417,6 +476,93 @@ if (strlen($cleanPhone) === 10) {
         }
         .v-hero-meta-item strong {
             color: #0f172a;
+        }
+
+        /* Four Product Delivered Cases Boxes in Hero Banner */
+        .v-hero-right-col {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            align-items: flex-end;
+        }
+        .v-hero-prod-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(88px, 1fr));
+            gap: 16px;
+        }
+        .v-prod-metric-box {
+            background: #ffffff;
+            border: 1.5px solid #e2e8f0;
+            border-radius: 10px;
+            padding: 8px 12px;
+            min-width: 88px;
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+            transition: all 0.15s ease;
+        }
+        .v-prod-metric-box:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 10px rgba(0,0,0,0.06);
+        }
+        .v-prod-metric-title {
+            font-size: 11.5px;
+            font-weight: 800;
+            letter-spacing: 0.3px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            margin-bottom: 2px;
+            white-space: nowrap;
+        }
+        .v-prod-metric-count {
+            display: flex;
+            align-items: baseline;
+            gap: 3px;
+            line-height: 1.1;
+        }
+        .v-prod-metric-num {
+            font-size: 19px;
+            font-weight: 800;
+            color: #0f172a;
+        }
+        .v-prod-metric-unit {
+            font-size: 11px;
+            font-weight: 700;
+            color: #64748b;
+        }
+        .v-prod-metric-sub {
+            font-size: 9.5px;
+            font-weight: 600;
+            color: #64748b;
+            margin-top: 2px;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+            white-space: nowrap;
+        }
+
+        @media (max-width: 1200px) {
+            .v-hero-prod-grid {
+                grid-template-columns: repeat(2, minmax(88px, 1fr));
+            }
+        }
+        @media (max-width: 900px) {
+            .v-hero-right-col {
+                align-items: stretch !important;
+                width: 100%;
+            }
+            .v-hero-prod-grid {
+                grid-template-columns: repeat(4, 1fr);
+                width: 100%;
+            }
+        }
+        @media (max-width: 550px) {
+            .v-hero-prod-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
         }
 
         /* Status Pills */
@@ -970,8 +1116,33 @@ if (strlen($cleanPhone) === 10) {
                        
                     </div>
                 </div>
-                <div style="display: flex; flex-direction: column; gap: 8px; align-items: flex-end;">
-                   
+                <div class="v-hero-right-col">
+                    <!-- Four Product Delivered Cases Boxes -->
+                    <div class="v-hero-prod-grid">
+                        <?php 
+                        $prodThemes = [
+                            0 => ['bg' => '#f0f9ff', 'border' => '#bae6fd', 'color' => '#0284c7'],
+                            1 => ['bg' => '#eff6ff', 'border' => '#bfdbfe', 'color' => '#2563eb'],
+                            2 => ['bg' => '#f5f3ff', 'border' => '#ddd6fe', 'color' => '#7c3aed'],
+                            3 => ['bg' => '#ecfdf5', 'border' => '#a7f3d0', 'color' => '#059669'],
+                        ];
+                        foreach ($vProductsList as $idx => $pItem): 
+                            $theme = $prodThemes[$idx % 4];
+                        ?>
+                            <div class="v-prod-metric-box" style="background: <?= $theme['bg'] ?>; border-color: <?= $theme['border'] ?>;">
+                                <div class="v-prod-metric-title" style="color: <?= $theme['color'] ?>;">
+                                    <i class='bx <?= $theme['icon'] ?>'></i>
+                                    <span><?= htmlspecialchars($pItem['name']) ?></span>
+                                </div>
+                                <div class="v-prod-metric-count">
+                                    <span class="v-prod-metric-num" style="color: <?= $theme['color'] ?>;"><?= number_format($pItem['total_cases']) ?></span>
+                                    <span class="v-prod-metric-unit">cs</span>
+                                </div>
+                                <div class="v-prod-metric-sub">Delivered</div>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+
                     <?php if ($activeLoadedCases > 0): ?>
                         <form method="POST" onsubmit="return confirm('Clear active yard trip load for this vehicle? Lifetime deliveries and past receipts are preserved.');" style="margin: 0;">
                             <input type="hidden" name="action" value="reset_load">
