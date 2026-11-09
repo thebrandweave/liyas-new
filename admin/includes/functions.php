@@ -1812,7 +1812,7 @@ function getOrderPaymentHistory(PDO $pdo, int $orderId): array {
 
 				$matchedNote = '';
 				if ($isInitial) {
-					$matchedNote = 'Initial order delivery & billing receipt generated';
+					$matchedNote = 'Initial order delivery';
 				} else {
 					$noteIndex = $idx - 1;
 					if (isset($auditNotes[$noteIndex])) {
