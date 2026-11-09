@@ -2592,7 +2592,7 @@ $cleanBaseUrl = rtrim(BASE_URL, '/');
         if (dueAmt <= 0.001) {
             dueElem.textContent = '₹0.00';
             dueElem.style.color = '#15803d';
-            dueBadge.innerHTML = '<span style="background: #dcfce7; color: #166534; font-weight: 700; padding: 2px 8px; border-radius: 999px; font-size: 11px;">✅ Bill Settled</span>';
+            dueBadge.innerHTML = '<span style="background: #dcfce7; color: #166534; font-weight: 700; padding: 2px 8px; border-radius: 999px; font-size: 10px;">Bill Settled</span>';
         } else {
             dueElem.textContent = '₹' + dueAmt.toLocaleString('en-IN', {minimumFractionDigits: 2});
             dueElem.style.color = '#dc2626';
