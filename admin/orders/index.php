@@ -308,7 +308,7 @@ function renderOrdersTbodyRows(array $orders, string $status_filter = 'all', str
         foreach ($orders as $order) {
             $displayOrderNum = $order['order_number'] ?: ('#' . $order['order_id']);
             $shopName = htmlspecialchars($order['shop_name'] ?: ($order['customer_name'] ?: ($order['web_user_name'] ?: 'Customer #' . $order['user_id'])));
-            $prodName = htmlspecialchars($order['product_name'] ?: ($order['fallback_product_name'] ?: 'Liyas Water'));
+            $prodName = htmlspecialchars($order['product_name'] ?: ($order['fallback_product_name'] ?: 'Due Clearance'));
             $zoneDisplay = htmlspecialchars($order['zone_name'] ?: 'Unassigned');
             $zoneSlug = htmlspecialchars($order['zone_slug'] ?? '');
             ?>

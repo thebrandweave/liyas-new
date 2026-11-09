@@ -496,7 +496,7 @@ if (isset($_GET['export']) && in_array($_GET['export'], ['csv', 'excel'])) {
             if ((int)($row['items_count'] ?? 0) > 1 && !empty($row['items_summary'])) {
                 $prodQty = $row['items_summary'];
             } else {
-                $pName = $row['product_name'] ?: ($row['fallback_product_name'] ?: 'Water');
+                $pName = $row['product_name'] ?: ($row['fallback_product_name'] ?: 'Due Clearance');
                 $prodQty = $pName . ' (' . (int)$row['quantity'] . ' cs)';
             }
 
@@ -608,7 +608,7 @@ if (isset($_GET['export']) && in_array($_GET['export'], ['csv', 'excel'])) {
             if ((int)($row['items_count'] ?? 0) > 1 && !empty($row['items_summary'])) {
                 $prodQty = htmlspecialchars($row['items_summary']);
             } else {
-                $pName = $row['product_name'] ?: ($row['fallback_product_name'] ?: 'Water');
+                $pName = $row['product_name'] ?: ($row['fallback_product_name'] ?: 'Due Clearance');
                 $prodQty = htmlspecialchars($pName . ' (' . (int)$row['quantity'] . ' cs)');
             }
 
@@ -2112,7 +2112,7 @@ $cleanBaseUrl = rtrim(BASE_URL, '/');
                                         $phone   = $o['phone'] ?? '';
                                         $zSlug   = $o['zone_slug'] ?: 'testing';
                                         $zName   = htmlspecialchars($o['zone_name'] ?: 'Zone');
-                                        $prod    = htmlspecialchars($o['product_name'] ?: ($o['fallback_product_name'] ?: 'Water'));
+                                        $prod    = htmlspecialchars($o['product_name'] ?: ($o['fallback_product_name'] ?: 'Due Clearance'));
                                         $qty     = (int)$o['quantity'];
                                         $totAmt  = (float)$o['total_amount'];
                                         $cash    = (float)$o['receipt_cash'];
