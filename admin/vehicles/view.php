@@ -143,12 +143,12 @@ if ($filterDate === 'custom') {
 } else {
     $dateLabels = [
         'all'        => 'All Time',
-        'today'      => 'Today (Daily)',
-        'yesterday'  => 'Yesterday (Daily)',
+        'today'      => 'Today',
+        'yesterday'  => 'Yesterday',
         'weekly'     => 'This Week',
         'this_week'  => 'This Week',
-        'monthly'    => 'This Month (Monthly)',
-        'this_month' => 'This Month (Monthly)'
+        'monthly'    => 'This Month',
+        'this_month' => 'This Month'
     ];
     $currentDateLabel = $dateLabels[$filterDate] ?? 'All Time';
 }
