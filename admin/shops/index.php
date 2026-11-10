@@ -231,6 +231,200 @@ try {
         $vehicleStats[$vId] = (int)$row['cnt'];
     }
 } catch (Exception $e) {}
+
+// Build export URLs preserving active search, vehicle, and dues filters
+$exportBaseParams = $_GET;
+unset($exportBaseParams['export']);
+
+$exportCsvParams = array_merge($exportBaseParams, ['export' => 'csv']);
+$exportCsvUrl = 'index.php?' . http_build_query($exportCsvParams);
+
+$exportExcelParams = array_merge($exportBaseParams, ['export' => 'excel']);
+$exportExcelUrl = 'index.php?' . http_build_query($exportExcelParams);
+
+// --- EXPORT HANDLER: SHOPS WITH PENDING DUES ONLY ---
+if (isset($_GET['export']) && in_array($_GET['export'], ['csv', 'excel', 'dues'])) {
+    $expFormat = ($_GET['export'] === 'excel') ? 'excel' : 'csv';
+
+    // Query candidate shops matching active vehicle or search filters
+    $exportStmt = $pdo->prepare("
+        SELECT s.*, 
+               v.vehicle_number, v.vehicle_name, v.driver_name,
+               z.name as zone_name
+        FROM shops s
+        LEFT JOIN vehicles v ON s.vehicle_id = v.id
+        LEFT JOIN zones z ON s.zone_id = z.id
+        WHERE {$whereSql}
+        ORDER BY s.shop_name ASC
+    ");
+    $exportStmt->execute($params);
+    $allCandidateShops = $exportStmt->fetchAll(PDO::FETCH_ASSOC);
+
+    $dueExportRows = [];
+    $sumOpening = 0.0;
+    $sumOrderDue = 0.0;
+    $sumTotalDue = 0.0;
+
+    foreach ($allCandidateShops as $cand) {
+        $cId = (int)$cand['id'];
+        $cOpening = (float)($cand['pending_amount'] ?? 0.0);
+        $cOrderInfo = $shopOrderDuesMap[$cId] ?? null;
+        $cOrderDue = (float)($cOrderInfo['order_due'] ?? 0.0);
+        $cTotalDue = round($cOpening + $cOrderDue, 2);
+
+        // Strict filter: ONLY export shops with due
+        if ($cTotalDue > 0.001) {
+            $cand['opening_due'] = $cOpening;
+            $cand['order_due'] = $cOrderDue;
+            $cand['total_due'] = $cTotalDue;
+            $cand['order_receipt_count'] = (int)($cOrderInfo['receipt_count'] ?? 0);
+            $dueExportRows[] = $cand;
+
+            $sumOpening += $cOpening;
+            $sumOrderDue += $cOrderDue;
+            $sumTotalDue += $cTotalDue;
+        }
+    }
+
+    // Sort descending by Total Due (largest dues first)
+    usort($dueExportRows, function($a, $b) {
+        if (abs($b['total_due'] - $a['total_due']) > 0.001) {
+            return ($b['total_due'] > $a['total_due']) ? 1 : -1;
+        }
+        return strcasecmp($a['shop_name'], $b['shop_name']);
+    });
+
+    $filenameBase = "Shops_Pending_Dues_" . date('Y-m-d_His');
+
+    if ($expFormat === 'csv') {
+        header('Content-Type: text/csv; charset=utf-8');
+        header('Content-Disposition: attachment; filename="' . $filenameBase . '.csv"');
+        header('Pragma: no-cache');
+        header('Expires: 0');
+
+        $out = fopen('php://output', 'w');
+        // UTF-8 BOM so Excel opens cleanly
+        fprintf($out, chr(0xEF) . chr(0xBB) . chr(0xBF));
+
+        fputcsv($out, [
+            '#',
+            'Shop Name',
+            'Location / Area',
+            'Phone',
+            'Assigned Vehicle',
+            'Territory / Route',
+            'Opening Due (₹)',
+            'Orders Due (₹)',
+            'Pending Due (₹)'
+        ]);
+
+        $idx = 1;
+        foreach ($dueExportRows as $r) {
+            $vDisplay = !empty($r['vehicle_name']) 
+                ? ($r['vehicle_name'] . (!empty($r['vehicle_number']) ? ' (' . $r['vehicle_number'] . ')' : ''))
+                : 'Unassigned';
+            $zoneDisplay = $r['zone_name'] ?: 'Unassigned';
+
+            fputcsv($out, [
+                $idx++,
+                $r['shop_name'] ?? '',
+                $r['location'] ?? '',
+                $r['phone'] ?? '',
+                $vDisplay,
+                $zoneDisplay,
+                number_format($r['opening_due'], 2, '.', ''),
+                number_format($r['order_due'], 2, '.', ''),
+                number_format($r['total_due'], 2, '.', '')
+            ]);
+        }
+
+        // Summary footer row
+        fputcsv($out, [
+            'TOTAL',
+            count($dueExportRows) . ' Shops with Due',
+            '',
+            '',
+            '',
+            '',
+            number_format($sumOpening, 2, '.', ''),
+            number_format($sumOrderDue, 2, '.', ''),
+            number_format($sumTotalDue, 2, '.', '')
+        ]);
+
+        fclose($out);
+        quickLog($pdo, 'export', 'shops_dues', 0, "Exported " . count($dueExportRows) . " shops with dues to CSV");
+        exit;
+    } else {
+        // Excel (.xls HTML format)
+        header('Content-Type: application/vnd.ms-excel; charset=utf-8');
+        header('Content-Disposition: attachment; filename="' . $filenameBase . '.xls"');
+        header('Pragma: no-cache');
+        header('Expires: 0');
+
+        echo '<!DOCTYPE html><html><head><meta charset="utf-8">';
+        echo '<style>';
+        echo 'body { font-family: "Segoe UI", Arial, sans-serif; font-size: 11pt; color: #1e293b; }';
+        echo 'table { border-collapse: collapse; width: 100%; margin-top: 10px; }';
+        echo 'th { background-color: #0f172a; color: #ffffff; padding: 10px 14px; text-align: left; font-weight: 700; border: 1px solid #334155; }';
+        echo 'th.num, td.num { text-align: right; }';
+        echo 'td { padding: 8px 12px; border: 1px solid #cbd5e1; font-size: 10.5pt; }';
+        echo 'tr:nth-child(even) { background-color: #f8fafc; }';
+        echo '.total-row { background-color: #f1f5f9; font-weight: 800; border-top: 2px solid #0f172a; }';
+        echo '.due-badge { background-color: #fee2e2; color: #b91c1c; font-weight: 700; }';
+        echo '.meta-header { margin-bottom: 8px; }';
+        echo '</style></head><body>';
+
+        echo '<div class="meta-header">';
+        echo '<h2 style="margin: 0 0 4px 0; color: #0f172a;">Liyas Water - Shops Pending Dues Report</h2>';
+        echo '<p style="margin: 0; color: #64748b; font-size: 10pt;">Generated on ' . date('d M Y, h:i A') . ' | Filter: Only Shops With Outstanding Dues (' . count($dueExportRows) . ' shops)</p>';
+        echo '</div>';
+
+        echo '<table>';
+        echo '<thead><tr>';
+        echo '<th style="width: 45px;">#</th>';
+        echo '<th>Shop Name</th>';
+        echo '<th>Location / Area</th>';
+        echo '<th>Phone</th>';
+        echo '<th>Assigned Vehicle</th>';
+        echo '<th>Territory / Route</th>';
+        echo '<th class="num">Opening Due (₹)</th>';
+        echo '<th class="num">Orders Due (₹)</th>';
+        echo '<th class="num">Pending Due (₹)</th>';
+        echo '</tr></thead><tbody>';
+
+        $idx = 1;
+        foreach ($dueExportRows as $r) {
+            $vDisplay = !empty($r['vehicle_name']) 
+                ? htmlspecialchars($r['vehicle_name'] . (!empty($r['vehicle_number']) ? ' (' . $r['vehicle_number'] . ')' : ''))
+                : '<span style="color:#94a3b8;">Unassigned</span>';
+            $zoneDisplay = htmlspecialchars($r['zone_name'] ?: 'Unassigned');
+
+            echo '<tr>';
+            echo '<td>' . ($idx++) . '</td>';
+            echo '<td style="font-weight: 700; color: #0f172a;">' . htmlspecialchars($r['shop_name'] ?? '') . '</td>';
+            echo '<td>' . htmlspecialchars($r['location'] ?? '-') . '</td>';
+            echo '<td style="mso-number-format:\'\@\';">' . htmlspecialchars($r['phone'] ?? '-') . '</td>';
+            echo '<td>' . $vDisplay . '</td>';
+            echo '<td>' . $zoneDisplay . '</td>';
+            echo '<td class="num">' . number_format($r['opening_due'], 2) . '</td>';
+            echo '<td class="num">' . number_format($r['order_due'], 2) . '</td>';
+            echo '<td class="num due-badge">' . number_format($r['total_due'], 2) . '</td>';
+            echo '</tr>';
+        }
+
+        echo '</tbody><tfoot>';
+        echo '<tr class="total-row">';
+        echo '<td colspan="6" style="text-align: right; padding: 10px; font-weight: 800;">TOTAL (' . count($dueExportRows) . ' Shops with Due):</td>';
+        echo '<td class="num" style="font-weight: 800;">' . number_format($sumOpening, 2) . '</td>';
+        echo '<td class="num" style="font-weight: 800;">' . number_format($sumOrderDue, 2) . '</td>';
+        echo '<td class="num due-badge" style="font-weight: 900; font-size: 11.5pt;">₹' . number_format($sumTotalDue, 2) . '</td>';
+        echo '</tr></tfoot>';
+        echo '</table></body></html>';
+
+        quickLog($pdo, 'export', 'shops_dues', 0, "Exported " . count($dueExportRows) . " shops with dues to Excel");
+        exit;
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -309,6 +503,54 @@ try {
             transition: background 0.15s ease;
         }
         .btn-act-import:hover { background: #059669; color: #fff; }
+
+        .btn-act-export {
+            background: #0f172a;
+            color: #ffffff;
+            border: none;
+            padding: 9px 16px;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 700;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            text-decoration: none;
+            cursor: pointer;
+            box-shadow: 0 1px 2px rgba(15,23,42,0.15);
+            transition: all 0.15s ease;
+        }
+        .btn-act-export:hover { background: #1e293b; color: #fff; transform: translateY(-1px); }
+
+        .export-dropdown {
+            position: relative;
+            display: inline-block;
+        }
+        .export-menu-box {
+            position: absolute;
+            top: calc(100% + 6px);
+            right: 0;
+            z-index: 100;
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 10px;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+            min-width: 250px;
+            padding: 6px;
+            display: none;
+        }
+        .export-menu-link {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 9px 12px;
+            border-radius: 6px;
+            text-decoration: none;
+            transition: background 0.15s ease;
+        }
+        .export-menu-link:hover {
+            background: #f1f5f9;
+        }
 
         .btn-act-outline {
             background: #ffffff;
@@ -577,6 +819,29 @@ try {
                         <p>Manage customer shops, assigned delivery vehicles, and territorial routes.</p>
                     </div>
                     <div class="shop-hero-actions">
+                        <!-- Export Dues Dropdown -->
+                        <div class="export-dropdown">
+                            <button type="button" class="btn-act-export" onclick="toggleShopExportMenu(event)" title="Export only shops with pending due">
+                                <i class='bx bx-download' style="font-size: 18px;"></i> Export Dues <i class='bx bx-chevron-down' style="font-size: 16px;"></i>
+                            </button>
+                            <div id="shopExportMenu" class="export-menu-box">
+                                <a href="<?= $exportExcelUrl ?>" class="export-menu-link">
+                                    <i class='bx bxs-file-export' style="color: #10b981; font-size: 20px;"></i>
+                                    <div>
+                                        <div style="font-weight: 700; color: #0f172a; font-size: 13px;">Export to Excel (.xls)</div>
+                                        <div style="font-size: 11px; color: #64748b;">Formatted sheet with shops having due</div>
+                                    </div>
+                                </a>
+                                <a href="<?= $exportCsvUrl ?>" class="export-menu-link">
+                                    <i class='bx bx-file' style="color: #2563eb; font-size: 20px;"></i>
+                                    <div>
+                                        <div style="font-weight: 700; color: #0f172a; font-size: 13px;">Export to CSV (.csv)</div>
+                                        <div style="font-size: 11px; color: #64748b;">Universal comma-separated spreadsheet</div>
+                                    </div>
+                                </a>
+                            </div>
+                        </div>
+
                         <a href="import.php" class="btn-act-import" title="Upload shop list with auto zone detection">
                             <i class='bx bx-cloud-upload' style="font-size: 18px;"></i> Import CSV / Excel
                         </a>
@@ -675,6 +940,9 @@ try {
                             <button type="submit" class="btn-act-outline">
                                 Filter
                             </button>
+                            <a href="<?= $exportCsvUrl ?>" class="btn-act-outline" style="color: #b91c1c; border-color: #fca5a5; background: #fff5f5;" title="Export only shops with pending due to CSV">
+                                <i class='bx bx-download'></i> Export Dues (CSV)
+                            </a>
 
                             <?php if ($duesFilter): ?>
                                 <span style="display: inline-flex; align-items: center; gap: 5px; background: #fee2e2; color: #b91c1c; border: 1px solid #fecaca; padding: 5px 10px; border-radius: 6px; font-size: 12px; font-weight: 700;">
@@ -939,6 +1207,22 @@ try {
     </div>
 
     <script>
+        function toggleShopExportMenu(event) {
+            if (event) {
+                event.stopPropagation();
+            }
+            const menu = document.getElementById('shopExportMenu');
+            if (menu) {
+                menu.style.display = (menu.style.display === 'block') ? 'none' : 'block';
+            }
+        }
+        document.addEventListener('click', function(e) {
+            const menu = document.getElementById('shopExportMenu');
+            const dropdown = document.querySelector('.export-dropdown');
+            if (menu && dropdown && !dropdown.contains(e.target)) {
+                menu.style.display = 'none';
+            }
+        });
         function openAddModal() {
             document.getElementById('addShopModal').classList.add('active');
         }
