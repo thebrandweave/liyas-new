@@ -193,8 +193,10 @@ foreach ($activeZoneBreakdown as $zb) {
 $capacity = (int)($vehicle['capacity_cases'] ?? 100);
 $capacityPercent = $capacity > 0 ? min(100, round(($activeLoadedCases / $capacity) * 100)) : 0;
 
-// Query total delivered cases per product for this vehicle
+// Query delivered cases per product (respecting active date filter) and Everyday Daily breakdown
 $vProductsList = [];
+$vDailyProductBreakdown = [];
+$vAllProductsLookup = [];
 try {
     $vProdStmt = $pdo->query("
         SELECT 
@@ -207,9 +209,68 @@ try {
         LIMIT 4
     ");
     $allProds = $vProdStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    foreach ($allProds as $p) {
+        $vAllProductsLookup[(int)$p['product_id']] = $p['display_name'];
+    }
 
-    // Aggregate cases from order_items for delivered orders of this vehicle
+    // Date condition for hero product metric cards matching the active date filter
+    $vProdDateWhere = "";
+    $vProdParams = [$vehicleId];
+
+    if ($filterDate === 'custom' || (!empty($fromDate) || !empty($toDate))) {
+        if (!empty($fromDate)) {
+            $vProdDateWhere .= " AND DATE(COALESCE(r.created_at, o.updated_at, o.created_at)) >= ?";
+            $vProdParams[] = $fromDate;
+        }
+        if (!empty($toDate)) {
+            $vProdDateWhere .= " AND DATE(COALESCE(r.created_at, o.updated_at, o.created_at)) <= ?";
+            $vProdParams[] = $toDate;
+        }
+    } elseif ($filterDate === 'today') {
+        $vProdDateWhere .= " AND DATE(COALESCE(r.created_at, o.updated_at, o.created_at)) = CURDATE()";
+    } elseif ($filterDate === 'yesterday') {
+        $vProdDateWhere .= " AND DATE(COALESCE(r.created_at, o.updated_at, o.created_at)) = SUBDATE(CURDATE(), 1)";
+    } elseif ($filterDate === 'weekly' || $filterDate === 'this_week') {
+        $vProdDateWhere .= " AND YEARWEEK(COALESCE(r.created_at, o.updated_at, o.created_at), 1) = YEARWEEK(CURDATE(), 1)";
+    } elseif ($filterDate === 'monthly' || $filterDate === 'this_month') {
+        $vProdDateWhere .= " AND YEAR(COALESCE(r.created_at, o.updated_at, o.created_at)) = YEAR(CURDATE()) AND MONTH(COALESCE(r.created_at, o.updated_at, o.created_at)) = MONTH(CURDATE())";
+    }
+
+    // Filtered cases for delivered orders of this vehicle
     $vItemsStmt = $pdo->prepare("
+        SELECT 
+            oi.product_id, 
+            COALESCE(SUM(oi.quantity), 0) as total_cases
+        FROM order_items oi
+        JOIN orders o ON oi.order_id = o.order_id
+        LEFT JOIN receipts r ON o.order_id = r.order_id
+        WHERE o.vehicle_id = ? 
+          AND o.status = 'delivered'
+          {$vProdDateWhere}
+        GROUP BY oi.product_id
+    ");
+    $vItemsStmt->execute($vProdParams);
+    $vItemCounts = $vItemsStmt->fetchAll(PDO::FETCH_KEY_PAIR) ?: [];
+
+    // Filtered cases from legacy orders without order_items
+    $vLegacyStmt = $pdo->prepare("
+        SELECT 
+            o.product_id,
+            COALESCE(SUM(COALESCE(o.quantity, 1)), 0) as total_cases
+        FROM orders o
+        LEFT JOIN receipts r ON o.order_id = r.order_id
+        WHERE o.vehicle_id = ? 
+          AND o.status = 'delivered'
+          AND o.product_id IS NOT NULL
+          AND NOT EXISTS (SELECT 1 FROM order_items oi WHERE oi.order_id = o.order_id)
+          {$vProdDateWhere}
+        GROUP BY o.product_id
+    ");
+    $vLegacyStmt->execute($vProdParams);
+    $vLegacyCounts = $vLegacyStmt->fetchAll(PDO::FETCH_KEY_PAIR) ?: [];
+
+    // All-time lifetime delivered cases for reference
+    $vLifetimeItemsStmt = $pdo->prepare("
         SELECT 
             oi.product_id, 
             COALESCE(SUM(oi.quantity), 0) as total_cases
@@ -219,11 +280,10 @@ try {
           AND o.status = 'delivered'
         GROUP BY oi.product_id
     ");
-    $vItemsStmt->execute([$vehicleId]);
-    $vItemCounts = $vItemsStmt->fetchAll(PDO::FETCH_KEY_PAIR) ?: [];
+    $vLifetimeItemsStmt->execute([$vehicleId]);
+    $vLifetimeItemCounts = $vLifetimeItemsStmt->fetchAll(PDO::FETCH_KEY_PAIR) ?: [];
 
-    // Aggregate cases from legacy orders without order_items
-    $vLegacyStmt = $pdo->prepare("
+    $vLifetimeLegacyStmt = $pdo->prepare("
         SELECT 
             o.product_id,
             COALESCE(SUM(COALESCE(o.quantity, 1)), 0) as total_cases
@@ -234,25 +294,92 @@ try {
           AND NOT EXISTS (SELECT 1 FROM order_items oi WHERE oi.order_id = o.order_id)
         GROUP BY o.product_id
     ");
-    $vLegacyStmt->execute([$vehicleId]);
-    $vLegacyCounts = $vLegacyStmt->fetchAll(PDO::FETCH_KEY_PAIR) ?: [];
+    $vLifetimeLegacyStmt->execute([$vehicleId]);
+    $vLifetimeLegacyCounts = $vLifetimeLegacyStmt->fetchAll(PDO::FETCH_KEY_PAIR) ?: [];
 
     foreach ($allProds as $p) {
         $pId = (int)$p['product_id'];
         $cases = (int)($vItemCounts[$pId] ?? 0) + (int)($vLegacyCounts[$pId] ?? 0);
+        $lifetimeCases = (int)($vLifetimeItemCounts[$pId] ?? 0) + (int)($vLifetimeLegacyCounts[$pId] ?? 0);
         $vProductsList[] = [
-            'product_id'   => $pId,
-            'name'         => $p['display_name'],
-            'net_content'  => $p['net_content'],
-            'unit'         => $p['net_content_unit'],
-            'total_cases'  => $cases
+            'product_id'     => $pId,
+            'name'           => $p['display_name'],
+            'net_content'    => $p['net_content'],
+            'unit'           => $p['net_content_unit'],
+            'total_cases'    => $cases,
+            'lifetime_cases' => $lifetimeCases
         ];
     }
+
+    // 2. Query Everyday Daily Product Deliveries Breakdown for this vehicle
+    $dailyItemsStmt = $pdo->prepare("
+        SELECT 
+            DATE(COALESCE(r.created_at, o.updated_at, o.created_at)) as delivery_date,
+            COUNT(DISTINCT o.order_id) as day_orders,
+            oi.product_id,
+            COALESCE(SUM(oi.quantity), 0) as cases,
+            COALESCE(SUM(o.total_amount), 0) as day_sales,
+            COALESCE(SUM(r.cash_amount), 0) as day_cash
+        FROM orders o
+        LEFT JOIN receipts r ON o.order_id = r.order_id
+        JOIN order_items oi ON o.order_id = oi.order_id
+        WHERE o.vehicle_id = ? 
+          AND o.status = 'delivered'
+        GROUP BY delivery_date, oi.product_id
+        ORDER BY delivery_date DESC
+    ");
+    $dailyItemsStmt->execute([$vehicleId]);
+    $dItemsRows = $dailyItemsStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+    $dailyLegacyStmt = $pdo->prepare("
+        SELECT 
+            DATE(COALESCE(r.created_at, o.updated_at, o.created_at)) as delivery_date,
+            COUNT(DISTINCT o.order_id) as day_orders,
+            o.product_id,
+            COALESCE(SUM(COALESCE(o.quantity, 1)), 0) as cases,
+            COALESCE(SUM(o.total_amount), 0) as day_sales,
+            COALESCE(SUM(r.cash_amount), 0) as day_cash
+        FROM orders o
+        LEFT JOIN receipts r ON o.order_id = r.order_id
+        WHERE o.vehicle_id = ? 
+          AND o.status = 'delivered'
+          AND o.product_id IS NOT NULL
+          AND NOT EXISTS (SELECT 1 FROM order_items oi WHERE oi.order_id = o.order_id)
+        GROUP BY delivery_date, o.product_id
+        ORDER BY delivery_date DESC
+    ");
+    $dailyLegacyStmt->execute([$vehicleId]);
+    $dLegacyRows = $dailyLegacyStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+    foreach (array_merge($dItemsRows, $dLegacyRows) as $row) {
+        $d = $row['delivery_date'];
+        if (empty($d)) continue;
+
+        if (!isset($vDailyProductBreakdown[$d])) {
+            $vDailyProductBreakdown[$d] = [
+                'date'        => $d,
+                'orders'      => (int)$row['day_orders'],
+                'sales'       => (float)$row['day_sales'],
+                'cash'        => (float)$row['day_cash'],
+                'products'    => [],
+                'total_cases' => 0
+            ];
+        }
+
+        $pId = (int)$row['product_id'];
+        $cases = (int)$row['cases'];
+        $vDailyProductBreakdown[$d]['products'][$pId] = ($vDailyProductBreakdown[$d]['products'][$pId] ?? 0) + $cases;
+        $vDailyProductBreakdown[$d]['total_cases'] += $cases;
+    }
+
+    krsort($vDailyProductBreakdown);
+
 } catch (Exception $e) {
     error_log("Error fetching vehicle product delivery totals: " . $e->getMessage());
 }
 
 // URL builder helper for maintaining filter state
+if (!function_exists('buildViewFilterUrl')) {
 function buildViewFilterUrl(array $overrides = []): string {
     global $vehicleId;
     $params = [
@@ -278,6 +405,7 @@ function buildViewFilterUrl(array $overrides = []): string {
         }
     }
     return 'view.php?' . http_build_query($queryParts);
+}
 }
 
 // Clean phone for whatsapp & call
@@ -485,6 +613,158 @@ if (strlen($cleanPhone) === 10) {
             gap: 10px;
             align-items: flex-end;
         }
+        /* Everyday Product Deliveries & Hero Filter Styles */
+        .v-hero-prod-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            width: 100%;
+            margin-bottom: 6px;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .v-hero-prod-header-title {
+            font-size: 11px;
+            font-weight: 700;
+            color: #475569;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+        }
+        .v-prod-date-badge {
+            background: #eff6ff;
+            color: #2563eb;
+            border: 1px solid #bfdbfe;
+            padding: 1px 6px;
+            border-radius: 4px;
+            font-size: 10.5px;
+            font-weight: 700;
+            text-transform: none;
+        }
+        .v-hero-prod-quick-filters {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            flex-wrap: wrap;
+        }
+        .v-prod-filter-btn {
+            font-size: 11px;
+            font-weight: 600;
+            padding: 2px 7px;
+            border-radius: 5px;
+            border: 1px solid #cbd5e1;
+            background: #ffffff;
+            color: #475569;
+            text-decoration: none;
+            transition: all 0.15s ease;
+        }
+        .v-prod-filter-btn:hover {
+            background: #f1f5f9;
+            border-color: #94a3b8;
+            color: #0f172a;
+        }
+        .v-prod-filter-btn.active {
+            background: #2563eb;
+            border-color: #2563eb;
+            color: #ffffff;
+            font-weight: 700;
+        }
+        .v-prod-day-picker {
+            font-size: 11px;
+            padding: 2px 5px;
+            border-radius: 5px;
+            border: 1px solid #cbd5e1;
+            background: #ffffff;
+            color: #334155;
+            outline: none;
+        }
+
+        /* Everyday Daily Breakdown Card */
+        .v-daily-card {
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            margin-bottom: 1.5rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+            overflow: hidden;
+        }
+        .v-daily-header {
+            padding: 14px 18px;
+            border-bottom: 1px solid #f1f5f9;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            flex-wrap: wrap;
+            background: #f8fafc;
+        }
+        .v-daily-title {
+            font-size: 14.5px;
+            font-weight: 800;
+            color: #0f172a;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .v-daily-subtitle {
+            font-size: 12px;
+            color: #64748b;
+            margin-top: 2px;
+        }
+        .v-daily-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12.5px;
+        }
+        .v-daily-table th {
+            background: #f8fafc;
+            color: #475569;
+            font-weight: 700;
+            padding: 10px 14px;
+            text-align: left;
+            border-bottom: 1.5px solid #e2e8f0;
+            white-space: nowrap;
+        }
+        .v-daily-table td {
+            padding: 10px 14px;
+            border-bottom: 1px solid #f1f5f9;
+            color: #1e293b;
+            vertical-align: middle;
+        }
+        .v-daily-table tr:hover {
+            background: #f8fafc;
+        }
+        .v-prod-cases-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 3px;
+            font-weight: 700;
+            padding: 2px 7px;
+            border-radius: 6px;
+            font-size: 12px;
+        }
+        .v-btn-filter-day {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 11px;
+            font-weight: 700;
+            padding: 4px 10px;
+            border-radius: 6px;
+            border: 1px solid #bfdbfe;
+            background: #eff6ff;
+            color: #2563eb;
+            text-decoration: none;
+            transition: all 0.15s ease;
+        }
+        .v-btn-filter-day:hover {
+            background: #2563eb;
+            color: #ffffff;
+            border-color: #2563eb;
+        }
+
         .v-hero-prod-grid {
             display: grid;
             grid-template-columns: repeat(4, minmax(88px, 1fr));
@@ -545,7 +825,159 @@ if (strlen($cleanPhone) === 10) {
         }
 
         @media (max-width: 1200px) {
-            .v-hero-prod-grid {
+            /* Everyday Product Deliveries & Hero Filter Styles */
+        .v-hero-prod-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            width: 100%;
+            margin-bottom: 6px;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .v-hero-prod-header-title {
+            font-size: 11px;
+            font-weight: 700;
+            color: #475569;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+        }
+        .v-prod-date-badge {
+            background: #eff6ff;
+            color: #2563eb;
+            border: 1px solid #bfdbfe;
+            padding: 1px 6px;
+            border-radius: 4px;
+            font-size: 10.5px;
+            font-weight: 700;
+            text-transform: none;
+        }
+        .v-hero-prod-quick-filters {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            flex-wrap: wrap;
+        }
+        .v-prod-filter-btn {
+            font-size: 11px;
+            font-weight: 600;
+            padding: 2px 7px;
+            border-radius: 5px;
+            border: 1px solid #cbd5e1;
+            background: #ffffff;
+            color: #475569;
+            text-decoration: none;
+            transition: all 0.15s ease;
+        }
+        .v-prod-filter-btn:hover {
+            background: #f1f5f9;
+            border-color: #94a3b8;
+            color: #0f172a;
+        }
+        .v-prod-filter-btn.active {
+            background: #2563eb;
+            border-color: #2563eb;
+            color: #ffffff;
+            font-weight: 700;
+        }
+        .v-prod-day-picker {
+            font-size: 11px;
+            padding: 2px 5px;
+            border-radius: 5px;
+            border: 1px solid #cbd5e1;
+            background: #ffffff;
+            color: #334155;
+            outline: none;
+        }
+
+        /* Everyday Daily Breakdown Card */
+        .v-daily-card {
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            margin-bottom: 1.5rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+            overflow: hidden;
+        }
+        .v-daily-header {
+            padding: 14px 18px;
+            border-bottom: 1px solid #f1f5f9;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            flex-wrap: wrap;
+            background: #f8fafc;
+        }
+        .v-daily-title {
+            font-size: 14.5px;
+            font-weight: 800;
+            color: #0f172a;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .v-daily-subtitle {
+            font-size: 12px;
+            color: #64748b;
+            margin-top: 2px;
+        }
+        .v-daily-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12.5px;
+        }
+        .v-daily-table th {
+            background: #f8fafc;
+            color: #475569;
+            font-weight: 700;
+            padding: 10px 14px;
+            text-align: left;
+            border-bottom: 1.5px solid #e2e8f0;
+            white-space: nowrap;
+        }
+        .v-daily-table td {
+            padding: 10px 14px;
+            border-bottom: 1px solid #f1f5f9;
+            color: #1e293b;
+            vertical-align: middle;
+        }
+        .v-daily-table tr:hover {
+            background: #f8fafc;
+        }
+        .v-prod-cases-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 3px;
+            font-weight: 700;
+            padding: 2px 7px;
+            border-radius: 6px;
+            font-size: 12px;
+        }
+        .v-btn-filter-day {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 11px;
+            font-weight: 700;
+            padding: 4px 10px;
+            border-radius: 6px;
+            border: 1px solid #bfdbfe;
+            background: #eff6ff;
+            color: #2563eb;
+            text-decoration: none;
+            transition: all 0.15s ease;
+        }
+        .v-btn-filter-day:hover {
+            background: #2563eb;
+            color: #ffffff;
+            border-color: #2563eb;
+        }
+
+        .v-hero-prod-grid {
                 grid-template-columns: repeat(2, minmax(88px, 1fr));
             }
         }
@@ -554,13 +986,317 @@ if (strlen($cleanPhone) === 10) {
                 align-items: stretch !important;
                 width: 100%;
             }
-            .v-hero-prod-grid {
+            /* Everyday Product Deliveries & Hero Filter Styles */
+        .v-hero-prod-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            width: 100%;
+            margin-bottom: 6px;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .v-hero-prod-header-title {
+            font-size: 11px;
+            font-weight: 700;
+            color: #475569;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+        }
+        .v-prod-date-badge {
+            background: #eff6ff;
+            color: #2563eb;
+            border: 1px solid #bfdbfe;
+            padding: 1px 6px;
+            border-radius: 4px;
+            font-size: 10.5px;
+            font-weight: 700;
+            text-transform: none;
+        }
+        .v-hero-prod-quick-filters {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            flex-wrap: wrap;
+        }
+        .v-prod-filter-btn {
+            font-size: 11px;
+            font-weight: 600;
+            padding: 2px 7px;
+            border-radius: 5px;
+            border: 1px solid #cbd5e1;
+            background: #ffffff;
+            color: #475569;
+            text-decoration: none;
+            transition: all 0.15s ease;
+        }
+        .v-prod-filter-btn:hover {
+            background: #f1f5f9;
+            border-color: #94a3b8;
+            color: #0f172a;
+        }
+        .v-prod-filter-btn.active {
+            background: #2563eb;
+            border-color: #2563eb;
+            color: #ffffff;
+            font-weight: 700;
+        }
+        .v-prod-day-picker {
+            font-size: 11px;
+            padding: 2px 5px;
+            border-radius: 5px;
+            border: 1px solid #cbd5e1;
+            background: #ffffff;
+            color: #334155;
+            outline: none;
+        }
+
+        /* Everyday Daily Breakdown Card */
+        .v-daily-card {
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            margin-bottom: 1.5rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+            overflow: hidden;
+        }
+        .v-daily-header {
+            padding: 14px 18px;
+            border-bottom: 1px solid #f1f5f9;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            flex-wrap: wrap;
+            background: #f8fafc;
+        }
+        .v-daily-title {
+            font-size: 14.5px;
+            font-weight: 800;
+            color: #0f172a;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .v-daily-subtitle {
+            font-size: 12px;
+            color: #64748b;
+            margin-top: 2px;
+        }
+        .v-daily-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12.5px;
+        }
+        .v-daily-table th {
+            background: #f8fafc;
+            color: #475569;
+            font-weight: 700;
+            padding: 10px 14px;
+            text-align: left;
+            border-bottom: 1.5px solid #e2e8f0;
+            white-space: nowrap;
+        }
+        .v-daily-table td {
+            padding: 10px 14px;
+            border-bottom: 1px solid #f1f5f9;
+            color: #1e293b;
+            vertical-align: middle;
+        }
+        .v-daily-table tr:hover {
+            background: #f8fafc;
+        }
+        .v-prod-cases-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 3px;
+            font-weight: 700;
+            padding: 2px 7px;
+            border-radius: 6px;
+            font-size: 12px;
+        }
+        .v-btn-filter-day {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 11px;
+            font-weight: 700;
+            padding: 4px 10px;
+            border-radius: 6px;
+            border: 1px solid #bfdbfe;
+            background: #eff6ff;
+            color: #2563eb;
+            text-decoration: none;
+            transition: all 0.15s ease;
+        }
+        .v-btn-filter-day:hover {
+            background: #2563eb;
+            color: #ffffff;
+            border-color: #2563eb;
+        }
+
+        .v-hero-prod-grid {
                 grid-template-columns: repeat(4, 1fr);
                 width: 100%;
             }
         }
         @media (max-width: 550px) {
-            .v-hero-prod-grid {
+            /* Everyday Product Deliveries & Hero Filter Styles */
+        .v-hero-prod-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            width: 100%;
+            margin-bottom: 6px;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .v-hero-prod-header-title {
+            font-size: 11px;
+            font-weight: 700;
+            color: #475569;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+        }
+        .v-prod-date-badge {
+            background: #eff6ff;
+            color: #2563eb;
+            border: 1px solid #bfdbfe;
+            padding: 1px 6px;
+            border-radius: 4px;
+            font-size: 10.5px;
+            font-weight: 700;
+            text-transform: none;
+        }
+        .v-hero-prod-quick-filters {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            flex-wrap: wrap;
+        }
+        .v-prod-filter-btn {
+            font-size: 11px;
+            font-weight: 600;
+            padding: 2px 7px;
+            border-radius: 5px;
+            border: 1px solid #cbd5e1;
+            background: #ffffff;
+            color: #475569;
+            text-decoration: none;
+            transition: all 0.15s ease;
+        }
+        .v-prod-filter-btn:hover {
+            background: #f1f5f9;
+            border-color: #94a3b8;
+            color: #0f172a;
+        }
+        .v-prod-filter-btn.active {
+            background: #2563eb;
+            border-color: #2563eb;
+            color: #ffffff;
+            font-weight: 700;
+        }
+        .v-prod-day-picker {
+            font-size: 11px;
+            padding: 2px 5px;
+            border-radius: 5px;
+            border: 1px solid #cbd5e1;
+            background: #ffffff;
+            color: #334155;
+            outline: none;
+        }
+
+        /* Everyday Daily Breakdown Card */
+        .v-daily-card {
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            margin-bottom: 1.5rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+            overflow: hidden;
+        }
+        .v-daily-header {
+            padding: 14px 18px;
+            border-bottom: 1px solid #f1f5f9;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            flex-wrap: wrap;
+            background: #f8fafc;
+        }
+        .v-daily-title {
+            font-size: 14.5px;
+            font-weight: 800;
+            color: #0f172a;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .v-daily-subtitle {
+            font-size: 12px;
+            color: #64748b;
+            margin-top: 2px;
+        }
+        .v-daily-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12.5px;
+        }
+        .v-daily-table th {
+            background: #f8fafc;
+            color: #475569;
+            font-weight: 700;
+            padding: 10px 14px;
+            text-align: left;
+            border-bottom: 1.5px solid #e2e8f0;
+            white-space: nowrap;
+        }
+        .v-daily-table td {
+            padding: 10px 14px;
+            border-bottom: 1px solid #f1f5f9;
+            color: #1e293b;
+            vertical-align: middle;
+        }
+        .v-daily-table tr:hover {
+            background: #f8fafc;
+        }
+        .v-prod-cases-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 3px;
+            font-weight: 700;
+            padding: 2px 7px;
+            border-radius: 6px;
+            font-size: 12px;
+        }
+        .v-btn-filter-day {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 11px;
+            font-weight: 700;
+            padding: 4px 10px;
+            border-radius: 6px;
+            border: 1px solid #bfdbfe;
+            background: #eff6ff;
+            color: #2563eb;
+            text-decoration: none;
+            transition: all 0.15s ease;
+        }
+        .v-btn-filter-day:hover {
+            background: #2563eb;
+            color: #ffffff;
+            border-color: #2563eb;
+        }
+
+        .v-hero-prod-grid {
                 grid-template-columns: repeat(2, 1fr);
             }
         }
@@ -1117,19 +1853,47 @@ if (strlen($cleanPhone) === 10) {
                     </div>
                 </div>
                 <div class="v-hero-right-col">
+                    <!-- Daily Product Cases Header with Quick Day Switcher -->
+                    <div class="v-hero-prod-header">
+                        <div class="v-hero-prod-header-title">
+                            <i class='bx bx-package' style="color: #2563eb; font-size: 15px;"></i>
+                            <span>Cases Delivered:</span>
+                            <span class="v-prod-date-badge"><?= htmlspecialchars($currentDateLabel) ?></span>
+                        </div>
+                        <div class="v-hero-prod-quick-filters">
+                            <a href="<?= buildViewFilterUrl(['date' => 'today', 'from_date' => '', 'to_date' => '']) ?>" 
+                               class="v-prod-filter-btn <?= $filterDate === 'today' ? 'active' : '' ?>" title="View today's cases">
+                                Today
+                            </a>
+                            <a href="<?= buildViewFilterUrl(['date' => 'yesterday', 'from_date' => '', 'to_date' => '']) ?>" 
+                               class="v-prod-filter-btn <?= $filterDate === 'yesterday' ? 'active' : '' ?>" title="View yesterday's cases">
+                                Yesterday
+                            </a>
+                            <a href="<?= buildViewFilterUrl(['date' => 'all', 'from_date' => '', 'to_date' => '']) ?>" 
+                               class="v-prod-filter-btn <?= $filterDate === 'all' ? 'active' : '' ?>" title="View all-time cases">
+                                All Time
+                            </a>
+                            <input type="date" 
+                                   class="v-prod-day-picker"
+                                   value="<?= ($filterDate === 'custom' && $fromDate === $toDate && !empty($fromDate)) ? htmlspecialchars($fromDate) : '' ?>" 
+                                   onchange="if(this.value) window.location.href='view.php?id=<?= $vehicleId ?>&date=custom&from_date=' + this.value + '&to_date=' + this.value;" 
+                                   title="Filter to any specific date">
+                        </div>
+                    </div>
+
                     <!-- Four Product Delivered Cases Boxes -->
                     <div class="v-hero-prod-grid">
                         <?php 
                         $prodThemes = [
-                            0 => ['bg' => '#f0f9ff', 'border' => '#bae6fd', 'color' => '#0284c7'],
-                            1 => ['bg' => '#eff6ff', 'border' => '#bfdbfe', 'color' => '#2563eb'],
-                            2 => ['bg' => '#f5f3ff', 'border' => '#ddd6fe', 'color' => '#7c3aed'],
-                            3 => ['bg' => '#ecfdf5', 'border' => '#a7f3d0', 'color' => '#059669'],
+                            0 => ['bg' => '#f0f9ff', 'border' => '#bae6fd', 'color' => '#0284c7', 'icon' => 'bx-droplet'],
+                            1 => ['bg' => '#eff6ff', 'border' => '#bfdbfe', 'color' => '#2563eb', 'icon' => 'bx-water'],
+                            2 => ['bg' => '#f5f3ff', 'border' => '#ddd6fe', 'color' => '#7c3aed', 'icon' => 'bxs-drink'],
+                            3 => ['bg' => '#ecfdf5', 'border' => '#a7f3d0', 'color' => '#059669', 'icon' => 'bx-package'],
                         ];
                         foreach ($vProductsList as $idx => $pItem): 
                             $theme = $prodThemes[$idx % 4];
                         ?>
-                            <div class="v-prod-metric-box" style="background: <?= $theme['bg'] ?>; border-color: <?= $theme['border'] ?>;">
+                            <div class="v-prod-metric-box" style="background: <?= $theme['bg'] ?>; border-color: <?= $theme['border'] ?>;" title="<?= htmlspecialchars($pItem['name']) ?>: <?= number_format($pItem['total_cases']) ?> cs delivered in '<?= htmlspecialchars($currentDateLabel) ?>' (Lifetime: <?= number_format($pItem['lifetime_cases']) ?> cs)">
                                 <div class="v-prod-metric-title" style="color: <?= $theme['color'] ?>;">
                                     <i class='bx <?= $theme['icon'] ?>'></i>
                                     <span><?= htmlspecialchars($pItem['name']) ?></span>
@@ -1138,7 +1902,9 @@ if (strlen($cleanPhone) === 10) {
                                     <span class="v-prod-metric-num" style="color: <?= $theme['color'] ?>;"><?= number_format($pItem['total_cases']) ?></span>
                                     <span class="v-prod-metric-unit">cs</span>
                                 </div>
-                                <div class="v-prod-metric-sub">Delivered</div>
+                                <div class="v-prod-metric-sub">
+                                    Delivered <?= ($filterDate === 'all' ? 'All Time' : '(' . htmlspecialchars($currentDateLabel) . ')') ?>
+                                </div>
                             </div>
                         <?php endforeach; ?>
                     </div>
@@ -1295,6 +2061,120 @@ if (strlen($cleanPhone) === 10) {
                         </div>
                     <?php endif; ?>
                 </form>
+            </div>
+
+            <!-- Everyday Daily Product Deliveries Breakdown -->
+            <div id="daily-breakdown" class="v-daily-card">
+                <div class="v-daily-header">
+                    <div>
+                        <div class="v-daily-title">
+                            <i class='bx bx-calendar-check' style="color: #2563eb; font-size: 20px;"></i>
+                            <span>Everyday Product Deliveries Breakdown</span>
+                            <span class="v-count-badge"><?= count($vDailyProductBreakdown) ?> delivery days</span>
+                        </div>
+                        <div class="v-daily-subtitle">
+                            Breakdown of which products and how many cases were delivered everyday by <?= htmlspecialchars($vehicle['vehicle_number']) ?>
+                        </div>
+                    </div>
+                    <?php if ($filterDate !== 'all'): ?>
+                        <div>
+                            <a href="<?= buildViewFilterUrl(['date' => 'all', 'from_date' => '', 'to_date' => '']) ?>" class="btn-v-secondary" style="padding: 5px 10px; font-size: 11.5px;">
+                                <i class='bx bx-show'></i> Show All Days
+                            </a>
+                        </div>
+                    <?php endif; ?>
+                </div>
+
+                <div class="v-table-wrap">
+                    <table class="v-daily-table">
+                        <thead>
+                            <tr>
+                                <th>Delivery Date</th>
+                                <th style="text-align: center;">Orders</th>
+                                <?php foreach ($vProductsList as $pHead): ?>
+                                    <th style="text-align: center;"><?= htmlspecialchars($pHead['name']) ?> (cs)</th>
+                                <?php endforeach; ?>
+                                <th style="text-align: right;">Day Total Cases</th>
+                                <th style="text-align: right;">Delivered Sales</th>
+                                <th style="text-align: center;">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php if (empty($vDailyProductBreakdown)): ?>
+                                <tr>
+                                    <td colspan="<?= 4 + count($vProductsList) ?>" style="text-align: center; padding: 32px 16px; color: #64748b;">
+                                        <i class='bx bx-calendar-x' style="font-size: 32px; color: #cbd5e1; display: block; margin-bottom: 6px;"></i>
+                                        No daily product deliveries recorded yet for this vehicle.
+                                    </td>
+                                </tr>
+                            <?php else: ?>
+                                <?php 
+                                $isTodayDate = date('Y-m-d');
+                                $isYestDate = date('Y-m-d', strtotime('-1 day'));
+                                foreach ($vDailyProductBreakdown as $dDate => $dRow): 
+                                    $isRowFiltered = ($filterDate === 'custom' && $fromDate === $dDate && $toDate === $dDate)
+                                        || ($filterDate === 'today' && $dDate === $isTodayDate)
+                                        || ($filterDate === 'yesterday' && $dDate === $isYestDate);
+                                ?>
+                                    <tr style="<?= $isRowFiltered ? 'background: #eff6ff;' : '' ?>">
+                                        <td style="font-weight: 700; color: #0f172a;">
+                                            <div style="display: flex; align-items: center; gap: 6px;">
+                                                <i class='bx bx-calendar' style="color: #64748b;"></i>
+                                                <span><?= date('d M Y, l', strtotime($dDate)) ?></span>
+                                                <?php if ($dDate === $isTodayDate): ?>
+                                                    <span style="font-size: 10px; background: #dcfce7; color: #166534; padding: 1px 6px; border-radius: 9999px; font-weight: 800;">Today</span>
+                                                <?php elseif ($dDate === $isYestDate): ?>
+                                                    <span style="font-size: 10px; background: #f1f5f9; color: #475569; padding: 1px 6px; border-radius: 9999px; font-weight: 800;">Yesterday</span>
+                                                <?php endif; ?>
+                                                <?php if ($isRowFiltered): ?>
+                                                    <span style="font-size: 10px; background: #2563eb; color: #ffffff; padding: 1px 6px; border-radius: 9999px; font-weight: 800;">Active Filter</span>
+                                                <?php endif; ?>
+                                            </div>
+                                        </td>
+                                        <td style="text-align: center; font-weight: 600; color: #475569;">
+                                            <?= $dRow['orders'] ?> order<?= $dRow['orders'] === 1 ? '' : 's' ?>
+                                        </td>
+                                        <?php foreach ($vProductsList as $pCol): 
+                                            $pId = (int)$pCol['product_id'];
+                                            $pCases = (int)($dRow['products'][$pId] ?? 0);
+                                        ?>
+                                            <td style="text-align: center;">
+                                                <?php if ($pCases > 0): ?>
+                                                    <span class="v-prod-cases-badge" style="background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe;">
+                                                        <strong><?= number_format($pCases) ?></strong> cs
+                                                    </span>
+                                                <?php else: ?>
+                                                    <span style="color: #cbd5e1; font-weight: 500;">-</span>
+                                                <?php endif; ?>
+                                            </td>
+                                        <?php endforeach; ?>
+                                        <td style="text-align: right; font-weight: 800; color: #0f172a; font-size: 13.5px;">
+                                            <span style="background: #ecfdf5; color: #047857; padding: 3px 8px; border-radius: 6px; border: 1px solid #a7f3d0;">
+                                                <?= number_format($dRow['total_cases']) ?> cs
+                                            </span>
+                                        </td>
+                                        <td style="text-align: right; font-weight: 700; color: #0f172a;">
+                                            ₹<?= number_format($dRow['sales'], 2) ?>
+                                        </td>
+                                        <td style="text-align: center;">
+                                            <?php if ($isRowFiltered): ?>
+                                                <a href="<?= buildViewFilterUrl(['date' => 'all', 'from_date' => '', 'to_date' => '']) ?>" 
+                                                   class="btn-v-secondary" style="padding: 3px 8px; font-size: 11px;" title="Clear date filter">
+                                                    <i class='bx bx-x'></i> Clear
+                                                </a>
+                                            <?php else: ?>
+                                                <a href="<?= buildViewFilterUrl(['date' => 'custom', 'from_date' => $dDate, 'to_date' => $dDate]) ?>" 
+                                                   class="v-btn-filter-day" title="Filter entire page to this specific day">
+                                                    <i class='bx bx-filter'></i> Filter Day
+                                                </a>
+                                            <?php endif; ?>
+                                        </td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            <?php endif; ?>
+                        </tbody>
+                    </table>
+                </div>
             </div>
 
             <!-- Delivered Orders Data Table -->
