@@ -805,13 +805,13 @@ if (isset($_GET['export']) && in_array($_GET['export'], ['csv', 'excel', 'dues']
                                         <div style="font-size: 11px; color: #64748b;">Formatted sheet with shops having due</div>
                                     </div>
                                 </a>
-                                <a href="<?= $exportCsvUrl ?>" class="export-menu-link">
+                                <!-- <a href="<?= $exportCsvUrl ?>" class="export-menu-link">
                                     <i class='bx bx-file' style="color: #2563eb; font-size: 20px;"></i>
                                     <div>
                                         <div style="font-weight: 700; color: #0f172a; font-size: 13px;">Export to CSV (.csv)</div>
                                         <div style="font-size: 11px; color: #64748b;">Universal comma-separated spreadsheet</div>
                                     </div>
-                                </a>
+                                </a> -->
                             </div>
                         </div>
 
