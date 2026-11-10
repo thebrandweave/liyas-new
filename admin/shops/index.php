@@ -307,31 +307,19 @@ if (isset($_GET['export']) && in_array($_GET['export'], ['csv', 'excel', 'dues']
         fprintf($out, chr(0xEF) . chr(0xBB) . chr(0xBF));
 
         fputcsv($out, [
-            '#',
             'Shop Name',
             'Location / Area',
-            'Phone',
-            'Assigned Vehicle',
-            'Territory / Route',
+            'Phone Number',
             'Opening Due (₹)',
             'Orders Due (₹)',
             'Pending Due (₹)'
         ]);
 
-        $idx = 1;
         foreach ($dueExportRows as $r) {
-            $vDisplay = !empty($r['vehicle_name']) 
-                ? ($r['vehicle_name'] . (!empty($r['vehicle_number']) ? ' (' . $r['vehicle_number'] . ')' : ''))
-                : 'Unassigned';
-            $zoneDisplay = $r['zone_name'] ?: 'Unassigned';
-
             fputcsv($out, [
-                $idx++,
                 $r['shop_name'] ?? '',
                 $r['location'] ?? '',
                 $r['phone'] ?? '',
-                $vDisplay,
-                $zoneDisplay,
                 number_format($r['opening_due'], 2, '.', ''),
                 number_format($r['order_due'], 2, '.', ''),
                 number_format($r['total_due'], 2, '.', '')
@@ -340,10 +328,7 @@ if (isset($_GET['export']) && in_array($_GET['export'], ['csv', 'excel', 'dues']
 
         // Summary footer row
         fputcsv($out, [
-            'TOTAL',
-            count($dueExportRows) . ' Shops with Due',
-            '',
-            '',
+            'TOTAL (' . count($dueExportRows) . ' Shops)',
             '',
             '',
             number_format($sumOpening, 2, '.', ''),
@@ -381,31 +366,19 @@ if (isset($_GET['export']) && in_array($_GET['export'], ['csv', 'excel', 'dues']
 
         echo '<table>';
         echo '<thead><tr>';
-        echo '<th style="width: 45px;">#</th>';
         echo '<th>Shop Name</th>';
         echo '<th>Location / Area</th>';
-        echo '<th>Phone</th>';
-        echo '<th>Assigned Vehicle</th>';
-        echo '<th>Territory / Route</th>';
+        echo '<th>Phone Number</th>';
         echo '<th class="num">Opening Due (₹)</th>';
         echo '<th class="num">Orders Due (₹)</th>';
         echo '<th class="num">Pending Due (₹)</th>';
         echo '</tr></thead><tbody>';
 
-        $idx = 1;
         foreach ($dueExportRows as $r) {
-            $vDisplay = !empty($r['vehicle_name']) 
-                ? htmlspecialchars($r['vehicle_name'] . (!empty($r['vehicle_number']) ? ' (' . $r['vehicle_number'] . ')' : ''))
-                : '<span style="color:#94a3b8;">Unassigned</span>';
-            $zoneDisplay = htmlspecialchars($r['zone_name'] ?: 'Unassigned');
-
             echo '<tr>';
-            echo '<td>' . ($idx++) . '</td>';
             echo '<td style="font-weight: 700; color: #0f172a;">' . htmlspecialchars($r['shop_name'] ?? '') . '</td>';
             echo '<td>' . htmlspecialchars($r['location'] ?? '-') . '</td>';
             echo '<td style="mso-number-format:\'\@\';">' . htmlspecialchars($r['phone'] ?? '-') . '</td>';
-            echo '<td>' . $vDisplay . '</td>';
-            echo '<td>' . $zoneDisplay . '</td>';
             echo '<td class="num">' . number_format($r['opening_due'], 2) . '</td>';
             echo '<td class="num">' . number_format($r['order_due'], 2) . '</td>';
             echo '<td class="num due-badge">' . number_format($r['total_due'], 2) . '</td>';
@@ -414,7 +387,7 @@ if (isset($_GET['export']) && in_array($_GET['export'], ['csv', 'excel', 'dues']
 
         echo '</tbody><tfoot>';
         echo '<tr class="total-row">';
-        echo '<td colspan="6" style="text-align: right; padding: 10px; font-weight: 800;">TOTAL (' . count($dueExportRows) . ' Shops with Due):</td>';
+        echo '<td colspan="3" style="text-align: right; padding: 10px; font-weight: 800;">TOTAL (' . count($dueExportRows) . ' Shops with Due):</td>';
         echo '<td class="num" style="font-weight: 800;">' . number_format($sumOpening, 2) . '</td>';
         echo '<td class="num" style="font-weight: 800;">' . number_format($sumOrderDue, 2) . '</td>';
         echo '<td class="num due-badge" style="font-weight: 900; font-size: 11.5pt;">₹' . number_format($sumTotalDue, 2) . '</td>';
