@@ -913,9 +913,9 @@ if (isset($_GET['export']) && in_array($_GET['export'], ['csv', 'excel', 'dues']
                             <button type="submit" class="btn-act-outline">
                                 Filter
                             </button>
-                            <a href="<?= $exportCsvUrl ?>" class="btn-act-outline" style="color: #b91c1c; border-color: #fca5a5; background: #fff5f5;" title="Export only shops with pending due to CSV">
+                            <!-- <a href="<?= $exportCsvUrl ?>" class="btn-act-outline" style="color: #b91c1c; border-color: #fca5a5; background: #fff5f5;" title="Export only shops with pending due to CSV">
                                 <i class='bx bx-download'></i> Export Dues (CSV)
-                            </a>
+                            </a> -->
 
                             <?php if ($duesFilter): ?>
                                 <span style="display: inline-flex; align-items: center; gap: 5px; background: #fee2e2; color: #b91c1c; border: 1px solid #fecaca; padding: 5px 10px; border-radius: 6px; font-size: 12px; font-weight: 700;">
