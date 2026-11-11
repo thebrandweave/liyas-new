@@ -24,6 +24,15 @@ $success_msg = $_SESSION['success_message'] ?? null;
 $error_msg   = $_SESSION['error_message'] ?? null;
 unset($_SESSION['success_message'], $_SESSION['error_message']);
 
+// Ensure initial_cases column exists in vehicle_loads
+try {
+    $hasInitCol = $pdo->query("SHOW COLUMNS FROM `vehicle_loads` LIKE 'initial_cases'")->fetch();
+    if (!$hasInitCol) {
+        $pdo->exec("ALTER TABLE `vehicle_loads` ADD COLUMN `initial_cases` INT NOT NULL DEFAULT 0 AFTER `cases_loaded`");
+        $pdo->exec("UPDATE `vehicle_loads` SET `initial_cases` = `cases_loaded` WHERE `initial_cases` = 0 AND `cases_loaded` > 0");
+    }
+} catch (Exception $e) {}
+
 // --- POST ACTIONS (CRUD for Vehicles & Vehicle Products) ---
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = trim($_POST['action'] ?? '');
@@ -78,8 +87,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $vehLabel = $vehInfo['vehicle_number'] . ($vehInfo['vehicle_name'] ? " (" . $vehInfo['vehicle_name'] . ")" : "");
 
                 $ins = $pdo->prepare("
-                    INSERT INTO vehicle_loads (vehicle_id, zone_id, product_id, order_id, cases_loaded, shop_name, is_active, notes, created_at)
-                    VALUES (?, ?, ?, NULL, ?, ?, 1, ?, NOW())
+                    INSERT INTO vehicle_loads (vehicle_id, zone_id, product_id, order_id, cases_loaded, initial_cases, shop_name, is_active, notes, created_at)
+                    VALUES (?, ?, ?, NULL, ?, ?, ?, 1, ?, NOW())
                 ");
 
                 $loadedSummary = [];
@@ -98,6 +107,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $vId,
                         $zId,
                         $pId,
+                        $cases,
                         $cases,
                         $shopName ?: null,
                         $notes ?: 'Vehicle Storage'
@@ -141,10 +151,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 $upd = $pdo->prepare("
                     UPDATE vehicle_loads 
-                    SET cases_loaded = ?, zone_id = ?, notes = ? 
+                    SET cases_loaded = ?, initial_cases = GREATEST(COALESCE(initial_cases, 0), ?), zone_id = ?, notes = ? 
                     WHERE id = ?
                 ");
-                $upd->execute([$cases, $zId, $notes, $loadId]);
+                $upd->execute([$cases, $cases, $zId, $notes, $loadId]);
 
                 if (function_exists('quickLog')) {
                     quickLog($pdo, 'update', 'vehicle_load', $loadRow['vehicle_id'], "Updated vehicle load #{$loadId} to {$cases} cases");
@@ -162,7 +172,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $vId = (int)($_POST['vehicle_id'] ?? 0);
         $loadsData = $_POST['loads'] ?? [];
         if ($vId > 0 && is_array($loadsData)) {
-            $upd = $pdo->prepare("UPDATE vehicle_loads SET cases_loaded = ? WHERE id = ? AND vehicle_id = ? AND is_active = 1");
+            $upd = $pdo->prepare("UPDATE vehicle_loads SET cases_loaded = ?, initial_cases = GREATEST(COALESCE(initial_cases, 0), ?) WHERE id = ? AND vehicle_id = ? AND is_active = 1");
             $del = $pdo->prepare("UPDATE vehicle_loads SET cases_loaded = 0, is_active = 0 WHERE id = ? AND vehicle_id = ? AND is_active = 1");
             $totalUpdated = 0;
             foreach ($loadsData as $lId => $newCases) {
@@ -172,7 +182,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     if ($newCases === 0) {
                         $del->execute([$lId, $vId]);
                     } else {
-                        $upd->execute([$newCases, $lId, $vId]);
+                        $upd->execute([$newCases, $newCases, $lId, $vId]);
                     }
                     $totalUpdated++;
                 }
@@ -663,6 +673,7 @@ foreach ($vehiclesRaw as $veh) {
             vl.product_id,
             vl.order_id,
             vl.cases_loaded,
+            COALESCE(NULLIF(vl.initial_cases, 0), vl.cases_loaded) as initial_cases,
             vl.shop_name,
             vl.notes,
             vl.created_at,
@@ -684,14 +695,48 @@ foreach ($vehiclesRaw as $veh) {
     $loadRowsStmt->execute([$vId]);
     $individualLoads = $loadRowsStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
+    // Fetch today's delivered order items for this vehicle to track decremented load vs original total load
+    $deliveredStmt = $pdo->prepare("
+        SELECT 
+            COALESCE(oi.product_id, o.product_id) as product_id,
+            COALESCE(SUM(COALESCE(oi.quantity, o.quantity, 1)), 0) as delivered_cases
+        FROM orders o
+        LEFT JOIN order_items oi ON o.order_id = oi.order_id
+        WHERE o.vehicle_id = ? 
+          AND o.status = 'delivered'
+          AND DATE(COALESCE(o.updated_at, o.created_at)) = CURDATE()
+        GROUP BY COALESCE(oi.product_id, o.product_id)
+    ");
+    $deliveredStmt->execute([$vId]);
+    $deliveredByProd = $deliveredStmt->fetchAll(PDO::FETCH_KEY_PAIR) ?: [];
+    $assignedOrdersDelivered = (int)array_sum($deliveredByProd);
+
     $bufferCases = 0;
-    foreach ($individualLoads as $il) {
-        $bufferCases += (int)$il['cases_loaded'];
+    $bufferInitialCases = 0;
+    foreach ($individualLoads as &$il) {
+        $cLoaded = (int)$il['cases_loaded'];
+        $iLoaded = (int)($il['initial_cases'] ?? 0);
+        $pId = (int)($il['product_id'] ?? 0);
+        if ($iLoaded <= $cLoaded && isset($deliveredByProd[$pId]) && $deliveredByProd[$pId] > 0) {
+            $iLoaded = $cLoaded + (int)$deliveredByProd[$pId];
+        }
+        $totLoaded = max($cLoaded, $iLoaded);
+        $il['initial_cases'] = $totLoaded;
+        $il['total_loaded']  = $totLoaded;
+
+        $bufferCases += $cLoaded;
+        $bufferInitialCases += $totLoaded;
     }
+    unset($il);
 
     // 3. Total cargo on vehicle = Assigned Client Orders Cases + Direct Line-Sale Cases
     $totalVehicleCases = $assignedOrdersCases + $bufferCases;
     $totalFleetCasesLoaded += $totalVehicleCases;
+
+    $totalVehicleInitialCases = $bufferInitialCases + $assignedOrdersCases;
+    if ($totalVehicleInitialCases < $totalVehicleCases) {
+        $totalVehicleInitialCases = $totalVehicleCases;
+    }
 
     if ($totalVehicleCases > 0 || $veh['status'] === 'active' || $veh['status'] === 'loading') {
         $activeVehiclesCount++;
@@ -738,12 +783,14 @@ foreach ($vehiclesRaw as $veh) {
         }
     }
 
-    $veh['total_cases_loaded']   = $totalVehicleCases;
-    $veh['assigned_order_cases'] = $assignedOrdersCases;
-    $veh['buffer_cases']         = $bufferCases;
-    $veh['assigned_orders']      = $assignedOrders;
-    $veh['individual_loads']     = $individualLoads;
-    $veh['combined_cargo']       = array_values($combinedCargo);
+    $veh['total_cases_loaded']          = $totalVehicleCases;
+    $veh['total_vehicle_initial_cases'] = $totalVehicleInitialCases;
+    $veh['assigned_order_cases']        = $assignedOrdersCases;
+    $veh['buffer_cases']                = $bufferCases;
+    $veh['assigned_orders']             = $assignedOrders;
+    $veh['delivered_by_prod']           = $deliveredByProd;
+    $veh['individual_loads']            = $individualLoads;
+    $veh['combined_cargo']              = array_values($combinedCargo);
     $vehicles[] = $veh;
 }
 
@@ -1881,25 +1928,26 @@ if (!empty($searchQuery)) {
                             </div>
 
                             <?php 
-                                $capacityCases = (int)($v['capacity_cases'] ?? 100);
-                                $assignedOrderCases = (int)($v['assigned_order_cases'] ?? 0);
-                                $bufferCases = (int)($v['buffer_cases'] ?? 0);
-                                $assignedOrders = $v['assigned_orders'] ?? [];
-                                $combinedCargo = $v['combined_cargo'] ?? [];
+                                $capacityCases            = (int)($v['capacity_cases'] ?? 100);
+                                $assignedOrderCases       = (int)($v['assigned_order_cases'] ?? 0);
+                                $bufferCases              = (int)($v['buffer_cases'] ?? 0);
+                                $totalVehicleInitialCases = (int)($v['total_vehicle_initial_cases'] ?? $totalCases);
+                                $assignedOrders           = $v['assigned_orders'] ?? [];
+                                $combinedCargo            = $v['combined_cargo'] ?? [];
+                                $delivProd                = $v['delivered_by_prod'] ?? [];
                             ?>
                             <!-- Total Cases Loaded Bar & Quick Action -->
                             <div class="load-summary-bar">
                                 <div>
                                     <div class="load-total-num">
-                                        <?= $totalCases ?> <span style="font-size: 14px; font-weight: 700;">Cases</span>
+                                        <?= $totalCases ?> / <?= $totalVehicleInitialCases ?> <span style="font-size: 14px; font-weight: 700;">Cases</span>
                                         <?php if ($capacityCases > 0): ?>
                                             <span style="font-size: 12px; font-weight: 600; color: #64748b;"> </span>
                                         <?php endif; ?>
                                     </div>
                                     <div class="load-total-sub">
-                                        <span style=" color: #1e40af; font-weight: 700;"><?= $assignedOrderCases ?> cs Orders</span>
-                                        
-                                     
+                                        <span>Total Loaded: <strong><?= $totalVehicleInitialCases ?> cs</strong> &bull; Remaining: <strong style="color: #059669;"><?= $totalCases ?> cs</strong></span>
+                                        &bull; <span style=" color: #1e40af; font-weight: 700;"><?= $assignedOrderCases ?> cs Orders</span>
                                     </div>
                                 </div>
                                 <div style="display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end;">
@@ -1917,24 +1965,32 @@ if (!empty($searchQuery)) {
                                 $displayLoads = [];
                                 if (!empty($loads)) {
                                     foreach ($loads as $ld) {
+                                        $currCs = (int)$ld['cases_loaded'];
+                                        $totLoaded = max($currCs, (int)($ld['total_loaded'] ?? $ld['initial_cases'] ?? $currCs));
                                         $displayLoads[] = [
-                                            'load_id'    => (int)$ld['load_id'],
-                                            'name'       => $ld['product_name'],
-                                            'cases'      => (int)$ld['cases_loaded'],
-                                            'zone_id'    => (int)($ld['zone_id'] ?? 0),
-                                            'notes'      => $ld['notes'] ?? '',
-                                            'case_stock' => (int)($ld['case_stock'] ?? 0)
+                                            'load_id'      => (int)$ld['load_id'],
+                                            'name'         => $ld['product_name'],
+                                            'cases'        => $currCs,
+                                            'total_loaded' => $totLoaded,
+                                            'zone_id'      => (int)($ld['zone_id'] ?? 0),
+                                            'notes'        => $ld['notes'] ?? '',
+                                            'case_stock'   => (int)($ld['case_stock'] ?? 0)
                                         ];
                                     }
                                 } elseif (!empty($combinedCargo)) {
                                     foreach ($combinedCargo as $cc) {
+                                        $currCs = (int)$cc['total_cases'];
+                                        $pId    = (int)($cc['product_id'] ?? 0);
+                                        $deliv  = (int)($delivProd[$pId] ?? 0);
+                                        $totLoaded = max($currCs, $currCs + $deliv);
                                         $displayLoads[] = [
-                                            'load_id'    => 0,
-                                            'name'       => $cc['name'],
-                                            'cases'      => (int)$cc['total_cases'],
-                                            'zone_id'    => 0,
-                                            'notes'      => '',
-                                            'case_stock' => 0
+                                            'load_id'      => 0,
+                                            'name'         => $cc['name'],
+                                            'cases'        => $currCs,
+                                            'total_loaded' => $totLoaded,
+                                            'zone_id'      => 0,
+                                            'notes'        => '',
+                                            'case_stock'   => 0
                                         ];
                                     }
                                 }
@@ -1952,10 +2008,22 @@ if (!empty($searchQuery)) {
                                 <?php if (!empty($displayLoads)): ?>
                                     <div style="display: flex; flex-direction: column; gap: 6px;">
                                         <?php foreach ($displayLoads as $dl): ?>
-                                            <div style="display: flex; justify-content: space-between; align-items: center; padding: 5px 0; border-bottom: 1px solid #f1f5f9; font-size: 13px; color: #0f172a;">
-                                                <span style="font-weight: 600; color: #0f172a;"><?= htmlspecialchars($dl['name']) ?></span>
+                                            <?php
+                                                $dlRemaining = (int)$dl['cases'];
+                                                $dlTotal = max($dlRemaining, (int)($dl['total_loaded'] ?? $dlRemaining));
+                                            ?>
+                                            <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid #f1f5f9; font-size: 13px; color: #0f172a;">
+                                                <div style="display: flex; flex-direction: column;">
+                                                    <span style="font-weight: 600; color: #0f172a;"><?= htmlspecialchars($dl['name']) ?></span>
+                                                    <span style="font-size: 11px; color: #64748b;">
+                                                        Total Loaded: <strong style="color: #0f172a;"><?= $dlTotal ?> cs</strong>
+                                                        <?php if ($dlRemaining < $dlTotal): ?>
+                                                            &bull; <span style="color: #059669; font-weight: 600;"><?= $dlRemaining ?> cs left</span>
+                                                        <?php endif; ?>
+                                                    </span>
+                                                </div>
                                                 <div style="display: flex; align-items: center; gap: 12px;">
-                                                    <span style="font-weight: 700; color: #0f172a;"><?= (int)$dl['cases'] ?> Cases</span>
+                                                    <span style="font-weight: 700; color: #0f172a;"><?= $dlRemaining ?> / <?= $dlTotal ?> Cases</span>
                                                     <?php if (!empty($dl['load_id'])): ?>
                                                         <button type="button" onclick="openEditProductLoadModal(<?= (int)$dl['load_id'] ?>, '<?= htmlspecialchars(addslashes($dl['name'])) ?>', <?= (int)$dl['cases'] ?>, <?= (int)$dl['zone_id'] ?>, '<?= htmlspecialchars(addslashes($dl['notes'])) ?>', <?= (int)$dl['case_stock'] ?>)" style="background: #ffffff; border: 1px solid #cbd5e1; border-radius: 4px; padding: 2px 8px; font-size: 11px; font-weight: 600; color: #0f172a; cursor: pointer;" title="Edit <?= htmlspecialchars($dl['name']) ?> load">
                                                             Edit
@@ -1989,9 +2057,9 @@ if (!empty($searchQuery)) {
                                 <i class='bx bx-reset'></i> Reset Load
                             </button>
 
-                            <button type="button" class="btn-footer-action" style="color: #dc2626;" onclick="confirmDeleteVehicle(<?= $vId ?>, '<?= htmlspecialchars(addslashes($vNum)) ?>', <?= $totalCases ?>, <?= count($v['assigned_orders'] ?? []) ?>)" title="Delete vehicle from fleet">
+                            <!-- <button type="button" class="btn-footer-action" style="color: #dc2626;" onclick="confirmDeleteVehicle(<?= $vId ?>, '<?= htmlspecialchars(addslashes($vNum)) ?>', <?= $totalCases ?>, <?= count($v['assigned_orders'] ?? []) ?>)" title="Delete vehicle from fleet">
                                 <i class='bx bx-trash'></i> Delete
-                            </button>
+                            </button> -->
                         </div>
                     </article>
                 <?php endforeach; ?>
@@ -2686,11 +2754,12 @@ if (!empty($searchQuery)) {
             } else {
                 loads.forEach(ld => {
                     const row = document.createElement('div');
+                    const initCs = ld.total_loaded || ld.initial_cases || ld.cases_loaded;
                     row.style.cssText = 'display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 14px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;';
                     row.innerHTML = `
                         <div style="flex: 1;">
                             <div style="font-weight: 700; font-size: 13px; color: #0f172a;">${ld.product_name}</div>
-                            <div style="font-size: 11px; color: #64748b; margin-top: 2px;">Currently Loaded: ${ld.cases_loaded} cases</div>
+                            <div style="font-size: 11px; color: #64748b; margin-top: 2px;">Current: <strong>${ld.cases_loaded} / ${initCs} cases</strong> &bull; Total Loaded: ${initCs} cs</div>
                         </div>
                         <div style="display: flex; align-items: center; gap: 8px;">
                             <input type="number" name="loads[${ld.load_id}]" value="${ld.cases_loaded}" min="0" required class="form-control" style="font-weight: 700; text-align: center; width: 90px; height: 38px;">

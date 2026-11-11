@@ -1099,8 +1099,8 @@ function recordVehicleLoad(PDO $pdo, int $vehicleId, ?int $zoneId, int $cases, ?
 		}
 
 		$stmt = $pdo->prepare("
-			INSERT INTO vehicle_loads (vehicle_id, zone_id, product_id, order_id, cases_loaded, shop_name, is_active, notes)
-			VALUES (:vehicle_id, :zone_id, :product_id, :order_id, :cases_loaded, :shop_name, :is_active, :notes)
+			INSERT INTO vehicle_loads (vehicle_id, zone_id, product_id, order_id, cases_loaded, initial_cases, shop_name, is_active, notes)
+			VALUES (:vehicle_id, :zone_id, :product_id, :order_id, :cases_loaded, :initial_cases, :shop_name, :is_active, :notes)
 		");
 		$stmt->execute([
 			':vehicle_id'    => $vehicleId,
@@ -1108,6 +1108,7 @@ function recordVehicleLoad(PDO $pdo, int $vehicleId, ?int $zoneId, int $cases, ?
 			':product_id'    => $productId,
 			':order_id'      => $orderId,
 			':cases_loaded'  => $cases,
+			':initial_cases' => $cases,
 			':shop_name'     => !empty($shopName) ? trim($shopName) : null,
 			':is_active'     => $isActive,
 			':notes'         => $notes
@@ -1201,8 +1202,8 @@ function syncOrderVehicleLoads(PDO $pdo, int $orderId, ?int $vehicleId = null): 
 		$items = $iStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
 		$ins = $pdo->prepare("
-			INSERT INTO vehicle_loads (vehicle_id, zone_id, product_id, order_id, cases_loaded, shop_name, is_active, notes, created_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())
+			INSERT INTO vehicle_loads (vehicle_id, zone_id, product_id, order_id, cases_loaded, initial_cases, shop_name, is_active, notes, created_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
 		");
 
 		if (!empty($items)) {
@@ -1211,14 +1212,14 @@ function syncOrderVehicleLoads(PDO $pdo, int $orderId, ?int $vehicleId = null): 
 				$qty = (int)($it['quantity'] ?? 0);
 				if ($qty > 0) {
 					$extraTag = !empty($it['is_extra']) ? ' (Extra)' : '';
-					$ins->execute([$vehicleId, $zoneId, $pid ?: null, $orderId, $qty, $shop, $isActive, $notes . $extraTag]);
+					$ins->execute([$vehicleId, $zoneId, $pid ?: null, $orderId, $qty, $qty, $shop, $isActive, $notes . $extraTag]);
 				}
 			}
 		} elseif (!empty($order['product_id']) && (int)$order['quantity'] > 0) {
-			$ins->execute([$vehicleId, $zoneId, (int)$order['product_id'], $orderId, (int)$order['quantity'], $shop, $isActive, $notes]);
+			$ins->execute([$vehicleId, $zoneId, (int)$order['product_id'], $orderId, (int)$order['quantity'], (int)$order['quantity'], $shop, $isActive, $notes]);
 		} else {
 			$cases = max(1, (int)$order['quantity']);
-			$ins->execute([$vehicleId, $zoneId, null, $orderId, $cases, $shop, $isActive, $notes]);
+			$ins->execute([$vehicleId, $zoneId, null, $orderId, $cases, $cases, $shop, $isActive, $notes]);
 		}
 	} catch (Exception $e) {
 		error_log("Error in syncOrderVehicleLoads: " . $e->getMessage());

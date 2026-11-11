@@ -775,6 +775,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['generate_receipt'])) 
 
                         $remainingCases = max(0, $loadedCases - $deliveredCases);
 
+                        // Fetch original initial_cases before deactivating so we preserve total loaded into vehicle
+                        $origInitStmt = $pdo->prepare("
+                            SELECT COALESCE(NULLIF(SUM(initial_cases), 0), SUM(cases_loaded), 0)
+                            FROM vehicle_loads
+                            WHERE vehicle_id = ? AND product_id = ? AND is_active = 1 AND order_id IS NULL
+                        ");
+                        $origInitStmt->execute([$assignedVehicleId, $epid]);
+                        $origInitialCases = (int)$origInitStmt->fetchColumn();
+                        if ($origInitialCases <= 0) {
+                            $origInitialCases = $loadedCases;
+                        }
+
                         // Deactivate current active storage loads for this product on this vehicle
                         $deactStmt = $pdo->prepare("
                             UPDATE vehicle_loads 
@@ -789,14 +801,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['generate_receipt'])) 
                         // Retain remaining cases in vehicle storage
                         if ($remainingCases > 0) {
                             $insStorage = $pdo->prepare("
-                                INSERT INTO vehicle_loads (vehicle_id, zone_id, product_id, order_id, cases_loaded, shop_name, is_active, notes)
-                                VALUES (?, ?, ?, NULL, ?, ?, 1, ?)
+                                INSERT INTO vehicle_loads (vehicle_id, zone_id, product_id, order_id, cases_loaded, initial_cases, shop_name, is_active, notes)
+                                VALUES (?, ?, ?, NULL, ?, ?, ?, 1, ?)
                             ");
                             $insStorage->execute([
                                 $assignedVehicleId,
                                 $zone_id,
                                 $epid,
                                 $remainingCases,
+                                $origInitialCases,
                                 $shop_name,
                                 "Vehicle Storage: Remaining extra cases after delivery to " . $shop_name . " (Order #" . $order_number . ")"
                             ]);

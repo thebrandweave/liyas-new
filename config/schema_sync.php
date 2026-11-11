@@ -340,6 +340,12 @@ function ensureWarehouseSchema(PDO $pdo, bool $force = false): bool {
             if (!isset($vlColsMap['is_active'])) {
                 try { $pdo->exec("ALTER TABLE `vehicle_loads` ADD COLUMN `is_active` TINYINT(1) NOT NULL DEFAULT 1 AFTER `shop_name`"); } catch (Exception $e) {}
             }
+            if (!isset($vlColsMap['initial_cases'])) {
+                try {
+                    $pdo->exec("ALTER TABLE `vehicle_loads` ADD COLUMN `initial_cases` INT NOT NULL DEFAULT 0 AFTER `cases_loaded`");
+                    $pdo->exec("UPDATE `vehicle_loads` SET `initial_cases` = `cases_loaded` WHERE `initial_cases` = 0 AND `cases_loaded` > 0");
+                } catch (Exception $e) {}
+            }
         } catch (Exception $e) {
             error_log("Schema sync vehicle_loads error: " . $e->getMessage());
         }
