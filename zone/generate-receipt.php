@@ -1814,6 +1814,134 @@ foreach ($vehicle_products as $vPid => $vp) {
             transform: translateY(-1px);
         }
 
+        .btn-submit-bill:disabled,
+        .btn-submit-bill.is-loading {
+            opacity: 0.75;
+            cursor: not-allowed;
+            transform: none !important;
+            box-shadow: none !important;
+        }
+
+        .btn-submit-bill.is-loading {
+            pointer-events: none;
+        }
+
+        @keyframes bx-spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .bx-spin {
+            animation: bx-spin 1s linear infinite !important;
+            display: inline-block;
+        }
+
+        /* Centered Full-Page Loading Overlay */
+        .page-center-loader-backdrop {
+            position: fixed;
+            inset: 0;
+            background: rgba(15, 23, 42, 0.65);
+            backdrop-filter: blur(6px);
+            -webkit-backdrop-filter: blur(6px);
+            z-index: 999999;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            animation: fadeInLoader 0.2s ease-out;
+        }
+
+        @keyframes fadeInLoader {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        .page-center-loader-card {
+            background: #ffffff;
+            border-radius: 20px;
+            padding: 32px 28px;
+            text-align: center;
+            max-width: 340px;
+            width: 100%;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(255, 255, 255, 0.2);
+            transform: scale(1);
+            animation: popInCard 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        @keyframes popInCard {
+            from { transform: scale(0.92); opacity: 0; }
+            to { transform: scale(1); opacity: 1; }
+        }
+
+        .page-center-spinner {
+            width: 68px;
+            height: 68px;
+            margin: 0 auto 18px;
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .page-center-spinner .spinner-outer {
+            position: absolute;
+            inset: 0;
+            border: 4px solid #e2e8f0;
+            border-top-color: #059669;
+            border-right-color: #10b981;
+            border-radius: 50%;
+            animation: spinCenterLoader 0.85s linear infinite;
+        }
+
+        @keyframes spinCenterLoader {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .page-center-spinner i {
+            font-size: 30px;
+            color: #059669;
+        }
+
+        .loader-title {
+            font-size: 17px;
+            font-weight: 800;
+            color: #0f172a;
+            margin-bottom: 6px;
+        }
+
+        .loader-subtitle {
+            font-size: 13px;
+            font-weight: 600;
+            color: #64748b;
+            line-height: 1.45;
+        }
+
+        .loader-progress-track {
+            margin-top: 20px;
+            height: 4px;
+            background: #f1f5f9;
+            border-radius: 99px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .loader-progress-bar {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 45%;
+            background: linear-gradient(90deg, #059669, #10b981);
+            border-radius: 99px;
+            animation: indeterminateLoaderBar 1.4s infinite ease-in-out;
+        }
+
+        @keyframes indeterminateLoaderBar {
+            0% { left: -45%; }
+            50% { left: 100%; }
+            100% { left: 100%; }
+        }
+
         /* Sticky Bottom on Mobile */
         @media (max-width: 640px) {
             .mobile-sticky-submit {
@@ -2478,6 +2606,21 @@ foreach ($vehicle_products as $vPid => $vp) {
         </div>
     </main>
 
+    <!-- Centered Full-Page Loading Overlay -->
+    <div id="pageCenterLoader" class="page-center-loader-backdrop" style="display: none;">
+        <div class="page-center-loader-card">
+            <div class="page-center-spinner">
+                <div class="spinner-outer"></div>
+                <i class='bx bx-receipt'></i>
+            </div>
+            <div id="pageLoaderTitle" class="loader-title">Generating Receipt...</div>
+            <div id="pageLoaderSubtitle" class="loader-subtitle">Please wait while the delivery and invoice are being recorded...</div>
+            <div class="loader-progress-track">
+                <div class="loader-progress-bar"></div>
+            </div>
+        </div>
+    </div>
+
     <script>
         let nextItemIdx = <?= count($regular_items) + count($vehicle_extra_products) + 10 ?>;
         const discountAmount = <?= (float)$def_discount ?>;
@@ -2512,6 +2655,65 @@ foreach ($vehicle_products as $vPid => $vp) {
         const dispDue = document.getElementById('dispDue');
         const liveError = document.getElementById('liveValidationError');
         const submitBtn = document.getElementById('submitBtn');
+        let isFormSubmitting = false;
+
+        function setSubmitBtnLoading(loading = true, customText = '') {
+            const pageLoader = document.getElementById('pageCenterLoader');
+            const pageLoaderTitle = document.getElementById('pageLoaderTitle');
+
+            if (loading) {
+                isFormSubmitting = true;
+
+                // Show centered page loader overlay
+                if (pageLoader) {
+                    if (pageLoaderTitle && customText) {
+                        pageLoaderTitle.textContent = customText;
+                    }
+                    pageLoader.style.display = 'flex';
+                }
+
+                if (submitBtn) {
+                    submitBtn.classList.add('is-loading');
+                    submitBtn.style.pointerEvents = 'none';
+                    submitBtn.style.opacity = '0.85';
+                    const icon = submitBtn.querySelector('i');
+                    const span = submitBtn.querySelector('span');
+                    if (icon) {
+                        icon.className = 'bx bx-loader-alt bx-spin';
+                        icon.style.fontSize = '20px';
+                    }
+                    if (span) {
+                        span.textContent = customText || 'Generating Receipt...';
+                    }
+                    setTimeout(() => {
+                        submitBtn.disabled = true;
+                    }, 10);
+                }
+            } else {
+                isFormSubmitting = false;
+
+                // Hide centered page loader overlay
+                if (pageLoader) {
+                    pageLoader.style.display = 'none';
+                }
+
+                if (submitBtn) {
+                    submitBtn.classList.remove('is-loading');
+                    submitBtn.disabled = false;
+                    submitBtn.style.pointerEvents = '';
+                    submitBtn.style.opacity = '1';
+                    submitBtn.style.cursor = 'pointer';
+                    const icon = submitBtn.querySelector('i');
+                    if (icon) {
+                        icon.className = 'bx bx-check-circle';
+                        icon.style.fontSize = '20px';
+                    }
+                    if (typeof recalculate === 'function') {
+                        recalculate();
+                    }
+                }
+            }
+        }
 
         function stepItemQty(btn, change) {
             const card = btn.closest('.item-delivery-card');
@@ -2819,6 +3021,7 @@ foreach ($vehicle_products as $vPid => $vp) {
         }
 
         function recalculate() {
+            if (isFormSubmitting) return;
             updateCheckboxes();
             const { totalCases, regularCases, extraCases, subtotal, discount, total } = calculateValues();
 
@@ -3869,11 +4072,31 @@ foreach ($vehicle_products as $vPid => $vp) {
             );
         }
 
-        // Intercept form submission when offline
-        document.getElementById('receiptForm')?.addEventListener('submit', function(e) {
+        // Intercept form submission: handle offline or show online loading state
+        const receiptFormEl = document.getElementById('receiptForm');
+        receiptFormEl?.addEventListener('submit', function(e) {
             if (!navigator.onLine) {
                 e.preventDefault();
                 handleOfflineReceiptSubmit();
+                return;
+            }
+
+            // Prevent double submission
+            if (isFormSubmitting) {
+                e.preventDefault();
+                return false;
+            }
+
+            const radioModeDueOnly = document.getElementById('radioModeDueOnly');
+            const isDueOnlyMode = radioModeDueOnly && radioModeDueOnly.checked;
+            const loadingMsg = isDueOnlyMode ? 'Generating Due Clearance Receipt...' : 'Generating Receipt...';
+            setSubmitBtnLoading(true, loadingMsg);
+        });
+
+        // Restore submit button state if navigating back via bfcache
+        window.addEventListener('pageshow', function(e) {
+            if (e.persisted || isFormSubmitting) {
+                setSubmitBtnLoading(false);
             }
         });
 
