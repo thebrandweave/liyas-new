@@ -1,12 +1,33 @@
 -- =====================================================================
 -- LIYAS PRODUCTION RECOVERY SCRIPT: PICKUP VEHICLE (ID 13) & 53 ORDERS
--- Generated on: 2026-11-11 12:38:37
+-- Generated on: 2026-11-11 12:53:47
 -- Target Vehicle: ID 13 | KA19AF9203 | Pickup | Zone 20 (BC -Adyar-Mangalore)
 -- Total Recovered: 1 Vehicle, 222 Vehicle Loads, 53 Orders, 78 Items, 53 Receipts
 -- =====================================================================
 
 SET FOREIGN_KEY_CHECKS = 0;
 SET SQL_MODE = 'NO_AUTO_VALUE_ON_ZERO';
+
+-- ---------------------------------------------------------------------
+-- STEP 0: ENSURE SCHEMA COLUMNS EXIST IN LIVE PRODUCTION
+-- ---------------------------------------------------------------------
+SET @dbname = DATABASE();
+
+-- 0.1 Add initial_cases to vehicle_loads if missing
+SET @sqlCol = (SELECT IF((SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = @dbname AND TABLE_NAME = 'vehicle_loads' AND COLUMN_NAME = 'initial_cases') > 0, 'SELECT 1', 'ALTER TABLE `vehicle_loads` ADD COLUMN `initial_cases` INT NOT NULL DEFAULT 0 AFTER `cases_loaded`'));
+PREPARE stmtCol FROM @sqlCol; EXECUTE stmtCol; DEALLOCATE PREPARE stmtCol;
+
+-- 0.2 Add is_active to vehicle_loads if missing
+SET @sqlCol = (SELECT IF((SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = @dbname AND TABLE_NAME = 'vehicle_loads' AND COLUMN_NAME = 'is_active') > 0, 'SELECT 1', 'ALTER TABLE `vehicle_loads` ADD COLUMN `is_active` TINYINT(1) NOT NULL DEFAULT 1 AFTER `shop_name`'));
+PREPARE stmtCol FROM @sqlCol; EXECUTE stmtCol; DEALLOCATE PREPARE stmtCol;
+
+-- 0.3 Add total_deliveries_done to vehicles if missing
+SET @sqlCol = (SELECT IF((SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = @dbname AND TABLE_NAME = 'vehicles' AND COLUMN_NAME = 'total_deliveries_done') > 0, 'SELECT 1', 'ALTER TABLE `vehicles` ADD COLUMN `total_deliveries_done` INT NOT NULL DEFAULT 0 AFTER `capacity_cases`'));
+PREPARE stmtCol FROM @sqlCol; EXECUTE stmtCol; DEALLOCATE PREPARE stmtCol;
+
+-- 0.4 Add total_loads_delivered to vehicles if missing
+SET @sqlCol = (SELECT IF((SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = @dbname AND TABLE_NAME = 'vehicles' AND COLUMN_NAME = 'total_loads_delivered') > 0, 'SELECT 1', 'ALTER TABLE `vehicles` ADD COLUMN `total_loads_delivered` INT NOT NULL DEFAULT 0 AFTER `total_deliveries_done`'));
+PREPARE stmtCol FROM @sqlCol; EXECUTE stmtCol; DEALLOCATE PREPARE stmtCol;
 
 -- ---------------------------------------------------------------------
 -- STEP 1: RESTORE / RE-INSERT VEHICLE #13 (PICKUP - KA19AF9203)
@@ -282,7 +303,7 @@ INSERT INTO `orders` (`order_id`, `order_number`, `zone_id`, `shop_name`, `custo
 (151, '151', 20, 'Garden shop', 'Garden shop', 'Thokkotu', '8105743874', NULL, 23, 1, '135.00', '0.00', NULL, '2026-11-09 11:31:45', '135.00', 'delivered', 1, NULL, 0, NULL, 13, 1, NULL, 'cod', 'pending', '2026-11-09 11:31:45', '2026-11-09 11:31:45', NULL, NULL),
 (152, '152', 20, 'I M A fruits', 'I M A fruits', 'Kallapu market', '8970986986', NULL, 24, 2, '115.00', '0.00', NULL, '2026-11-09 11:45:01', '230.00', 'delivered', 1, NULL, 0, NULL, 13, 1, NULL, 'cod', 'pending', '2026-11-09 11:45:01', '2026-11-09 11:45:01', NULL, NULL),
 (153, '153', 20, 'Fairooz Canteen', 'Fairooz Canteen', 'Kallapu', '8951106844', NULL, 24, 10, '110.00', '0.00', NULL, '2026-11-09 11:51:44', '1200.00', 'delivered', 1, NULL, 0, NULL, 13, 1, NULL, 'cod', 'pending', '2026-11-09 11:51:44', '2026-11-09 11:51:44', NULL, NULL),
-(154, '154', 20, 'Suma Enterprises', 'Suma Enterprises', 'Kallapu', '7975091384', NULL, 25, 2, '150.00', '0.00', NULL, '2026-11-09 12:02:53', '285.00', 'cancelled', 1, '2026-11-09 12:03:58', 0, NULL, NULL, 1, NULL, 'cod', 'pending', '2026-11-09 12:02:53', '2026-11-11 12:31:26', NULL, NULL)
+(154, '154', 20, 'Suma Enterprises', 'Suma Enterprises', 'Kallapu', '7975091384', NULL, 25, 2, '150.00', '0.00', NULL, '2026-11-09 12:02:53', '285.00', 'cancelled', 1, '2026-11-09 12:03:58', 0, NULL, 13, 1, NULL, 'cod', 'pending', '2026-11-09 12:02:53', '2026-11-11 12:40:05', NULL, NULL)
 ON DUPLICATE KEY UPDATE `order_number` = VALUES(`order_number`), `zone_id` = VALUES(`zone_id`), `shop_name` = VALUES(`shop_name`), `customer_name` = VALUES(`customer_name`), `location` = VALUES(`location`), `phone` = VALUES(`phone`), `address` = VALUES(`address`), `product_id` = VALUES(`product_id`), `quantity` = VALUES(`quantity`), `unit_price` = VALUES(`unit_price`), `discount` = VALUES(`discount`), `user_id` = VALUES(`user_id`), `order_date` = VALUES(`order_date`), `total_amount` = VALUES(`total_amount`), `status` = VALUES(`status`), `is_zone_read` = VALUES(`is_zone_read`), `zone_read_at` = VALUES(`zone_read_at`), `is_reorder` = VALUES(`is_reorder`), `parent_order_id` = VALUES(`parent_order_id`), `vehicle_id` = VALUES(`vehicle_id`), `in_yard` = VALUES(`in_yard`), `shipping_address_id` = VALUES(`shipping_address_id`), `payment_method` = VALUES(`payment_method`), `payment_status` = VALUES(`payment_status`), `created_at` = VALUES(`created_at`), `updated_at` = VALUES(`updated_at`), `cancellation_reason` = VALUES(`cancellation_reason`), `cancelled_at` = VALUES(`cancelled_at`);
 
 INSERT INTO `orders` (`order_id`, `order_number`, `zone_id`, `shop_name`, `customer_name`, `location`, `phone`, `address`, `product_id`, `quantity`, `unit_price`, `discount`, `user_id`, `order_date`, `total_amount`, `status`, `is_zone_read`, `zone_read_at`, `is_reorder`, `parent_order_id`, `vehicle_id`, `in_yard`, `shipping_address_id`, `payment_method`, `payment_status`, `created_at`, `updated_at`, `cancellation_reason`, `cancelled_at`) VALUES
@@ -290,7 +311,7 @@ INSERT INTO `orders` (`order_id`, `order_number`, `zone_id`, `shop_name`, `custo
 (156, '156', 20, 'New Ayyangar bakery  Kallapu', 'New Ayyangar bakery  Kallapu', 'Kallapu', '7760447478', NULL, 24, 3, '115.00', '0.00', NULL, '2026-11-09 12:07:37', '400.00', 'delivered', 1, NULL, 0, NULL, 13, 1, NULL, 'cod', 'pending', '2026-11-09 12:07:37', '2026-11-09 12:07:37', NULL, NULL),
 (157, '157', 20, 'Kallapu Medical', 'Kallapu Medical', 'Kallapu', '9110446240', NULL, NULL, 0, '0.00', '0.00', NULL, '2026-11-09 12:16:27', '800.00', 'delivered', 1, NULL, 0, NULL, 13, 1, NULL, 'cod', 'pending', '2026-11-09 12:16:27', '2026-11-09 12:16:27', NULL, NULL),
 (158, '158', 20, 'Kallapu Medical', 'Kallapu Medical', 'Kallapu', '9110446240', NULL, 23, 1, '135.00', '0.00', NULL, '2026-11-09 12:19:59', '135.00', 'delivered', 1, NULL, 0, NULL, 13, 1, NULL, 'cod', 'pending', '2026-11-09 12:19:59', '2026-11-09 12:19:59', NULL, NULL),
-(159, '159', 20, 'Mangala Genereal store jeppu', 'Mangala Genereal store jeppu', 'Jeppu', '8660271078', NULL, 24, 6, '115.00', '0.00', NULL, '2026-11-09 12:37:21', '800.00', 'cancelled', 1, '2026-11-09 12:39:27', 0, NULL, NULL, 1, NULL, 'cod', 'pending', '2026-11-09 12:37:21', '2026-11-11 12:31:26', NULL, NULL),
+(159, '159', 20, 'Mangala Genereal store jeppu', 'Mangala Genereal store jeppu', 'Jeppu', '8660271078', NULL, 24, 6, '115.00', '0.00', NULL, '2026-11-09 12:37:21', '800.00', 'cancelled', 1, '2026-11-09 12:39:27', 0, NULL, 13, 1, NULL, 'cod', 'pending', '2026-11-09 12:37:21', '2026-11-11 12:40:05', NULL, NULL),
 (160, '160', 20, 'Mangala Genereal store jeppu', 'Mangala Genereal store jeppu', 'Jeppu', '8660271078', NULL, 24, 6, '115.00', '0.00', NULL, '2026-11-09 12:40:48', '800.00', 'delivered', 1, NULL, 0, NULL, 13, 1, NULL, 'cod', 'pending', '2026-11-09 12:40:48', '2026-11-09 12:40:48', NULL, NULL),
 (161, '161', 20, 'New Big Medical', 'New Big Medical', 'Marnamikatte', '8050203185', NULL, 24, 2, '115.00', '0.00', NULL, '2026-11-09 12:51:02', '250.00', 'delivered', 1, NULL, 0, NULL, 13, 1, NULL, 'cod', 'pending', '2026-11-09 12:51:02', '2026-11-09 12:51:02', NULL, NULL),
 (162, '162', 20, 'Sri Sai Fruits Stall', 'Sri Sai Fruits Stall', 'Marnamikatte', '8431303945', NULL, 25, 2, '150.00', '0.00', NULL, '2026-11-09 13:00:30', '280.00', 'delivered', 1, NULL, 0, NULL, 13, 1, NULL, 'cod', 'pending', '2026-11-09 13:00:30', '2026-11-09 13:00:30', NULL, NULL),
@@ -300,7 +321,7 @@ INSERT INTO `orders` (`order_id`, `order_number`, `zone_id`, `shop_name`, `custo
 (166, '166', 20, 'Food Court', 'Food Court', 'Kankanady', '8073590821', NULL, 24, 2, '115.00', '0.00', NULL, '2026-11-09 14:16:20', '230.00', 'delivered', 1, NULL, 0, NULL, 13, 1, NULL, 'cod', 'pending', '2026-11-09 14:16:20', '2026-11-09 14:16:20', NULL, NULL),
 (167, '167', 20, 'Food Court', 'Food Court', 'Kankanady', '8073590821', NULL, NULL, 0, '0.00', '0.00', NULL, '2026-11-09 14:17:42', '345.00', 'delivered', 1, NULL, 0, NULL, 13, 1, NULL, 'cod', 'pending', '2026-11-09 14:17:42', '2026-11-09 14:17:42', NULL, NULL),
 (168, '168', 20, 'New Hotel Manish', 'New Hotel Manish', 'Falneer', '9880194592', NULL, 24, 2, '115.00', '0.00', NULL, '2026-11-09 14:28:58', '250.00', 'delivered', 1, NULL, 0, NULL, 13, 1, NULL, 'cod', 'pending', '2026-11-09 14:28:58', '2026-11-09 14:28:58', NULL, NULL),
-(169, '169', 20, 'Super Duper Jyothi', 'Super Duper Jyothi', 'Jyothi', '9663494265', NULL, 24, 10, '115.00', '0.00', NULL, '2026-11-09 14:33:40', '1295.00', 'cancelled', 1, '2026-11-09 15:34:33', 0, NULL, NULL, 1, NULL, 'cod', 'pending', '2026-11-09 14:33:40', '2026-11-11 12:31:26', NULL, NULL),
+(169, '169', 20, 'Super Duper Jyothi', 'Super Duper Jyothi', 'Jyothi', '9663494265', NULL, 24, 10, '115.00', '0.00', NULL, '2026-11-09 14:33:40', '1295.00', 'cancelled', 1, '2026-11-09 15:34:33', 0, NULL, 13, 1, NULL, 'cod', 'pending', '2026-11-09 14:33:40', '2026-11-11 12:40:05', NULL, NULL),
 (170, '170', 20, 'Super Duper Jyothi', 'Super Duper Jyothi', 'Jyothi', '9663494265', NULL, 24, 10, '115.00', '0.00', NULL, '2026-11-09 14:33:49', '1295.00', 'delivered', 1, NULL, 0, NULL, 13, 1, NULL, 'cod', 'pending', '2026-11-09 14:33:49', '2026-11-09 14:33:49', NULL, NULL),
 (171, '171', 20, 'Ayyangar Bakery Kankanady', 'Ayyangar Bakery Kankanady', 'Kankanady', '7259682994', NULL, 25, 1, '150.00', '0.00', NULL, '2026-11-09 14:56:38', '150.00', 'delivered', 1, NULL, 0, NULL, 13, 1, NULL, 'cod', 'pending', '2026-11-09 14:56:38', '2026-11-09 14:56:38', NULL, NULL),
 (172, '172', 20, 'Ayyangar Bakery Kankanady', 'Ayyangar Bakery Kankanady', 'Kankanady', '7259682994', NULL, NULL, 0, '0.00', '0.00', NULL, '2026-11-09 15:03:46', '250.00', 'delivered', 1, NULL, 0, NULL, 13, 1, NULL, 'cod', 'pending', '2026-11-09 15:03:46', '2026-11-09 15:03:46', NULL, NULL),
@@ -310,7 +331,7 @@ INSERT INTO `orders` (`order_id`, `order_number`, `zone_id`, `shop_name`, `custo
 (176, '176', 20, 'Food Court', 'Food Court', 'Kankanady', '8073590821', NULL, 23, 2, '135.00', '0.00', NULL, '2026-11-09 15:33:29', '270.00', 'delivered', 1, NULL, 1, 166, 13, 1, NULL, 'cod', 'pending', '2026-11-09 15:33:29', '2026-11-09 15:33:29', NULL, NULL),
 (177, '177', 20, 'U.P Bawa Traders , Kallapu', 'U.P Bawa Traders , Kallapu', 'Kallapu', '9110446240', NULL, NULL, 0, '0.00', '0.00', NULL, '2026-11-09 16:08:19', '515.00', 'delivered', 1, NULL, 0, NULL, 13, 1, NULL, 'cod', 'pending', '2026-11-09 16:08:19', '2026-11-09 16:08:19', NULL, NULL),
 (178, '178', 20, 'U.P Bawa Traders , Kallapu', 'U.P Bawa Traders , Kallapu', 'Kallapu', '9110446240', NULL, 24, 5, '115.00', '0.00', NULL, '2026-11-09 16:12:22', '665.00', 'delivered', 1, NULL, 0, NULL, 13, 1, NULL, 'cod', 'pending', '2026-11-09 16:12:22', '2026-11-09 16:12:22', NULL, NULL),
-(179, '179', 20, 'Sagar Bakery', 'Sagar Bakery', 'Natekal', '98442 58701', NULL, 24, 7, '100.00', '0.00', NULL, '2026-11-09 16:37:55', '760.00', 'cancelled', 1, '2026-11-09 16:38:26', 0, NULL, NULL, 1, NULL, 'cod', 'pending', '2026-11-09 16:37:55', '2026-11-11 12:31:26', NULL, NULL)
+(179, '179', 20, 'Sagar Bakery', 'Sagar Bakery', 'Natekal', '98442 58701', NULL, 24, 7, '100.00', '0.00', NULL, '2026-11-09 16:37:55', '760.00', 'cancelled', 1, '2026-11-09 16:38:26', 0, NULL, 13, 1, NULL, 'cod', 'pending', '2026-11-09 16:37:55', '2026-11-11 12:40:05', NULL, NULL)
 ON DUPLICATE KEY UPDATE `order_number` = VALUES(`order_number`), `zone_id` = VALUES(`zone_id`), `shop_name` = VALUES(`shop_name`), `customer_name` = VALUES(`customer_name`), `location` = VALUES(`location`), `phone` = VALUES(`phone`), `address` = VALUES(`address`), `product_id` = VALUES(`product_id`), `quantity` = VALUES(`quantity`), `unit_price` = VALUES(`unit_price`), `discount` = VALUES(`discount`), `user_id` = VALUES(`user_id`), `order_date` = VALUES(`order_date`), `total_amount` = VALUES(`total_amount`), `status` = VALUES(`status`), `is_zone_read` = VALUES(`is_zone_read`), `zone_read_at` = VALUES(`zone_read_at`), `is_reorder` = VALUES(`is_reorder`), `parent_order_id` = VALUES(`parent_order_id`), `vehicle_id` = VALUES(`vehicle_id`), `in_yard` = VALUES(`in_yard`), `shipping_address_id` = VALUES(`shipping_address_id`), `payment_method` = VALUES(`payment_method`), `payment_status` = VALUES(`payment_status`), `created_at` = VALUES(`created_at`), `updated_at` = VALUES(`updated_at`), `cancellation_reason` = VALUES(`cancellation_reason`), `cancelled_at` = VALUES(`cancelled_at`);
 
 INSERT INTO `orders` (`order_id`, `order_number`, `zone_id`, `shop_name`, `customer_name`, `location`, `phone`, `address`, `product_id`, `quantity`, `unit_price`, `discount`, `user_id`, `order_date`, `total_amount`, `status`, `is_zone_read`, `zone_read_at`, `is_reorder`, `parent_order_id`, `vehicle_id`, `in_yard`, `shipping_address_id`, `payment_method`, `payment_status`, `created_at`, `updated_at`, `cancellation_reason`, `cancelled_at`) VALUES
