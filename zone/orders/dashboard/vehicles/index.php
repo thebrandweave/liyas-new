@@ -1764,10 +1764,10 @@ if (!empty($searchQuery)) {
 
             <div class="header-actions">
                
-                <a href="<?= BASE_URL ?>/zone/orders/dashboard/products/" class="btn-header" title="Catalog & Inventory">
+                <!-- <a href="<?= BASE_URL ?>/zone/orders/dashboard/products/" class="btn-header" title="Catalog & Inventory">
                     <i class='bx bx-cube' style="color: #059669;"></i>
                     <span>Products</span>
-                </a>
+                </a> -->
                 <button type="button" class="btn-header btn-header-success" onclick="openLoadProductModal()" title="Load products onto a vehicle">
                     <i class='bx bx-plus-circle'></i>
                     <span> Load Product</span>
