@@ -41,6 +41,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_status'])) {
 
             // Adjust stock if cancelled / un-cancelled
             handleOrderStatusStockChange($pdo, $order_id, $old_status, $new_status);
+            $ordZoneId = (int)($pdo->query("SELECT zone_id FROM orders WHERE order_id = {$order_id}")->fetchColumn() ?: 0);
+            handleOrderCancellationRestockAndAmount($pdo, $order_id, $ordZoneId, $old_status, $new_status);
 
             // Update reward progress if delivered, cancelled, or un-delivered
             if ($new_status === 'delivered' || $old_status === 'delivered' || $new_status === 'cancelled') {

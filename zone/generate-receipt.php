@@ -74,13 +74,33 @@ if ($reorder_id > 0) {
     }
 }
 
-// Load active products for selection
+// Load active products for selection in ascending volume order: 250ml, 500ml, 1 Litre, 2 Litre
 $products = $pdo->query("
     SELECT product_id, name, product_name, case_price, price, net_content, net_content_unit 
     FROM products 
     WHERE status = 'active' 
-    ORDER BY name ASC
+    ORDER BY 
+        CASE 
+            WHEN UPPER(TRIM(net_content_unit)) = 'L' THEN CAST(net_content AS DECIMAL(10,2)) * 1000
+            WHEN UPPER(TRIM(net_content_unit)) = 'ML' THEN CAST(net_content AS DECIMAL(10,2))
+            WHEN LOWER(product_name) LIKE '%250%ml%' OR LOWER(name) LIKE '%250%ml%' THEN 250
+            WHEN LOWER(product_name) LIKE '%500%ml%' OR LOWER(name) LIKE '%500%ml%' THEN 500
+            WHEN LOWER(product_name) LIKE '%1%litre%' OR LOWER(name) LIKE '%1%litre%' OR LOWER(product_name) LIKE '%1%liter%' OR LOWER(name) LIKE '%1%liter%' OR LOWER(product_name) LIKE '%1l%' OR LOWER(name) LIKE '%1l%' THEN 1000
+            WHEN LOWER(product_name) LIKE '%2%litre%' OR LOWER(name) LIKE '%2%litre%' OR LOWER(product_name) LIKE '%2%liter%' OR LOWER(name) LIKE '%2%liter%' OR LOWER(product_name) LIKE '%2l%' OR LOWER(name) LIKE '%2l%' THEN 2000
+            ELSE 999999
+        END ASC,
+        name ASC
 ")->fetchAll(PDO::FETCH_ASSOC);
+
+// Also apply PHP sort to guarantee strict volume ascending order: 250ml, 500ml, 1 Litre, 2 Litre
+usort($products, function($a, $b) {
+    $volA = getProductVolumeMl($a);
+    $volB = getProductVolumeMl($b);
+    if ($volA === $volB) {
+        return strcmp($a['name'] ?: $a['product_name'], $b['name'] ?: $b['product_name']);
+    }
+    return ($volA < $volB) ? -1 : 1;
+});
 
 // Map products by product_id for quick lookup
 $productsById = [];
@@ -1124,7 +1144,9 @@ foreach ($products as $p) {
         'rate' => $currentRate,
         'default_rate' => $defaultRate,
         'quantity' => $currentQty,
-        'line_total' => $currentQty * $currentRate
+        'line_total' => $currentQty * $currentRate,
+        'net_content' => $p['net_content'] ?? null,
+        'net_content_unit' => $p['net_content_unit'] ?? null
     ];
 }
 
@@ -1138,10 +1160,25 @@ foreach ($vehicle_products as $vPid => $vp) {
             'rate' => (float)$vp['price'],
             'default_rate' => (float)$vp['price'],
             'quantity' => 0,
-            'line_total' => 0
+            'line_total' => 0,
+            'net_content' => $vp['net_content'] ?? null,
+            'net_content_unit' => $vp['net_content_unit'] ?? null
         ];
     }
 }
+
+// Keep the products in strict ascending volume order: 250ml, 500ml, 1 Litre, 2 Litre
+usort($grid_products, function($a, $b) use ($productsById) {
+    $pInfoA = $productsById[$a['product_id']] ?? $a;
+    $pInfoB = $productsById[$b['product_id']] ?? $b;
+    $volA = getProductVolumeMl($pInfoA);
+    $volB = getProductVolumeMl($pInfoB);
+    if ($volA === $volB) {
+        return strcmp($a['product_name'] ?? '', $b['product_name'] ?? '');
+    }
+    return ($volA < $volB) ? -1 : 1;
+});
+$grid_products = array_values($grid_products);
 ?>
 <!DOCTYPE html>
 <html lang="en">

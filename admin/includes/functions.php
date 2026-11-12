@@ -902,6 +902,46 @@ function getVehicleDeliveredOrdersDetails(PDO $pdo, int $vehicleId, string $date
 }
 
 /**
+ * Helper to determine product bottle/container volume in millilitres (ml)
+ * Used to sort water products in natural ascending volume order:
+ * 250ml (250) -> 500ml (500) -> 1 Litre (1000) -> 2 Litre (2000) -> 20L (20000)
+ */
+function getProductVolumeMl($p): float {
+	if (!is_array($p)) return 999999;
+
+	// 1. Check structured net_content & net_content_unit if available
+	$nc = isset($p['net_content']) ? (float)$p['net_content'] : 0;
+	$unit = strtoupper(trim($p['net_content_unit'] ?? ''));
+	if ($nc > 0) {
+		if ($unit === 'L' || $unit === 'LITRE' || $unit === 'LITRES' || $unit === 'LITER' || $unit === 'LITERS') {
+			return $nc * 1000;
+		}
+		if ($unit === 'ML' || $unit === 'MILLILITRE' || $unit === 'MILLILITRES') {
+			return $nc;
+		}
+	}
+
+	// 2. Parse from product_name or name string
+	$str = strtolower(($p['product_name'] ?? '') . ' ' . ($p['name'] ?? ''));
+
+	if (preg_match('/250\s*ml/i', $str)) return 250;
+	if (preg_match('/500\s*ml/i', $str)) return 500;
+	if (preg_match('/1\s*(l|litre|liter|ltr)\b/i', $str)) return 1000;
+	if (preg_match('/2\s*(l|litre|liter|ltr)\b/i', $str)) return 2000;
+	if (preg_match('/20\s*(l|litre|liter|ltr)\b/i', $str)) return 20000;
+
+	// Fallback regex for numeric + unit pattern
+	if (preg_match('/(\d+(?:\.\d+)?)\s*(litre|liter|ltr|l)\b/i', $str, $m)) {
+		return (float)$m[1] * 1000;
+	}
+	if (preg_match('/(\d+(?:\.\d+)?)\s*ml\b/i', $str, $m)) {
+		return (float)$m[1];
+	}
+
+	return 999999;
+}
+
+/**
  * Fetch all products and case counts currently loaded in a vehicle
  * Combines active vehicle storage loads and assigned active/pending orders
  */
@@ -1026,6 +1066,16 @@ function getVehicleLoadedProductsWithCounts(PDO $pdo, int $vehicleId): array {
 				'is_storage' => true
 			];
 		}
+
+		// Sort products in ascending volume order: 250ml, 500ml, 1 Litre, 2 Litre
+		uasort($result, function($a, $b) {
+			$volA = getProductVolumeMl($a);
+			$volB = getProductVolumeMl($b);
+			if ($volA === $volB) {
+				return strcmp($a['product_name'] ?? '', $b['product_name'] ?? '');
+			}
+			return ($volA < $volB) ? -1 : 1;
+		});
 
 		$vCache[$vehicleId] = $result;
 		return $result;
@@ -1287,6 +1337,215 @@ function unassignOrderFromVehicle(PDO $pdo, int $orderId): array {
 		return ['success' => true, 'message' => 'Order removed from vehicle.'];
 	} catch (Exception $e) {
 		return ['success' => false, 'error' => $e->getMessage()];
+	}
+}
+
+/**
+ * Handle vehicle load restocking and amount decrementing when an order is cancelled
+ * - When an order is cancelled:
+ *   1. Restocks the ordered cases back to the assigned vehicle's loads (storage load with order_id = NULL)
+ *   2. Deactivates order-specific vehicle_loads rows so cases are properly counted in vehicle remaining load
+ *   3. Decrements order total_amount to 0.00
+ *   4. Decrements any generated receipt and payment amounts (cash, credit, due) to 0.00
+ * - When an order is un-cancelled (restored):
+ *   1. Deducts restocked cases from vehicle storage and re-assigns to order
+ *   2. Restores order total_amount from order items
+ */
+function handleOrderCancellationRestockAndAmount(PDO $pdo, int $orderId, int $zoneId, string $oldStatus, string $newStatus): void {
+	if ($orderId <= 0 || empty($oldStatus) || empty($newStatus) || strtolower($oldStatus) === strtolower($newStatus)) {
+		return;
+	}
+
+	$oldStatus = strtolower(trim($oldStatus));
+	$newStatus = strtolower(trim($newStatus));
+
+	try {
+		// Fetch order details
+		$oStmt = $pdo->prepare("
+			SELECT order_id, order_number, zone_id, vehicle_id, product_id, quantity, discount, total_amount, shop_name, customer_name, phone 
+			FROM orders 
+			WHERE order_id = ?
+		");
+		$oStmt->execute([$orderId]);
+		$order = $oStmt->fetch(PDO::FETCH_ASSOC);
+		if (!$order) {
+			return;
+		}
+
+		$orderZoneId = !empty($order['zone_id']) ? (int)$order['zone_id'] : $zoneId;
+		$orderNumber = $order['order_number'] ?: ('#' . $orderId);
+		$shopName = $order['shop_name'] ?: ($order['customer_name'] ?: 'Order');
+
+		// Resolve assigned vehicle_id
+		$vehicleId = (int)($order['vehicle_id'] ?? 0);
+		if ($vehicleId <= 0) {
+			$vlChk = $pdo->prepare("SELECT vehicle_id FROM vehicle_loads WHERE order_id = ? AND vehicle_id > 0 LIMIT 1");
+			$vlChk->execute([$orderId]);
+			$vehicleId = (int)$vlChk->fetchColumn();
+		}
+		if ($vehicleId <= 0 && !empty($order['shop_name'])) {
+			$shChk = $pdo->prepare("SELECT vehicle_id FROM shops WHERE TRIM(LOWER(shop_name)) = TRIM(LOWER(?)) AND vehicle_id > 0 LIMIT 1");
+			$shChk->execute([$order['shop_name']]);
+			$vehicleId = (int)$shChk->fetchColumn();
+		}
+		if ($vehicleId <= 0 && $orderZoneId > 0) {
+			$defVehStmt = $pdo->prepare("SELECT id FROM vehicles WHERE zone_id = ? AND status != 'inactive' ORDER BY id ASC LIMIT 1");
+			$defVehStmt->execute([$orderZoneId]);
+			$vehicleId = (int)$defVehStmt->fetchColumn();
+		}
+
+		// Fetch order items and quantities to restock
+		$items = getOrderItems($pdo, $orderId);
+		$productQuantities = [];
+		$calculatedItemsTotal = 0.0;
+
+		if (!empty($items)) {
+			foreach ($items as $it) {
+				$pid = (int)($it['product_id'] ?? 0);
+				$qty = (int)($it['quantity'] ?? 0);
+				$rate = (float)($it['price_at_purchase'] ?? 0);
+				if ($pid > 0 && $qty > 0) {
+					$productQuantities[$pid] = ($productQuantities[$pid] ?? 0) + $qty;
+					$calculatedItemsTotal += ($qty * $rate);
+				}
+			}
+		}
+		if (empty($productQuantities)) {
+			$pid = (int)($order['product_id'] ?? 0);
+			$qty = (int)($order['quantity'] ?? 0);
+			$rate = (float)($order['unit_price'] ?? 0);
+			if ($pid > 0 && $qty > 0) {
+				$productQuantities[$pid] = $qty;
+				$calculatedItemsTotal = ($qty * $rate);
+			}
+		}
+
+		// ========================================================
+		// 1. ORDER CANCELLED: Restock vehicle loads & decrement amount
+		// ========================================================
+		if ($oldStatus !== 'cancelled' && $newStatus === 'cancelled') {
+			// A. Restock ordered cases into vehicle loads
+			if ($vehicleId > 0 && !empty($productQuantities)) {
+				// Deactivate any existing order-specific vehicle_loads rows for this order
+				$pdo->prepare("UPDATE vehicle_loads SET is_active = 0 WHERE order_id = ?")->execute([$orderId]);
+
+				foreach ($productQuantities as $pid => $qty) {
+					if ($qty <= 0) continue;
+
+					// Check if active vehicle storage load row exists (order_id IS NULL)
+					$vlStmt = $pdo->prepare("
+						SELECT id, cases_loaded, initial_cases 
+						FROM vehicle_loads 
+						WHERE vehicle_id = ? 
+						  AND product_id = ? 
+						  AND is_active = 1 
+						  AND order_id IS NULL 
+						ORDER BY id DESC 
+						LIMIT 1
+					");
+					$vlStmt->execute([$vehicleId, $pid]);
+					$vlRow = $vlStmt->fetch(PDO::FETCH_ASSOC);
+
+					if ($vlRow) {
+						$upVl = $pdo->prepare("
+							UPDATE vehicle_loads 
+							SET cases_loaded = cases_loaded + ?, 
+							    initial_cases = initial_cases + ?,
+							    notes = CONCAT(COALESCE(notes, ''), ' | Restocked ', ?, ' cs from cancelled Order #', ?)
+							WHERE id = ?
+						");
+						$upVl->execute([$qty, $qty, $qty, $orderNumber, (int)$vlRow['id']]);
+					} else {
+						$insVl = $pdo->prepare("
+							INSERT INTO vehicle_loads (
+								vehicle_id, zone_id, product_id, order_id, cases_loaded, initial_cases, shop_name, is_active, notes, created_at
+							) VALUES (
+								?, ?, ?, NULL, ?, ?, ?, 1, ?, NOW()
+							)
+						");
+						$insVl->execute([
+							$vehicleId,
+							$orderZoneId,
+							$pid,
+							$qty,
+							$qty,
+							"Vehicle Storage: " . $shopName,
+							"Restocked {$qty} cs from cancelled Order #{$orderNumber}"
+						]);
+					}
+				}
+
+				// Auto update vehicle status to loading or active
+				$pdo->prepare("UPDATE vehicles SET status = 'loading' WHERE id = ? AND status = 'active'")->execute([$vehicleId]);
+			}
+
+			// B. Decrement Order total_amount to 0.00
+			$pdo->prepare("UPDATE orders SET total_amount = 0.00, updated_at = NOW() WHERE order_id = ?")->execute([$orderId]);
+
+			// C. Decrement any associated receipt and order payment amounts to 0.00
+			$pdo->prepare("
+				UPDATE receipts 
+				SET total_amount = 0.00, 
+				    cash_amount = 0.00, 
+				    credited_amount = 0.00, 
+				    due_amount = 0.00,
+				    notes = CONCAT(COALESCE(notes, ''), ' [Order cancelled: amount decremented to 0]')
+				WHERE order_id = ?
+			")->execute([$orderId]);
+
+			$pdo->prepare("
+				UPDATE order_payments 
+				SET cash_amount = 0.00, 
+				    credited_amount = 0.00, 
+				    due_amount = 0.00 
+				WHERE order_id = ?
+			")->execute([$orderId]);
+		}
+
+		// ========================================================
+		// 2. ORDER UN-CANCELLED: Deduct restocked cases & restore amount
+		// ========================================================
+		elseif ($oldStatus === 'cancelled' && $newStatus !== 'cancelled') {
+			// A. Deduct restocked cases from vehicle storage load
+			if ($vehicleId > 0 && !empty($productQuantities)) {
+				foreach ($productQuantities as $pid => $qty) {
+					if ($qty <= 0) continue;
+
+					$vlStmt = $pdo->prepare("
+						SELECT id, cases_loaded 
+						FROM vehicle_loads 
+						WHERE vehicle_id = ? 
+						  AND product_id = ? 
+						  AND is_active = 1 
+						  AND order_id IS NULL 
+						ORDER BY id DESC 
+						LIMIT 1
+					");
+					$vlStmt->execute([$vehicleId, $pid]);
+					$vlRow = $vlStmt->fetch(PDO::FETCH_ASSOC);
+
+					if ($vlRow) {
+						$currLoaded = (int)$vlRow['cases_loaded'];
+						$newLoaded = max(0, $currLoaded - $qty);
+						if ($newLoaded === 0) {
+							$pdo->prepare("UPDATE vehicle_loads SET cases_loaded = 0, is_active = 0 WHERE id = ?")->execute([(int)$vlRow['id']]);
+						} else {
+							$pdo->prepare("UPDATE vehicle_loads SET cases_loaded = ? WHERE id = ?")->execute([$newLoaded, (int)$vlRow['id']]);
+						}
+					}
+				}
+
+				// Re-synchronize active order vehicle load
+				syncOrderVehicleLoads($pdo, $orderId, $vehicleId);
+			}
+
+			// B. Restore Order total_amount from items
+			$discount = (float)($order['discount'] ?? 0);
+			$restoredTotal = max(0, $calculatedItemsTotal - $discount);
+			$pdo->prepare("UPDATE orders SET total_amount = ?, updated_at = NOW() WHERE order_id = ?")->execute([$restoredTotal, $orderId]);
+		}
+	} catch (Exception $e) {
+		error_log("Error in handleOrderCancellationRestockAndAmount: " . $e->getMessage());
 	}
 }
 

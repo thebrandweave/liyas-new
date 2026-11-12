@@ -26,7 +26,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_status'])) {
         $up->execute([$new_status, $order_id, $zone_id]);
         if ($up->rowCount() > 0) {
             handleOrderStatusStockChange($pdo, $order_id, $old_status, $new_status);
-            $msg = "Order status updated to " . ucfirst($new_status);
+            handleOrderCancellationRestockAndAmount($pdo, $order_id, $zone_id, $old_status, $new_status);
+            if ($new_status === 'cancelled') {
+                $msg = "Order #{$order_id} cancelled: ordered cases restocked to vehicle load and amount decremented.";
+            } else {
+                $msg = "Order status updated to " . ucfirst($new_status);
+            }
             if ($new_status === 'delivered' || $old_status === 'delivered' || $new_status === 'cancelled') {
                 $oStmt = $pdo->prepare("SELECT shop_name, customer_name, phone FROM orders WHERE order_id = ?");
                 $oStmt->execute([$order_id]);
@@ -293,8 +298,8 @@ $counts_stmt = $pdo->prepare("
         SUM(CASE WHEN o.status = 'shipped' THEN 1 ELSE 0 END) as shipped,
         SUM(CASE WHEN o.status = 'delivered' THEN 1 ELSE 0 END) as delivered,
         SUM(CASE WHEN o.status = 'cancelled' THEN 1 ELSE 0 END) as cancelled,
-        SUM(CASE WHEN r.credited_amount > 0 THEN 1 ELSE 0 END) as credit_count,
-        SUM(CASE WHEN r.cash_amount > 0 THEN 1 ELSE 0 END) as cash_count
+        SUM(CASE WHEN r.credited_amount > 0 AND o.status != 'cancelled' THEN 1 ELSE 0 END) as credit_count,
+        SUM(CASE WHEN r.cash_amount > 0 AND o.status != 'cancelled' THEN 1 ELSE 0 END) as cash_count
     FROM orders o
     LEFT JOIN receipts r ON o.order_id = r.order_id
     WHERE {$countsWhereSql}
@@ -441,8 +446,8 @@ $metrics_stmt = $pdo->prepare("
         COUNT(*) as total_orders,
         SUM(CASE WHEN o.status = 'pending' THEN 1 ELSE 0 END) as pending_count,
         SUM(CASE WHEN o.status = 'delivered' THEN 1 ELSE 0 END) as delivered_count,
-        COALESCE(SUM(r.cash_amount), 0) as total_cash_collected,
-        COALESCE(SUM(r.credited_amount), 0) as total_credit
+        COALESCE(SUM(CASE WHEN o.status != 'cancelled' THEN r.cash_amount ELSE 0 END), 0) as total_cash_collected,
+        COALESCE(SUM(CASE WHEN o.status != 'cancelled' THEN r.credited_amount ELSE 0 END), 0) as total_credit
     FROM orders o
     LEFT JOIN receipts r ON o.order_id = r.order_id
     WHERE {$metricsWhereSql}

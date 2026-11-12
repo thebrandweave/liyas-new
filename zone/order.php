@@ -128,12 +128,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_status'])) {
         $up = $pdo->prepare("UPDATE orders SET status = ?, updated_at = NOW() WHERE order_id = ? AND zone_id = ?");
         $up->execute([$new_status, $order_id, $zone_id]);
         handleOrderStatusStockChange($pdo, $order_id, $old_status, $new_status);
+        handleOrderCancellationRestockAndAmount($pdo, $order_id, $zone_id, $old_status, $new_status);
         $order['status'] = $new_status;
 
         if ($new_status === 'delivered' || $old_status === 'delivered' || $new_status === 'cancelled') {
             updateShopRewardProgress($pdo, $shopName, $order['phone']);
         }
-        $_SESSION['zone_order_flash'] = ['msg' => "Order status updated to " . ucfirst($new_status), 'error_msg' => ''];
+        $msgText = ($new_status === 'cancelled')
+            ? "Order status updated to Cancelled. Ordered cases restocked to vehicle load and amount decremented."
+            : "Order status updated to " . ucfirst($new_status);
+        $_SESSION['zone_order_flash'] = ['msg' => $msgText, 'error_msg' => ''];
     }
     $redirectCurrentZoneOrder();
 }
