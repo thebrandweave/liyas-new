@@ -1868,6 +1868,155 @@ function getAllShopsOrderDuesMap(PDO $pdo): array {
 }
 
 /**
+ * High-speed batch prior dues resolver
+ * Replaces quadratic O(N^2) SQL correlated subqueries with a single indexed pass.
+ * Accurately matches prior pending dues to orders list.
+ * Prioritizes matching strictly by shop name / customer name (and location) first,
+ * only falling back to phone number if the order has no shop name or customer name.
+ */
+if (!function_exists('attachPriorDues')) {
+	function attachPriorDues(PDO $pdo, array &$ordersList): void {
+		if (empty($ordersList)) return;
+
+		static $dueRows = null;
+		if ($dueRows === null) {
+			try {
+				$stmt = $pdo->query("
+					SELECT 
+						TRIM(LOWER(o.shop_name)) as shop_name,
+						TRIM(LOWER(o.customer_name)) as customer_name,
+						TRIM(LOWER(COALESCE(o.location, ''))) as order_location,
+						RIGHT(REGEXP_REPLACE(o.phone, '[^0-9]', ''), 10) as phone_10,
+						o.order_id,
+						r.due_amount
+					FROM receipts r
+					JOIN orders o ON r.order_id = o.order_id
+					WHERE r.due_amount > 0 AND o.status != 'cancelled'
+				");
+				$dueRows = $stmt ? ($stmt->fetchAll(PDO::FETCH_ASSOC) ?: []) : [];
+			} catch (Exception $e) {
+				$dueRows = [];
+			}
+		}
+
+		static $shopOpeningRows = null;
+		if ($shopOpeningRows === null) {
+			try {
+				$sStmt = $pdo->query("
+					SELECT 
+						TRIM(LOWER(shop_name)) as shop_name,
+						TRIM(LOWER(COALESCE(location, ''))) as location,
+						RIGHT(REGEXP_REPLACE(phone, '[^0-9]', ''), 10) as phone_10,
+						pending_amount
+					FROM shops
+					WHERE pending_amount > 0
+				");
+				$shopOpeningRows = $sStmt ? ($sStmt->fetchAll(PDO::FETCH_ASSOC) ?: []) : [];
+			} catch (Exception $e) {
+				$shopOpeningRows = [];
+			}
+		}
+
+		foreach ($ordersList as &$targetOrd) {
+			$tOrdId = (int)($targetOrd['order_id'] ?? 0);
+			$tShop = trim(strtolower($targetOrd['shop_name'] ?? ''));
+			$tCust = trim(strtolower($targetOrd['customer_name'] ?? ''));
+			$tLoc  = trim(strtolower($targetOrd['location'] ?? ''));
+			$cleanP = preg_replace('/[^0-9]/', '', $targetOrd['phone'] ?? '');
+			$tP10 = strlen($cleanP) >= 7 ? (strlen($cleanP) >= 10 ? substr($cleanP, -10) : $cleanP) : '';
+
+			$targetNames = [];
+			if ($tShop !== '') {
+				$targetNames[] = $tShop;
+				if ($tLoc !== '') {
+					$targetNames[] = trim($tShop . ' ' . $tLoc);
+					$targetNames[] = trim($tShop . '-' . $tLoc);
+				}
+			}
+			if ($tCust !== '' && !in_array($tCust, $targetNames, true)) {
+				$targetNames[] = $tCust;
+				if ($tLoc !== '') {
+					$targetNames[] = trim($tCust . ' ' . $tLoc);
+					$targetNames[] = trim($tCust . '-' . $tLoc);
+				}
+			}
+
+			$sumDue = 0.0;
+
+			// 1. Check unpaid order receipts
+			if (!empty($dueRows)) {
+				foreach ($dueRows as $dr) {
+					if ((int)$dr['order_id'] === $tOrdId) continue;
+					$match = false;
+					if (!empty($targetNames)) {
+						$drNames = [];
+						if (!empty($dr['shop_name'])) {
+							$drNames[] = $dr['shop_name'];
+							if (!empty($dr['order_location'])) {
+								$drNames[] = trim($dr['shop_name'] . ' ' . $dr['order_location']);
+								$drNames[] = trim($dr['shop_name'] . '-' . $dr['order_location']);
+							}
+						}
+						if (!empty($dr['customer_name']) && !in_array($dr['customer_name'], $drNames, true)) {
+							$drNames[] = $dr['customer_name'];
+							if (!empty($dr['order_location'])) {
+								$drNames[] = trim($dr['customer_name'] . ' ' . $dr['order_location']);
+								$drNames[] = trim($dr['customer_name'] . '-' . $dr['order_location']);
+							}
+						}
+						foreach ($targetNames as $tn) {
+							if (in_array($tn, $drNames, true)) {
+								$match = true;
+								break;
+							}
+						}
+					} elseif (!empty($tP10) && !empty($dr['phone_10']) && $tP10 === $dr['phone_10']) {
+						$match = true;
+					}
+
+					if ($match) {
+						$sumDue += (float)$dr['due_amount'];
+					}
+				}
+			}
+
+			// 2. Check master shop opening balance dues
+			if (!empty($shopOpeningRows)) {
+				foreach ($shopOpeningRows as $sor) {
+					$match = false;
+					if (!empty($targetNames)) {
+						$sorNames = [];
+						if (!empty($sor['shop_name'])) {
+							$sorNames[] = $sor['shop_name'];
+							if (!empty($sor['location'])) {
+								$sorNames[] = trim($sor['shop_name'] . ' ' . $sor['location']);
+								$sorNames[] = trim($sor['shop_name'] . '-' . $sor['location']);
+							}
+						}
+						foreach ($targetNames as $tn) {
+							if (in_array($tn, $sorNames, true)) {
+								$match = true;
+								break;
+							}
+						}
+					} elseif (!empty($tP10) && !empty($sor['phone_10']) && $tP10 === $sor['phone_10']) {
+						$match = true;
+					}
+
+					if ($match) {
+						$sumDue += (float)$sor['pending_amount'];
+						break;
+					}
+				}
+			}
+
+			$targetOrd['prior_due_amount'] = $sumDue;
+		}
+		unset($targetOrd);
+	}
+}
+
+/**
  * Settle a shop's prior pending dues FIFO across unpaid receipts
  */
 function settleShopPriorDuesFifo(PDO $pdo, string $shopName, string $phone, float $amountToClear, string $mode = 'cash', string $referenceNote = '', int $excludeOrderId = 0, ?int $zoneId = null): array {

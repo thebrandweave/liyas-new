@@ -233,18 +233,7 @@ $orders_query = "
         r.credited_amount as receipt_credit,
         r.due_amount as receipt_due,
         r.payment_type as receipt_payment_type,
-        (SELECT COALESCE(SUM(r2.due_amount), 0)
-         FROM receipts r2
-         JOIN orders o2 ON r2.order_id = o2.order_id
-         WHERE r2.due_amount > 0
-           AND o2.status != 'cancelled'
-           AND o2.order_id != o.order_id
-           AND (
-               (TRIM(LOWER(o2.shop_name)) = TRIM(LOWER(o.shop_name)) AND TRIM(o.shop_name) != '')
-               OR (TRIM(LOWER(o2.customer_name)) = TRIM(LOWER(o.customer_name)) AND TRIM(o.customer_name) != '')
-               OR (o.phone != '' AND LENGTH(o.phone) >= 7 AND (o2.phone = o.phone OR o2.phone LIKE CONCAT('%', RIGHT(o.phone, 10))))
-           )
-        ) AS prior_due_amount,
+        0.00 AS prior_due_amount,
         COALESCE(o.vehicle_id, (SELECT vl.vehicle_id FROM vehicle_loads vl WHERE vl.order_id = o.order_id AND vl.is_active = 1 LIMIT 1)) AS resolved_vehicle_id,
         veh.vehicle_number AS assigned_vehicle_number,
         veh.vehicle_name AS assigned_vehicle_name,
@@ -275,6 +264,7 @@ $stmt->bindValue(':limit', (int)$per_page, PDO::PARAM_INT);
 $stmt->bindValue(':offset', (int)$offset, PDO::PARAM_INT);
 $stmt->execute();
 $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
+attachPriorDues($pdo, $orders);
 
 // Global status breakdown counts
 $counts_data = $pdo->query("
