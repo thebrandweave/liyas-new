@@ -183,6 +183,8 @@ if ($isDueOnlyReceipt) {
            . "Total Amount: *" . formatCurrency($totalPayable) . "*\n"
            . "Cash Paid: *" . formatCurrency($cashReceived) . "*\n"
            . ($dueAmount > 0 ? "⚠️ Balance Due: *" . formatCurrency($dueAmount) . "*\n" : "✅ Status: *Fully Paid*\n")
+           . (!empty($remainingShopDues['has_due']) ? "⚠️ Remaining Shop Due: *" . formatCurrency($remainingShopDues['total_due']) . "*\n" : "")
+           . (!empty($remainingShopDues['has_due']) && $dueAmount > 0 ? "🚨 *Total Due: " . formatCurrency((float)$remainingShopDues['total_due'] + (float)$dueAmount) . "*\n" : "")
            . "━━━━━━━━━━━━━━━━━━━━\n"
            . "📄 View / Download Receipt: {$receiptUrl}\n"
            . "Thank you for choosing Liyas Water!";
@@ -424,11 +426,19 @@ if (!function_exists('buildThermalRawBtPayload')) {
         }
 
         // Remaining Shop Due
-        if (!empty($remainingShopDues['has_due'])) {
+        $oldDue = (!empty($remainingShopDues['has_due']) && (float)($remainingShopDues['total_due'] ?? 0) > 0) ? (float)$remainingShopDues['total_due'] : 0.0;
+        if ($oldDue > 0) {
             $remDueLabel = "Remaining Shop Due:";
-            $remDueValStr = "Rs. " . number_format($remainingShopDues['total_due'], 0);
+            $remDueValStr = "Rs. " . number_format($oldDue, 0);
             $labelLen = strlen($remDueLabel);
             $lines[] = str_pad($remDueLabel, $labelLen) . str_pad($remDueValStr, $width - $labelLen, " ", STR_PAD_LEFT);
+        }
+
+        // Total Due (Old Due + Current Bill Due)
+        if ($oldDue > 0 && $dueAmount > 0) {
+            $totDueLabel = "TOTAL DUE:";
+            $totDueValStr = "Rs. " . number_format($oldDue + $dueAmount, 0);
+            $lines[] = str_pad($totDueLabel, $width - strlen($totDueValStr)) . $totDueValStr;
         }
 
         // 6. Footer
@@ -1715,6 +1725,14 @@ if (file_exists($logoPath)) {
                        <?= '₹' . number_format((float)$remainingShopDues['total_due'], 0) ?>
                     </td>
                 </tr>
+                <?php if ($dueAmount > 0): ?>
+                <tr>
+                    <td style="color: #b91c1c; font-weight: 800; padding-top: 6px;">TOTAL DUE:</td>
+                    <td style="text-align: right; color: #b91c1c; font-weight: 900; padding-top: 6px;">
+                       <?= '₹' . number_format((float)$remainingShopDues['total_due'] + (float)$dueAmount, 0) ?>
+                    </td>
+                </tr>
+                <?php endif; ?>
                 <?php endif; ?>
             </table>
         </div>

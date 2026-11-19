@@ -155,15 +155,69 @@ $more_badge_total = $ads_count + $reviews_pending_count + $social_count + $subs_
         color: #000000 !important;
         font-weight: 700 !important;
     }
+
+    /* Sidebar Backdrop for Mobile/Tablet */
+    .sidebar-backdrop {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(15, 23, 42, 0.55);
+        backdrop-filter: blur(2px);
+        -webkit-backdrop-filter: blur(2px);
+        z-index: 1040;
+        opacity: 0;
+        transition: opacity 0.25s ease;
+    }
+    body.sidebar-open .sidebar-backdrop {
+        display: block;
+        opacity: 1;
+    }
+
+    /* Sidebar Mobile Close Button */
+    .sidebar-close-btn {
+        display: none;
+        position: absolute;
+        right: 12px;
+        top: 14px;
+        width: 32px;
+        height: 32px;
+        border-radius: 8px;
+        border: 1px solid #e2e8f0;
+        background: #f8fafc;
+        color: #475569;
+        font-size: 20px;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition: all 0.15s ease;
+    }
+    .sidebar-close-btn:hover {
+        background: #fee2e2;
+        color: #ef4444;
+        border-color: #fecaca;
+    }
+    @media (max-width: 992px) {
+        .sidebar-close-btn {
+            display: inline-flex;
+        }
+        body.sidebar-open {
+            overflow: hidden !important;
+        }
+    }
 </style>
+
+<div class="sidebar-backdrop" id="sidebarBackdrop"></div>
 
 <button id="sidebarToggle" class="sidebar-toggle" aria-label="Toggle sidebar">
     <i class='bx bx-menu'></i>
 </button>
 
 <div class="sidebar">
-    <div class="logo" style="justify-content:center; padding-bottom: 0;">
+    <div class="logo" style="justify-content:center; padding-bottom: 0; position: relative;">
         <span class="logo-text" style="font-size: 22px; font-weight: 800; color: #0f172a; letter-spacing: -0.5px;">Liyas</span>
+        <button type="button" class="sidebar-close-btn" id="sidebarCloseBtn" aria-label="Close sidebar">
+            <i class='bx bx-x'></i>
+        </button>
     </div>
 
     <?php if (!$is_staff): ?>
@@ -435,13 +489,51 @@ $more_badge_total = $ads_count + $reviews_pending_count + $social_count + $subs_
 
 <script>
 (function () {
-    // Sidebar open/collapse toggle
     const toggle = document.getElementById('sidebarToggle');
+    const backdrop = document.getElementById('sidebarBackdrop');
+    const closeBtn = document.getElementById('sidebarCloseBtn');
+
+    function openSidebar() {
+        document.body.classList.add('sidebar-open');
+    }
+    function closeSidebar() {
+        document.body.classList.remove('sidebar-open');
+    }
+
     if (toggle) {
-        toggle.addEventListener('click', function () {
-            document.body.classList.toggle('sidebar-open');
+        toggle.addEventListener('click', function (e) {
+            e.stopPropagation();
+            if (document.body.classList.contains('sidebar-open')) {
+                closeSidebar();
+            } else {
+                openSidebar();
+            }
         });
     }
+
+    if (backdrop) {
+        backdrop.addEventListener('click', closeSidebar);
+    }
+    if (closeBtn) {
+        closeBtn.addEventListener('click', closeSidebar);
+    }
+
+    // Close on Escape key
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && document.body.classList.contains('sidebar-open')) {
+            closeSidebar();
+        }
+    });
+
+    // Close on nav link click if on mobile/tablet viewport
+    const sidebarLinks = document.querySelectorAll('.sidebar .nav-item:not(#moreOptionsToggle)');
+    sidebarLinks.forEach(function (link) {
+        link.addEventListener('click', function () {
+            if (window.innerWidth <= 992) {
+                closeSidebar();
+            }
+        });
+    });
 
     // More Options collapsible menu toggle
     const moreBtn = document.getElementById('moreOptionsToggle');
