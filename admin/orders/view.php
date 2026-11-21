@@ -104,7 +104,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['settle_due_balance'])
                 UPDATE receipts 
                 SET credited_amount = credited_amount + ?,
                     due_amount = ?,
-                    payment_type = CASE WHEN cash_amount > 0 THEN 'Cash + Credited' ELSE 'Credited' END,
+                    payment_type = CASE WHEN cash_amount > 0 THEN 'Cash + UPI' ELSE 'UPI' END,
                     notes = CONCAT(COALESCE(notes, ''), ?)
                 WHERE id = ?
             ");
@@ -114,7 +114,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['settle_due_balance'])
                 UPDATE receipts 
                 SET cash_amount = cash_amount + ?,
                     due_amount = ?,
-                    payment_type = CASE WHEN credited_amount > 0 THEN 'Cash + Credited' ELSE 'Cash' END,
+                    payment_type = CASE WHEN credited_amount > 0 THEN 'Cash + UPI' ELSE 'Cash' END,
                     notes = CONCAT(COALESCE(notes, ''), ?)
                 WHERE id = ?
             ");
@@ -524,11 +524,11 @@ $paymentHistory = getOrderPaymentHistory($pdo, $order_id);
                                         <?= formatCurrency($paymentHistory['total_paid'] ?? 0) ?>
                                     </div>
                                     <div style="font-size: 10px; color: #166534; margin-top: 1px;">
-                                        Cash: <?= formatCurrency($paymentHistory['total_paid_cash'] ?? 0) ?> &bull; Online: <?= formatCurrency($paymentHistory['total_paid_credit'] ?? 0) ?>
+                                        Cash: <?= formatCurrency($paymentHistory['total_paid_cash'] ?? 0) ?> &bull; UPI: <?= formatCurrency($paymentHistory['total_paid_credit'] ?? 0) ?>
                                     </div>
                                 </div>
                                 <div style="background: #fff1f2; border: 1px solid #fecdd3; border-radius: 8px; padding: 10px 12px;">
-                                    <div style="font-size: 11px; color: #9f1239; font-weight: 600; text-transform: uppercase;">Due Balance</div>
+                                    <div style="font-size: 11px; color: #9f1239; font-weight: 600; text-transform: uppercase;">Credit (Due Balance)</div>
                                     <div style="font-size: 16px; font-weight: 700; color: <?= (($paymentHistory['current_due'] ?? 0) > 0) ? '#e11d48' : '#15803d' ?>; margin-top: 2px;">
                                         <?= formatCurrency($paymentHistory['current_due'] ?? 0) ?>
                                     </div>

@@ -706,6 +706,7 @@ function getAllVehiclesWithLoads(PDO $pdo, $filterZone = null, $dateFilter = 'al
 			$v['loads_taken_to_delivery']   = $loadsDelivered;
 			$v['total_delivered_amount']    = $totalDelivAmount;
 			$v['total_cash']                = $totalCash;
+			$v['total_upi']                 = $totalCredit;
 			$v['total_credit']              = $totalCredit;
 			$v['total_due']                 = $totalDue;
 		}
@@ -723,6 +724,7 @@ function getAllVehiclesWithLoads(PDO $pdo, $filterZone = null, $dateFilter = 'al
 				'fleet_deliveries_done'    => $fleetDeliveriesDone,
 				'fleet_loads_delivered'    => $fleetLoadsDelivered,
 				'fleet_total_cash'         => $fleetTotalCash,
+				'fleet_total_upi'          => $fleetTotalCredit,
 				'fleet_total_credit'       => $fleetTotalCredit,
 				'fleet_total_due'          => $fleetTotalDue,
 				'fleet_delivered_amount'   => $fleetDeliveredAmount
@@ -873,6 +875,7 @@ function getVehicleDeliveredOrdersDetails(PDO $pdo, int $vehicleId, string $date
 			$ord['formatted_date']   = date('d M Y, h:i A', strtotime($ord['delivered_at']));
 			$ord['formatted_total']  = '₹' . number_format($s, 2);
 			$ord['formatted_cash']   = '₹' . number_format($ca, 2);
+			$ord['formatted_upi']    = '₹' . number_format($cr, 2);
 			$ord['formatted_credit'] = '₹' . number_format($cr, 2);
 			$ord['formatted_due']    = '₹' . number_format($d, 2);
 		}
@@ -886,10 +889,12 @@ function getVehicleDeliveredOrdersDetails(PDO $pdo, int $vehicleId, string $date
 				'total_cases'      => $totalCases,
 				'total_sales'      => $totalSales,
 				'total_cash'       => $totalCash,
+				'total_upi'        => $totalCredit,
 				'total_credit'     => $totalCredit,
 				'total_due'        => $totalDue,
 				'formatted_sales'  => '₹' . number_format($totalSales, 2),
 				'formatted_cash'   => '₹' . number_format($totalCash, 2),
+				'formatted_upi'    => '₹' . number_format($totalCredit, 2),
 				'formatted_credit' => '₹' . number_format($totalCredit, 2),
 				'formatted_due'    => '₹' . number_format($totalDue, 2),
 			],
@@ -2080,7 +2085,7 @@ function settleShopPriorDuesFifo(PDO $pdo, string $shopName, string $phone, floa
 				UPDATE receipts 
 				SET credited_amount = credited_amount + ?,
 					due_amount = ?,
-					payment_type = CASE WHEN cash_amount > 0 THEN 'Cash + Credited' ELSE 'Credited' END,
+					payment_type = CASE WHEN cash_amount > 0 THEN 'Cash + UPI' ELSE 'UPI' END,
 					notes = CONCAT(COALESCE(notes, ''), ?)
 				WHERE id = ?
 			");
@@ -2090,7 +2095,7 @@ function settleShopPriorDuesFifo(PDO $pdo, string $shopName, string $phone, floa
 				UPDATE receipts 
 				SET cash_amount = cash_amount + ?,
 					due_amount = ?,
-					payment_type = CASE WHEN credited_amount > 0 THEN 'Cash + Credited' ELSE 'Cash' END,
+					payment_type = CASE WHEN credited_amount > 0 THEN 'Cash + UPI' ELSE 'Cash' END,
 					notes = CONCAT(COALESCE(notes, ''), ?)
 				WHERE id = ?
 			");

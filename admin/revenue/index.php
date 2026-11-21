@@ -142,7 +142,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['settle_due_balance'])
                         UPDATE receipts 
                         SET credited_amount = credited_amount + ?,
                             due_amount = ?,
-                            payment_type = CASE WHEN cash_amount > 0 THEN 'Cash + Credited' ELSE 'Credited' END,
+                            payment_type = CASE WHEN cash_amount > 0 THEN 'Cash + UPI' ELSE 'UPI' END,
                             notes = CONCAT(COALESCE(notes, ''), ?)
                         WHERE id = ?
                     ");
@@ -153,7 +153,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['settle_due_balance'])
                         UPDATE receipts 
                         SET cash_amount = cash_amount + ?,
                             due_amount = ?,
-                            payment_type = CASE WHEN credited_amount > 0 THEN 'Cash + Credited' ELSE 'Cash' END,
+                            payment_type = CASE WHEN credited_amount > 0 THEN 'Cash + UPI' ELSE 'Cash' END,
                             notes = CONCAT(COALESCE(notes, ''), ?)
                         WHERE id = ?
                     ");
@@ -368,8 +368,10 @@ if ($payment_filter === 'paid') {
     }
 } elseif ($payment_filter === 'cash') {
     $where_clauses[] = "r.cash_amount > 0 AND o.status != 'cancelled'";
+} elseif ($payment_filter === 'upi') {
+    $where_clauses[] = "(r.credited_amount > 0 OR r.payment_type LIKE '%UPI%' OR r.payment_type LIKE '%Online%') AND o.status != 'cancelled'";
 } elseif ($payment_filter === 'credit') {
-    $where_clauses[] = "(r.credited_amount > 0 OR r.payment_type LIKE '%Credit%' OR r.payment_type = 'credited') AND o.status != 'cancelled'";
+    $where_clauses[] = "(r.due_amount > 0 OR r.payment_type LIKE '%Credit%' OR r.payment_type = 'pending') AND o.status != 'cancelled'";
 } elseif ($payment_filter === 'unbilled') {
     $where_clauses[] = "r.id IS NULL AND o.status != 'cancelled'";
 }
@@ -405,6 +407,8 @@ if (isset($_GET['export']) && in_array($_GET['export'], ['csv', 'excel'])) {
             z.slug as zone_slug,
             p.product_name,
             p.name as fallback_product_name,
+            p.case_price,
+            p.price,
             r.id as receipt_id,
             r.bill_number,
             r.delivered_quantity,
@@ -413,10 +417,13 @@ if (isset($_GET['export']) && in_array($_GET['export'], ['csv', 'excel'])) {
             r.due_amount as receipt_due,
             r.payment_type as receipt_pay_type,
             (SELECT COUNT(*) FROM order_items oi WHERE oi.order_id = o.order_id) AS items_count,
-            (SELECT GROUP_CONCAT(CONCAT(COALESCE(p2.product_name, p2.name), ' (', oi2.quantity, 'cs', IF(oi2.is_extra = 1 OR oi2.price_at_purchase = 0, ' - Extra', ''), ')') SEPARATOR ', ') 
+            (SELECT GROUP_CONCAT(CONCAT(COALESCE(p2.product_name, p2.name), ' (', oi2.quantity, 'cs', IF(oi2.price_at_purchase > 0, CONCAT(' @ ₹', ROUND(oi2.price_at_purchase, 2)), ''), IF(oi2.is_extra = 1, ' - Extra', ''), ')') SEPARATOR ', ') 
              FROM order_items oi2 
              JOIN products p2 ON oi2.product_id = p2.product_id 
-             WHERE oi2.order_id = o.order_id) AS items_summary
+             WHERE oi2.order_id = o.order_id) AS items_summary,
+            (SELECT GROUP_CONCAT(DISTINCT ROUND(oi3.price_at_purchase, 2) SEPARATOR ', ') 
+             FROM order_items oi3 
+             WHERE oi3.order_id = o.order_id AND oi3.price_at_purchase > 0) AS items_rates
         FROM orders o
         LEFT JOIN zones z ON o.zone_id = z.id
         LEFT JOIN products p ON o.product_id = p.product_id
@@ -471,16 +478,19 @@ if (isset($_GET['export']) && in_array($_GET['export'], ['csv', 'excel'])) {
             'Date',
             'Zone',
             'Customer/Shopname',
-            'Product/Qty',
+            'Product / Items',
+            'Quantity (Cases)',
+            // 'Bottle Price (₹)',
             'Total Amount',
             'Cash Paid',
-            'Credited',
-            'Bill Due',
+            'UPI (Online)',
+            'Credit (Due Balance)',
             'Bill Status',
             'Shop Ledger Balance'
         ];
         fputcsv($out, $headers);
 
+        $sumCases = 0;
         $sumTotalAmt = 0.0;
         $sumCash = 0.0;
         $sumCredit = 0.0;
@@ -492,15 +502,26 @@ if (isset($_GET['export']) && in_array($_GET['export'], ['csv', 'excel'])) {
             $date = date('d M Y, h:i A', strtotime($row['created_at']));
             $zone = $row['zone_name'] ?: 'Zone';
             $cust = $row['shop_name'] ?: ($row['customer_name'] ?: 'Customer');
+            $status = strtolower($row['status'] ?? '');
+
+            $qtyNum = ($status === 'cancelled') ? 0 : (int)($row['delivered_quantity'] ?: $row['quantity']);
 
             if ((int)($row['items_count'] ?? 0) > 1 && !empty($row['items_summary'])) {
-                $prodQty = $row['items_summary'];
+                $prodDetails = $row['items_summary'];
+                $bottlePrice = !empty($row['items_rates']) ? $row['items_rates'] : number_format((float)$row['unit_price'], 2, '.', '');
             } else {
-                $pName = $row['product_name'] ?: ($row['fallback_product_name'] ?: 'Due Clearance');
-                $prodQty = $pName . ' (' . (int)$row['quantity'] . ' cs)';
+                $pName = $row['product_name'] ?: ($row['fallback_product_name'] ?: ($qtyNum == 0 ? 'Due Clearance' : 'Liyas Water'));
+                $rate = (float)($row['unit_price'] > 0 ? $row['unit_price'] : ($row['items_rates'] ?: ($row['case_price'] ?? ($row['price'] ?? 0))));
+                $bottlePrice = number_format($rate, 2, '.', '');
+                if ($qtyNum > 0 && $rate > 0) {
+                    $prodDetails = $pName . ' (' . $qtyNum . ' cs @ ₹' . number_format($rate, 2) . ')';
+                } elseif ($qtyNum > 0) {
+                    $prodDetails = $pName . ' (' . $qtyNum . ' cs)';
+                } else {
+                    $prodDetails = 'Due Clearance (Prior Dues)';
+                }
             }
 
-            $status = strtolower($row['status'] ?? '');
             $totAmt = ($status === 'cancelled') ? 0.00 : (float)$row['total_amount'];
             $cash = ($status === 'cancelled') ? 0.00 : (float)($row['receipt_cash'] ?? 0);
             $credit = ($status === 'cancelled') ? 0.00 : (float)($row['receipt_credit'] ?? 0);
@@ -521,6 +542,7 @@ if (isset($_GET['export']) && in_array($_GET['export'], ['csv', 'excel'])) {
                 $billStatus = 'Unbilled';
             }
 
+            $sumCases += $qtyNum;
             $sumTotalAmt += $totAmt;
             $sumCash += $cash;
             $sumCredit += $credit;
@@ -532,7 +554,9 @@ if (isset($_GET['export']) && in_array($_GET['export'], ['csv', 'excel'])) {
                 $date,
                 $zone,
                 $cust,
-                $prodQty,
+                $prodDetails,
+                $qtyNum,
+                $bottlePrice,
                 number_format($totAmt, 2, '.', ''),
                 number_format($cash, 2, '.', ''),
                 number_format($credit, 2, '.', ''),
@@ -549,6 +573,8 @@ if (isset($_GET['export']) && in_array($_GET['export'], ['csv', 'excel'])) {
             '',
             '',
             count($export_rows) . ' Orders',
+            '',
+            $sumCases,
             '',
             number_format($sumTotalAmt, 2, '.', ''),
             number_format($sumCash, 2, '.', ''),
@@ -584,15 +610,18 @@ if (isset($_GET['export']) && in_array($_GET['export'], ['csv', 'excel'])) {
         echo '<th>Date</th>';
         echo '<th>Zone</th>';
         echo '<th>Customer/Shopname</th>';
-        echo '<th>Product/Qty</th>';
+        echo '<th>Product / Items</th>';
+        echo '<th class="num">Quantity (Cases)</th>';
+        // echo '<th class="num">Bottle Price (₹)</th>';
         echo '<th class="num">Total Amount</th>';
         echo '<th class="num">Cash Paid</th>';
-        echo '<th class="num">Credited</th>';
-        echo '<th class="num col-due-hdr" style="background-color: #fee2e2; color: #991b1b;">Bill Due</th>';
+        echo '<th class="num">UPI (Online)</th>';
+        echo '<th class="num col-due-hdr" style="background-color: #fee2e2; color: #991b1b;">Credit (Due Balance)</th>';
         echo '<th class="num" style="background-color: #f1f5f9; color: #334155;">Bill Status</th>';
         echo '<th class="num col-due-hdr" style="background-color: #fff1f2; color: #991b1b;">Shop Ledger Balance</th>';
         echo '</tr></thead><tbody>';
 
+        $sumCases = 0;
         $sumTotalAmt = 0.0;
         $sumCash = 0.0;
         $sumCredit = 0.0;
@@ -604,15 +633,26 @@ if (isset($_GET['export']) && in_array($_GET['export'], ['csv', 'excel'])) {
             $date = date('d M Y, h:i A', strtotime($row['created_at']));
             $zone = htmlspecialchars($row['zone_name'] ?: 'Zone');
             $cust = htmlspecialchars($row['shop_name'] ?: ($row['customer_name'] ?: 'Customer'));
+            $status = strtolower($row['status'] ?? '');
+
+            $qtyNum = ($status === 'cancelled') ? 0 : (int)($row['delivered_quantity'] ?: $row['quantity']);
 
             if ((int)($row['items_count'] ?? 0) > 1 && !empty($row['items_summary'])) {
-                $prodQty = htmlspecialchars($row['items_summary']);
+                $prodDetails = $row['items_summary'];
+                $bottlePrice = !empty($row['items_rates']) ? $row['items_rates'] : number_format((float)$row['unit_price'], 2, '.', '');
             } else {
-                $pName = $row['product_name'] ?: ($row['fallback_product_name'] ?: 'Due Clearance');
-                $prodQty = htmlspecialchars($pName . ' (' . (int)$row['quantity'] . ' cs)');
+                $pName = $row['product_name'] ?: ($row['fallback_product_name'] ?: ($qtyNum == 0 ? 'Due Clearance' : 'Liyas Water'));
+                $rate = (float)($row['unit_price'] > 0 ? $row['unit_price'] : ($row['items_rates'] ?: ($row['case_price'] ?? ($row['price'] ?? 0))));
+                $bottlePrice = number_format($rate, 2, '.', '');
+                if ($qtyNum > 0 && $rate > 0) {
+                    $prodDetails = $pName . ' (' . $qtyNum . ' cs @ ₹' . number_format($rate, 2) . ')';
+                } elseif ($qtyNum > 0) {
+                    $prodDetails = $pName . ' (' . $qtyNum . ' cs)';
+                } else {
+                    $prodDetails = 'Due Clearance (Prior Dues)';
+                }
             }
 
-            $status = strtolower($row['status'] ?? '');
             $totAmt = ($status === 'cancelled') ? 0.00 : (float)$row['total_amount'];
             $cash = ($status === 'cancelled') ? 0.00 : (float)($row['receipt_cash'] ?? 0);
             $credit = ($status === 'cancelled') ? 0.00 : (float)($row['receipt_credit'] ?? 0);
@@ -633,6 +673,7 @@ if (isset($_GET['export']) && in_array($_GET['export'], ['csv', 'excel'])) {
                 $billStatus = 'Unbilled';
             }
 
+            $sumCases += $qtyNum;
             $sumTotalAmt += $totAmt;
             $sumCash += $cash;
             $sumCredit += $credit;
@@ -656,7 +697,9 @@ if (isset($_GET['export']) && in_array($_GET['export'], ['csv', 'excel'])) {
             echo '<td>' . $date . '</td>';
             echo '<td>' . $zone . '</td>';
             echo '<td>' . $cust . '</td>';
-            echo '<td>' . $prodQty . '</td>';
+            echo '<td>' . htmlspecialchars($prodDetails) . '</td>';
+            echo '<td class="num">' . $qtyNum . '</td>';
+            echo '<td class="num" style="font-weight: 600;">' . htmlspecialchars($bottlePrice) . '</td>';
             echo '<td class="num">' . number_format($totAmt, 2) . '</td>';
             echo '<td class="num">' . number_format($cash, 2) . '</td>';
             echo '<td class="num">' . number_format($credit, 2) . '</td>';
@@ -671,6 +714,8 @@ if (isset($_GET['export']) && in_array($_GET['export'], ['csv', 'excel'])) {
         echo '<tfoot>';
         echo '<tr style="background-color: #f1f5f9; font-weight: bold; border-top: 2px solid #64748b;">';
         echo '<td colspan="6" style="text-align: right; padding: 10px; font-weight: bold;">TOTAL (' . count($export_rows) . ' Orders):</td>';
+        echo '<td class="num" style="font-weight: bold; color: #0f172a;">' . $sumCases . ' cs</td>';
+        echo '<td class="num" style="font-weight: bold; color: #64748b;">—</td>';
         echo '<td class="num" style="font-weight: bold;">' . number_format($sumTotalAmt, 2) . '</td>';
         echo '<td class="num" style="font-weight: bold; color: #047857;">' . number_format($sumCash, 2) . '</td>';
         echo '<td class="num" style="font-weight: bold; color: #6d28d9;">' . number_format($sumCredit, 2) . '</td>';
@@ -836,7 +881,7 @@ try {
             r.created_at as receipt_date,
             (SELECT COUNT(*) FROM order_payments op WHERE op.order_id = o.order_id) AS payments_count,
             (SELECT COUNT(*) FROM order_items oi WHERE oi.order_id = o.order_id) AS items_count,
-            (SELECT GROUP_CONCAT(CONCAT(COALESCE(p2.product_name, p2.name), ' (', oi2.quantity, 'cs', IF(oi2.is_extra = 1 OR oi2.price_at_purchase = 0, ' - Extra', ''), ')') SEPARATOR ', ') 
+            (SELECT GROUP_CONCAT(CONCAT(COALESCE(p2.product_name, p2.name), ' (', oi2.quantity, 'cs', IF(oi2.price_at_purchase > 0, CONCAT(' @ ₹', ROUND(oi2.price_at_purchase, 2)), ''), IF(oi2.is_extra = 1, ' - Extra', ''), ')') SEPARATOR ', ') 
              FROM order_items oi2 
              JOIN products p2 ON oi2.product_id = p2.product_id 
              WHERE oi2.order_id = o.order_id) AS items_summary
@@ -1801,39 +1846,39 @@ $cleanBaseUrl = rtrim(BASE_URL, '/');
                         </div>
                     </div>
 
-                    <?php $isCreditActive = ($payment_filter === 'credit'); ?>
-                    <div class="kpi-card kpi-credit <?= $isCreditActive ? 'is-kpi-active' : '' ?>"
+                    <?php $isUpiActive = ($payment_filter === 'upi'); ?>
+                    <div class="kpi-card kpi-credit <?= $isUpiActive ? 'is-kpi-active' : '' ?>"
                          tabindex="0"
                          role="button"
-                         onclick="window.location.href='<?= htmlspecialchars(buildFilterUrl(['payment_status' => 'credit'])) ?>'"
-                         onkeydown="if(event.key==='Enter'||event.key===' '){ window.location.href='<?= htmlspecialchars(buildFilterUrl(['payment_status' => 'credit'])) ?>'; }"
-                         title="Click to view all credited orders">
+                         onclick="window.location.href='<?= htmlspecialchars(buildFilterUrl(['payment_status' => 'upi'])) ?>'"
+                         onkeydown="if(event.key==='Enter'||event.key===' '){ window.location.href='<?= htmlspecialchars(buildFilterUrl(['payment_status' => 'upi'])) ?>'; }"
+                         title="Click to view all UPI / Online (GPay/PhonePe/Card) orders">
                         <div class="kpi-card-header">
-                            <span class="kpi-label">Credited Sales</span>
-                            <div class="kpi-icon-box">
-                                <i class='bx bx-credit-card'></i>
+                            <span class="kpi-label">UPI / Online</span>
+                            <div class="kpi-icon-box" style="background: #eff6ff; color: #2563eb;">
+                                <i class='bx bx-mobile-alt'></i>
                             </div>
                         </div>
                         <div>
-                            <div class="kpi-val"><?= formatCurrency($kpis['total_credited_amount']) ?></div>
-                            <div class="kpi-subtext" style="color: #7c3aed;">
-                                <!-- <span>Formal credit ledger</span> -->
+                            <div class="kpi-val" style="color: #1d4ed8;"><?= formatCurrency($kpis['total_credited_amount']) ?></div>
+                            <div class="kpi-subtext" style="color: #2563eb;">
+                                <span>GPay, PhonePe, Card payments</span>
                             </div>
                             <div class="kpi-filter-hint">
-                                <i class='bx bx-filter-alt'></i> <?= $isCreditActive ? 'Active Filter: Credited' : 'Click to filter credited' ?>
+                                <i class='bx bx-filter-alt'></i> <?= $isUpiActive ? 'Active Filter: UPI' : 'Click to filter UPI' ?>
                             </div>
                         </div>
                     </div>
 
-                    <?php $isDueActive = in_array($payment_filter, ['due', 'shop_due', 'all_dues']); ?>
+                    <?php $isDueActive = in_array($payment_filter, ['credit', 'due', 'shop_due', 'all_dues']); ?>
                     <div class="kpi-card kpi-due <?= $isDueActive ? 'is-kpi-active' : '' ?>"
                          tabindex="0"
                          role="button"
-                         onclick="window.location.href='<?= htmlspecialchars(buildFilterUrl(['payment_status' => 'all_dues'])) ?>'"
-                         onkeydown="if(event.key==='Enter'||event.key===' '){ window.location.href='<?= htmlspecialchars(buildFilterUrl(['payment_status' => 'all_dues'])) ?>'; }"
-                         title="Click to view all orders with bill due or earlier shop due">
+                         onclick="window.location.href='<?= htmlspecialchars(buildFilterUrl(['payment_status' => 'credit'])) ?>'"
+                         onkeydown="if(event.key==='Enter'||event.key===' '){ window.location.href='<?= htmlspecialchars(buildFilterUrl(['payment_status' => 'credit'])) ?>'; }"
+                         title="Click to view all orders with pending credit due">
                         <div class="kpi-card-header">
-                            <span class="kpi-label">Outstanding Due</span>
+                            <span class="kpi-label">Credit / Pending Due</span>
                             <div class="kpi-icon-box">
                                 <i class='bx bx-error-circle'></i>
                             </div>
@@ -1843,7 +1888,7 @@ $cleanBaseUrl = rtrim(BASE_URL, '/');
                                 <?= formatCurrency($kpis['total_outstanding_due']) ?>
                             </div>
                             <div class="kpi-subtext" style="color: #ef4444;">
-                                <span>Pending bill receivables</span>
+                                <span>Pending credit receivables</span>
                                 <?php if ($totalMasterShopDues > 0): ?>
                                     <span style="font-size: 11px; color: #b91c1c; display: block; margin-top: 2px;">
                                         + <?= formatCurrency($totalMasterShopDues) ?> Shop Opening Dues
@@ -1851,7 +1896,7 @@ $cleanBaseUrl = rtrim(BASE_URL, '/');
                                 <?php endif; ?>
                             </div>
                             <div class="kpi-filter-hint">
-                                <i class='bx bx-filter-alt'></i> <?= $isDueActive ? 'Active Filter: Dues' : 'Click to filter all dues' ?>
+                                <i class='bx bx-filter-alt'></i> <?= $isDueActive ? 'Active Filter: Credit' : 'Click to filter credit dues' ?>
                             </div>
                         </div>
                     </div>
@@ -1905,12 +1950,13 @@ $cleanBaseUrl = rtrim(BASE_URL, '/');
                             <label class="form-label-filter" for="f_pay">Payment Status</label>
                             <select name="payment_status" id="f_pay" class="select-filter">
                                 <option value="all" <?= ($payment_filter === 'all') ? 'selected' : '' ?>>All Payment States</option>
-                                <option value="paid" <?= ($payment_filter === 'paid') ? 'selected' : '' ?>>✅ Fully Paid (No Due)</option>
+                                <option value="paid" <?= ($payment_filter === 'paid') ? 'selected' : '' ?>>✅ Fully Settled (No Due)</option>
+                                <option value="cash" <?= ($payment_filter === 'cash') ? 'selected' : '' ?>>💵 Cash Collected</option>
+                                <option value="upi" <?= ($payment_filter === 'upi') ? 'selected' : '' ?>>📱 UPI / Online (GPay/PhonePe/Card)</option>
+                                <option value="credit" <?= ($payment_filter === 'credit') ? 'selected' : '' ?>>💳 Credit / Pending Due</option>
                                 <option value="due" <?= ($payment_filter === 'due') ? 'selected' : '' ?>>⚠️ Has Bill Due</option>
                                 <option value="shop_due" <?= ($payment_filter === 'shop_due') ? 'selected' : '' ?>>🕒 Shop Has Earlier Due</option>
                                 <option value="all_dues" <?= ($payment_filter === 'all_dues') ? 'selected' : '' ?>>🚨 Any Due (Bill or Earlier)</option>
-                                <option value="cash" <?= ($payment_filter === 'cash') ? 'selected' : '' ?>>💵 Cash Collected</option>
-                                <option value="credit" <?= ($payment_filter === 'credit') ? 'selected' : '' ?>>💳 Credited Amount</option>
                                 <option value="unbilled" <?= ($payment_filter === 'unbilled') ? 'selected' : '' ?>>📄 Unbilled / Pending Receipt</option>
                             </select>
                         </div>
@@ -2088,8 +2134,8 @@ $cleanBaseUrl = rtrim(BASE_URL, '/');
                                     <th>Product &amp; Qty</th>
                                     <th style="text-align: center;">Total Amount</th>
                                     <th style="text-align: center;">Cash Paid</th>
-                                    <th style="text-align: center;">Credited</th>
-                                    <th class="col-due" style="text-align: center;">Due Balance</th>
+                                    <th style="text-align: center;">UPI (Online)</th>
+                                    <th class="col-due" style="text-align: center;">Credit (Due Balance)</th>
                                     <th>Delivery Status</th>
                                     <th>Actions</th>
                                 </tr>
@@ -2240,11 +2286,11 @@ $cleanBaseUrl = rtrim(BASE_URL, '/');
                                             <?php endif; ?>
                                         </td>
 
-                                        <!-- Credited -->
+                                        <!-- UPI (Online) -->
                                         <td style="text-align: center;">
                                             <?php if ($status === 'cancelled'): ?>
                                                 <?php if ($credit > 0): ?>
-                                                    <span style="color: #94a3b8; text-decoration: line-through; font-size: 12px;" title="Cancelled order — credit voided">
+                                                    <span style="color: #94a3b8; text-decoration: line-through; font-size: 12px;" title="Cancelled order — UPI voided">
                                                         <?= formatCurrency($credit) ?>
                                                     </span>
                                                     <div style="font-size: 10px; color: #ef4444; font-weight: 600;">Voided</div>
@@ -2252,7 +2298,7 @@ $cleanBaseUrl = rtrim(BASE_URL, '/');
                                                     <span style="color: #cbd5e1;">&mdash;</span>
                                                 <?php endif; ?>
                                             <?php elseif ($credit > 0): ?>
-                                                <button type="button" onclick="openPaymentHistoryModal(<?= $ordId ?>)" style="background: none; border: none; padding: 0; cursor: pointer; text-decoration: underline; font-weight: 700; color: #6d28d9; font-size: 13px;" title="Click to view online / credit breakdown">
+                                                <button type="button" onclick="openPaymentHistoryModal(<?= $ordId ?>)" style="background: none; border: none; padding: 0; cursor: pointer; text-decoration: underline; font-weight: 700; color: #2563eb; font-size: 13px;" title="Click to view UPI / online payment breakdown">
                                                     <?= formatCurrency($credit) ?>
                                                 </button>
                                             <?php else: ?>

@@ -1641,7 +1641,7 @@ if (file_exists($logoPath)) {
                 <?php endif; ?>
                 <?php if ($creditAmount > 0): ?>
                 <tr>
-                    <td style="color: #d97706;">Credited / Online</td>
+                    <td style="color: #2563eb;">UPI / Online</td>
                     <td style="text-align: right; color: #d97706; font-size: 12.5px; font-weight: 400;"><?= '₹' . number_format((float)$creditAmount, 0) ?></td>
                 </tr>
                 <?php endif; ?>

@@ -1385,11 +1385,11 @@ if (strlen($cleanPhone) === 10) {
         .v-kpi-cash .v-kpi-sub { color: #059669; }
         .v-kpi-cash .v-kpi-icon { color: #10b981; }
 
-        .v-kpi-credit { border-color: #ddd6fe; background: #f5f3ff; }
-        .v-kpi-credit .v-kpi-lbl { color: #5b21b6; }
-        .v-kpi-credit .v-kpi-val { color: #6d28d9; }
-        .v-kpi-credit .v-kpi-sub { color: #7c3aed; }
-        .v-kpi-credit .v-kpi-icon { color: #8b5cf6; }
+        .v-kpi-credit, .v-kpi-upi { border-color: #bfdbfe; background: #eff6ff; }
+        .v-kpi-credit .v-kpi-lbl, .v-kpi-upi .v-kpi-lbl { color: #1e40af; }
+        .v-kpi-credit .v-kpi-val, .v-kpi-upi .v-kpi-val { color: #2563eb; }
+        .v-kpi-credit .v-kpi-sub, .v-kpi-upi .v-kpi-sub { color: #3b82f6; }
+        .v-kpi-credit .v-kpi-icon, .v-kpi-upi .v-kpi-icon { color: #2563eb; }
 
         .v-kpi-due { border-color: #fecaca; background: #fef2f2; }
         .v-kpi-due .v-kpi-lbl { color: #991b1b; }
@@ -1943,24 +1943,24 @@ if (strlen($cleanPhone) === 10) {
                     <div class="v-kpi-sub">Cash Received</div>
                 </div>
 
-                <!-- 3. Credited Amount -->
-                <div class="v-kpi-card v-kpi-credit">
+                <!-- 3. UPI / Online Amount -->
+                <div class="v-kpi-card v-kpi-upi">
                     <div class="v-kpi-header">
-                        <span class="v-kpi-lbl">Credited Amount</span>
-                        <i class='bx bx-credit-card v-kpi-icon'></i>
+                        <span class="v-kpi-lbl">UPI / Online</span>
+                        <i class='bx bx-mobile-alt v-kpi-icon'></i>
                     </div>
                     <div class="v-kpi-val"><?= $summary['formatted_credit'] ?></div>
-                    <div class="v-kpi-sub">Credited</div>
+                    <div class="v-kpi-sub">GPay, PhonePe, Cards</div>
                 </div>
 
-                <!-- 4. Outstanding Due -->
+                <!-- 4. Credit / Pending Due -->
                 <div class="v-kpi-card v-kpi-due">
                     <div class="v-kpi-header">
-                        <span class="v-kpi-lbl">Outstanding Due</span>
+                        <span class="v-kpi-lbl">Credit / Pending Due</span>
                         <i class='bx bx-error-circle v-kpi-icon'></i>
                     </div>
                     <div class="v-kpi-val"><?= $summary['formatted_due'] ?></div>
-                    <div class="v-kpi-sub">Pending Payment </div>
+                    <div class="v-kpi-sub">Pending Ledger Balance</div>
                 </div>
 
                 <!-- 5. Total Order Value -->
@@ -2201,9 +2201,9 @@ if (strlen($cleanPhone) === 10) {
                                 <th>Location / Zone</th>
                                 <th>Items & Cases</th>
                                 <th style="text-align: right;">Total Amount</th>
-                                <th style="text-align: right;">Cash</th>
-                                <th style="text-align: right;">Credit</th>
-                                <th style="text-align: right;">Due</th>
+                                <th style="text-align: right;">Cash Paid</th>
+                                <th style="text-align: right;">UPI (Online)</th>
+                                <th style="text-align: right;">Credit (Due Balance)</th>
                                 <th style="text-align: center;">Action</th>
                             </tr>
                         </thead>
@@ -2316,15 +2316,15 @@ if (strlen($cleanPhone) === 10) {
                                             <?= $ord['formatted_cash'] ?>
                                         </td>
 
-                                        <!-- Credit -->
-                                        <td style="text-align: right; font-weight: 700; color: #6d28d9;">
+                                        <!-- UPI (Online) -->
+                                        <td style="text-align: right; font-weight: 700; color: #2563eb;">
                                             <?= $ord['formatted_credit'] ?>
                                         </td>
 
-                                        <!-- Due -->
+                                        <!-- Credit (Due Balance) -->
                                         <td style="text-align: right;">
                                             <?php if ($dueVal > 0): ?>
-                                                <span class="due-badge-alert" title="Pending Due Balance">
+                                                <span class="due-badge-alert" title="Pending Credit Due Balance">
                                                     <?= $ord['formatted_due'] ?>
                                                 </span>
                                             <?php else: ?>
@@ -2357,7 +2357,7 @@ if (strlen($cleanPhone) === 10) {
                                     <td style="text-align: right; color: #047857;">
                                         <?= $summary['formatted_cash'] ?>
                                     </td>
-                                    <td style="text-align: right; color: #6d28d9;">
+                                    <td style="text-align: right; color: #2563eb;">
                                         <?= $summary['formatted_credit'] ?>
                                     </td>
                                     <td style="text-align: right; color: #b91c1c;">

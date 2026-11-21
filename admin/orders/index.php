@@ -424,10 +424,10 @@ function renderOrdersTbodyRows(array $orders, string $status_filter = 'all', str
                                 <span style="font-size: 11px; color: #059669; font-weight: 600;">Cash: <?= formatCurrency($adminCash) ?></span>
                             <?php endif; ?>
                             <?php if ($adminCredit > 0): ?>
-                                <span style="font-size: 11px; color: #d97706; font-weight: 600;">Credit: <?= formatCurrency($adminCredit) ?></span>
+                                <span style="font-size: 11px; color: #2563eb; font-weight: 600;">UPI: <?= formatCurrency($adminCredit) ?></span>
                             <?php endif; ?>
                             <?php if ($adminDue > 0): ?>
-                                <span style="font-size: 11px; color: #dc2626; font-weight: 700; background: #fee2e2; padding: 1px 5px; border-radius: 3px; display: inline-block; width: fit-content;" title="Outstanding Due on this bill">Due: <?= formatCurrency($adminDue) ?></span>
+                                <span style="font-size: 11px; color: #dc2626; font-weight: 700; background: #fee2e2; padding: 1px 5px; border-radius: 3px; display: inline-block; width: fit-content;" title="Credit / Outstanding Due on this bill">Credit: <?= formatCurrency($adminDue) ?></span>
                             <?php endif; ?>
                         </div>
                     <?php endif; ?>

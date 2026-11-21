@@ -298,7 +298,7 @@ $counts_stmt = $pdo->prepare("
         SUM(CASE WHEN o.status = 'shipped' THEN 1 ELSE 0 END) as shipped,
         SUM(CASE WHEN o.status = 'delivered' THEN 1 ELSE 0 END) as delivered,
         SUM(CASE WHEN o.status = 'cancelled' THEN 1 ELSE 0 END) as cancelled,
-        SUM(CASE WHEN r.credited_amount > 0 AND o.status != 'cancelled' THEN 1 ELSE 0 END) as credit_count,
+        SUM(CASE WHEN (r.credited_amount > 0 OR r.payment_type LIKE '%UPI%' OR r.payment_type LIKE '%Online%') AND o.status != 'cancelled' THEN 1 ELSE 0 END) as upi_count,
         SUM(CASE WHEN r.cash_amount > 0 AND o.status != 'cancelled' THEN 1 ELSE 0 END) as cash_count
     FROM orders o
     LEFT JOIN receipts r ON o.order_id = r.order_id
@@ -307,8 +307,9 @@ $counts_stmt = $pdo->prepare("
 $counts_stmt->execute($countsParams);
 $status_counts = $counts_stmt->fetch(PDO::FETCH_ASSOC) ?: [
     'total' => 0, 'pending' => 0, 'processing' => 0, 'shipped' => 0, 'delivered' => 0, 'cancelled' => 0,
-    'credit_count' => 0, 'cash_count' => 0
+    'upi_count' => 0, 'credit_count' => 0, 'cash_count' => 0
 ];
+$status_counts['credit_count'] = $status_counts['upi_count'];
 
 // 2b. High-Speed Shop Dues Index Resolver
 // Pre-calculate shops/phones with outstanding dues in 1 ultra-fast query (<1ms) instead of N^2 subqueries
@@ -360,7 +361,7 @@ $where_clauses = ["o.zone_id = :zone_id"];
 $params = [':zone_id' => $zone_id];
 
 // Dynamic filter matching
-if ($filter === 'due') {
+if ($filter === 'due' || $filter === 'credit') {
     if (!empty($dueShopsList)) {
         $dueNamedKeys = [];
         foreach ($dueShopsList as $dIdx => $dVal) {
@@ -379,8 +380,8 @@ if ($filter === 'due') {
         $params = array_merge($params, $dateParams);
     }
 
-    if ($filter === 'credit') {
-        $where_clauses[] = "r.credited_amount > 0";
+    if ($filter === 'upi' || $filter === 'online') {
+        $where_clauses[] = "(r.credited_amount > 0 OR r.payment_type LIKE '%UPI%' OR r.payment_type LIKE '%Online%')";
     } elseif ($filter === 'cash') {
         $where_clauses[] = "r.cash_amount > 0";
     } elseif (in_array($filter, ['pending', 'processing', 'shipped', 'delivered', 'cancelled'])) {
@@ -447,6 +448,7 @@ $metrics_stmt = $pdo->prepare("
         SUM(CASE WHEN o.status = 'pending' THEN 1 ELSE 0 END) as pending_count,
         SUM(CASE WHEN o.status = 'delivered' THEN 1 ELSE 0 END) as delivered_count,
         COALESCE(SUM(CASE WHEN o.status != 'cancelled' THEN r.cash_amount ELSE 0 END), 0) as total_cash_collected,
+        COALESCE(SUM(CASE WHEN o.status != 'cancelled' THEN r.credited_amount ELSE 0 END), 0) as total_upi,
         COALESCE(SUM(CASE WHEN o.status != 'cancelled' THEN r.credited_amount ELSE 0 END), 0) as total_credit
     FROM orders o
     LEFT JOIN receipts r ON o.order_id = r.order_id
@@ -455,7 +457,7 @@ $metrics_stmt = $pdo->prepare("
 $metrics_stmt->execute($metricsParams);
 $metrics = $metrics_stmt->fetch(PDO::FETCH_ASSOC) ?: [
     'total_orders' => 0, 'pending_count' => 0, 'delivered_count' => 0,
-    'total_cash_collected' => 0, 'total_credit' => 0
+    'total_cash_collected' => 0, 'total_upi' => 0, 'total_credit' => 0
 ];
 
 // All-Time Cumulative Outstanding Due (DOES NOT reset daily)
@@ -2753,27 +2755,27 @@ if (!function_exists('buildWhatsAppLink')) {
                     </div>
                 </a>
 
-                <!-- Total Credited Amount -->
-                <a href="<?= zone_filter_url($zone_slug, ['filter' => 'credit']) ?>" class="metric-card metric-credit <?= ($filter === 'credit') ? 'active-card' : '' ?>" title="Click to show orders with credit">
+                <!-- UPI / Online Amount -->
+                <a href="<?= zone_filter_url($zone_slug, ['filter' => 'upi']) ?>" class="metric-card metric-credit <?= ($filter === 'upi') ? 'active-card' : '' ?>" title="Click to show orders with UPI / Online payments">
                     <div class="metric-card-top">
-                        <span class="metric-label">Total Credited</span>
+                        <span class="metric-label">UPI / Online</span>
                         <div class="metric-icon-box">
-                            <i class='bx bx-credit-card'></i>
+                            <i class='bx bx-mobile-alt'></i>
                         </div>
                     </div>
                     <div>
-                        <div class="metric-val"><?= formatCurrency($metrics['total_credit']) ?></div>
+                        <div class="metric-val"><?= formatCurrency($metrics['total_upi']) ?></div>
                         <div class="metric-hint">
-                            <span>Credit amount</span>
+                            <span>GPay, PhonePe, Cards</span>
                             <i class='bx bx-chevron-right'></i>
                         </div>
                     </div>
                 </a>
 
-                <!-- Outstanding Due (Cumulative, NOT reset daily) -->
-                <a href="<?= zone_filter_url($zone_slug, ['filter' => 'due']) ?>" class="metric-card metric-due <?= ($filter === 'due') ? 'active-card' : '' ?>" title="Click to show all orders with pending due balance or prior dues">
+                <!-- Credit / Pending Due (Cumulative, NOT reset daily) -->
+                <a href="<?= zone_filter_url($zone_slug, ['filter' => 'due']) ?>" class="metric-card metric-due <?= (in_array($filter, ['due', 'credit'])) ? 'active-card' : '' ?>" title="Click to show all orders with pending credit due balance or prior dues">
                     <div class="metric-card-top">
-                        <span class="metric-label">Outstanding Due</span>
+                        <span class="metric-label">Credit / Pending Due</span>
                         <div class="metric-icon-box">
                             <i class='bx bx-error-circle'></i>
                         </div>
@@ -2783,7 +2785,7 @@ if (!function_exists('buildWhatsAppLink')) {
                             <?= formatCurrency($metrics['total_due']) ?>
                         </div>
                         <div class="metric-hint" style="color: <?= ((float)$metrics['total_due'] > 0) ? '#dc2626' : '#64748b' ?>;">
-                            <span>All-Time Outstanding</span>
+                            <span>Pending ledger balance</span>
                             <i class='bx bx-chevron-right'></i>
                         </div>
                     </div>
@@ -3025,9 +3027,9 @@ if (!function_exists('buildWhatsAppLink')) {
                 </a>
 
                 <!-- Keep on Mobile: Due (Cumulative, includes pending prior dues) -->
-                <a href="<?= zone_filter_url($zone_slug, ['filter' => 'due']) ?>" class="filter-pill <?= ($filter === 'due') ? 'active' : '' ?>" style="border-color: #fecaca; background: <?= ($filter === 'due') ? '#dc2626' : '#fef2f2' ?>; color: <?= ($filter === 'due') ? '#fff' : '#dc2626' ?>;" title="All-time active dues and prior unpaid dues">
+                <a href="<?= zone_filter_url($zone_slug, ['filter' => 'due']) ?>" class="filter-pill <?= in_array($filter, ['due', 'credit']) ? 'active' : '' ?>" style="border-color: #fecaca; background: <?= in_array($filter, ['due', 'credit']) ? '#dc2626' : '#fef2f2' ?>; color: <?= in_array($filter, ['due', 'credit']) ? '#fff' : '#dc2626' ?>;" title="All-time active credit dues and prior unpaid dues">
                     <i class='bx bx-error-circle'></i>
-                    <span>Due</span>
+                    <span>Credit / Due</span>
                     <span class="filter-counter"><?= (int)$status_counts['due_count'] ?></span>
                 </a>
 
@@ -3049,10 +3051,10 @@ if (!function_exists('buildWhatsAppLink')) {
                     <span class="filter-counter"><?= (int)$status_counts['cash_count'] ?></span>
                 </a>
 
-                <!-- Hide on Mobile: Credited -->
-                <a href="<?= zone_filter_url($zone_slug, ['filter' => 'credit']) ?>" class="filter-pill hide-mobile <?= ($filter === 'credit') ? 'active' : '' ?>">
-                    <span>Credited</span>
-                    <span class="filter-counter"><?= (int)$status_counts['credit_count'] ?></span>
+                <!-- Keep on Mobile: UPI / Online -->
+                <a href="<?= zone_filter_url($zone_slug, ['filter' => 'upi']) ?>" class="filter-pill <?= ($filter === 'upi') ? 'active' : '' ?>">
+                    <span>UPI / Online</span>
+                    <span class="filter-counter"><?= (int)($status_counts['upi_count'] ?? $status_counts['credit_count']) ?></span>
                 </a>
 
                 <!-- Hide on Mobile: Processing -->
@@ -3081,7 +3083,7 @@ if (!function_exists('buildWhatsAppLink')) {
         <?php if ($filter !== 'all'): ?>
             <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; padding: 8px 14px; background: #ffffff; border: 1px solid var(--border-color); border-radius: var(--radius-sm); font-size: 13px;">
                 <span>
-                    Filtered by: <strong><?= ucfirst($filter === 'due' ? 'Outstanding Due (Including Prior Dues)' : ($filter === 'credit' ? 'Credited Orders' : ($filter === 'cash' ? 'Cash Collected' : $filter))) ?></strong> 
+                    Filtered by: <strong><?= ucfirst(in_array($filter, ['due', 'credit']) ? 'Credit / Outstanding Due' : ($filter === 'upi' ? 'UPI / Online Payments' : ($filter === 'cash' ? 'Cash Collected' : $filter))) ?></strong> 
                     (<?= count($orders) ?> <?= count($orders) === 1 ? 'order' : 'orders' ?> found)
                 </span>
                 <a href="<?= zone_filter_url($zone_slug, ['filter' => 'all']) ?>" style="color: #2563eb; text-decoration: none; font-weight: 700; font-size: 12px; display: inline-flex; align-items: center; gap: 4px;">
@@ -3261,18 +3263,18 @@ if (!function_exists('buildWhatsAppLink')) {
                                         <span style="font-size: 11px; color: #047857; font-weight: 700;">Cash: <?= formatCurrency($ordReceiptCash) ?></span>
                                     <?php endif; ?>
                                     <?php if ($ordReceiptCredit > 0): ?>
-                                        <span class="credit-badge">Credit: <?= formatCurrency($ordReceiptCredit) ?></span>
+                                        <span class="credit-badge" style="background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; font-size: 11px; font-weight: 700; padding: 2px 6px; border-radius: 4px;">UPI: <?= formatCurrency($ordReceiptCredit) ?></span>
                                     <?php endif; ?>
                                     <?php if ($ordReceiptDue > 0): ?>
                                         <span class="due-badge" title="Bill Due: <?= formatCurrency($ordReceiptDue) ?><?= ($ordPriorDue > 0) ? ' (Plus shop prior due: ' . formatCurrency($ordPriorDue) . ')' : '' ?>">
-                                            <i class='bx bx-error-circle'></i> Due: <?= formatCurrency($ordReceiptDue) ?>
+                                            <i class='bx bx-error-circle'></i> Credit: <?= formatCurrency($ordReceiptDue) ?>
                                             <?php if ($ordPriorDue > 0): ?>
                                                 <span style="font-size: 10px; font-weight: 600; opacity: 0.95;">(+<?= formatCurrency($ordPriorDue) ?> prior)</span>
                                             <?php endif; ?>
                                         </span>
                                     <?php elseif ($ordPriorDue > 0): ?>
                                         <span style="font-size: 11px; color: #b91c1c; background: #fff1f2; border: 1px solid #fecdd3; padding: 2px 6px; border-radius: 4px; font-weight: 700; display: inline-flex; align-items: center; gap: 3px;" title="This bill is settled. Shop has separate prior due of <?= formatCurrency($ordPriorDue) ?>">
-                                            <i class='bx bx-time-five'></i> Prior Due: <?= formatCurrency($ordPriorDue) ?>
+                                            <i class='bx bx-time-five'></i> Prior Credit: <?= formatCurrency($ordPriorDue) ?>
                                         </span>
                                     <?php else: ?>
                                         <span style="font-size: 11px; color: #047857; font-weight: 700;">
@@ -3285,7 +3287,7 @@ if (!function_exists('buildWhatsAppLink')) {
                                     </span>
                                     <?php if ($ordTotalDue > 0): ?>
                                         <span class="due-badge" title="Total Prior Due: <?= formatCurrency($ordTotalDue) ?>">
-                                            <i class='bx bx-error-circle'></i> Due: <?= formatCurrency($ordTotalDue) ?>
+                                            <i class='bx bx-error-circle'></i> Credit: <?= formatCurrency($ordTotalDue) ?>
                                             <span style="font-size: 10px; font-weight: 600; opacity: 0.95;">(Prior Due)</span>
                                         </span>
                                     <?php endif; ?>

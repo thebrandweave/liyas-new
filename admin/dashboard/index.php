@@ -424,8 +424,8 @@ try {
                                     <th>Zone</th>
                                     <th>Portal Route</th>
                                     <th style="text-align: right;">Cash Received</th>
-                                    <th style="text-align: right;">Credited Amount</th>
-                                    <th style="text-align: right;">Outstanding Due</th>
+                                    <th style="text-align: right;">UPI (Online)</th>
+                                    <th style="text-align: right;">Credit / Due</th>
                                     <th style="text-align: right;">Delivered Revenue</th>
                                     <th style="text-align: center;">Orders</th>
                                     <th style="text-align: center;">Delivery Portal</th>

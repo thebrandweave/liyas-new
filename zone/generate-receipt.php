@@ -405,11 +405,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['generate_receipt'])) 
                 }
             }
 
-            // Validation: Cash + Credit cannot exceed Total, and Due cannot exceed Total
+            // Validation: Cash + UPI cannot exceed Total, and Credit cannot exceed Total
             if (($cash_amount + $credited_amount) > ($total_amount + 0.01)) {
-                $error = "Payment error: Cash (" . formatCurrency($cash_amount) . ") + Credited (" . formatCurrency($credited_amount) . ") exceeds Total Amount (" . formatCurrency($total_amount) . ").";
+                $error = "Payment error: Cash (" . formatCurrency($cash_amount) . ") + UPI (" . formatCurrency($credited_amount) . ") exceeds Total Amount (" . formatCurrency($total_amount) . ").";
             } elseif ($enable_due && $due_input > ($total_amount + 0.01)) {
-                $error = "Payment error: Due amount (" . formatCurrency($due_input) . ") cannot exceed Total Amount (" . formatCurrency($total_amount) . ").";
+                $error = "Payment error: Credit / Due amount (" . formatCurrency($due_input) . ") cannot exceed Total Amount (" . formatCurrency($total_amount) . ").";
             } else {
                 $due_amount = max(0, $total_amount - $cash_amount - $credited_amount);
                 if ($enable_due && $due_input > 0 && ($cash_amount + $credited_amount + $due_input <= $total_amount + 0.01)) {
@@ -419,17 +419,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['generate_receipt'])) 
                     $due_amount += $manual_prior_due;
                 }
 
-                // Determine payment type
+                // Determine payment type (Cash, UPI, Credit)
                 if ($due_amount >= $total_amount && $total_amount > 0) {
-                    $payment_type = 'Pending';
+                    $payment_type = 'Credit';
+                } elseif ($cash_amount > 0 && $credited_amount > 0 && $due_amount > 0) {
+                    $payment_type = 'Split';
                 } elseif ($cash_amount > 0 && $credited_amount > 0) {
-                    $payment_type = 'Cash + Credited';
+                    $payment_type = 'Cash + UPI';
+                } elseif ($cash_amount > 0 && $due_amount > 0) {
+                    $payment_type = 'Cash + Credit';
+                } elseif ($credited_amount > 0 && $due_amount > 0) {
+                    $payment_type = 'UPI + Credit';
                 } elseif ($cash_amount > 0) {
                     $payment_type = 'Cash';
                 } elseif ($credited_amount > 0) {
-                    $payment_type = 'Credited';
+                    $payment_type = 'UPI';
                 } else {
-                    $payment_type = 'Pending';
+                    $payment_type = 'Credit';
                 }
             }
         }
@@ -2480,11 +2486,11 @@ $grid_products = array_values($grid_products);
                     <button type="button" class="btn-fast-pay btn-fast-cash" id="btnFastCash" title="Set full amount paid in Cash">
                         💵 Full Cash
                     </button>
-                    <button type="button" class="btn-fast-pay btn-fast-credit" id="btnFastCredit" title="Set full amount paid via Credit/Online">
-                        💳 Online Payment
+                    <button type="button" class="btn-fast-pay btn-fast-credit" id="btnFastCredit" title="Set full amount paid via UPI / Online (GPay, PhonePe, Card)">
+                        📱 Full UPI
                     </button>
-                    <button type="button" class="btn-fast-pay btn-fast-due" id="btnFastDue" title="Set full bill as Unpaid / Due">
-                        ⏳ Full Due
+                    <button type="button" class="btn-fast-pay btn-fast-due" id="btnFastDue" title="Set full bill on Credit / Pending Due">
+                        💳 Full Credit
                     </button>
                 </div>
 
@@ -2506,49 +2512,49 @@ $grid_products = array_values($grid_products);
                     </div>
                 </div>
 
-                <!-- Credit Card -->
+                <!-- UPI / Online Card -->
                 <div class="payment-card" id="cardCredit">
                     <div style="display: flex; align-items: center; justify-content: space-between;">
-                        <label class="chk-label" for="enable_credit" style="color: #92400e; margin: 0;">
-                            <input type="checkbox" name="enable_credit" id="enable_credit" class="chk-input" style="accent-color: #d97706;" <?= isset($_POST['enable_credit']) ? 'checked' : '' ?>>
-                            <span>💳 Credited Amount</span>
+                        <label class="chk-label" for="enable_credit" style="color: #1e40af; margin: 0;">
+                            <input type="checkbox" name="enable_credit" id="enable_credit" class="chk-input" style="accent-color: #2563eb;" <?= isset($_POST['enable_credit']) ? 'checked' : '' ?>>
+                            <span>📱 UPI / Online (GPay, PhonePe, Card)</span>
                         </label>
-                        <span id="badgeCreditMode" style="font-size: 11px; font-weight: 800; color: #b45309; background: #fef3c7; padding: 2px 8px; border-radius: 6px; display: none;">CREDIT</span>
+                        <span id="badgeCreditMode" style="font-size: 11px; font-weight: 800; color: #1d4ed8; background: #dbeafe; padding: 2px 8px; border-radius: 6px; display: none;">UPI</span>
                     </div>
                     <div class="amount-input-box" id="boxCredit">
-                        <label class="form-label" style="font-size: 12px; margin-top: 8px; color: #78350f; font-weight: 700;">Credited Amount (₹):</label>
+                        <label class="form-label" style="font-size: 12px; margin-top: 8px; color: #1e3a8a; font-weight: 700;">UPI / Online Amount (₹):</label>
                         <div style="position: relative;">
-                            <span style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); font-weight: 800; color: #d97706; font-size: 16px;">₹</span>
-                            <input type="text" step="1" min="0" name="credited_amount" id="credited_amount" class="form-control" placeholder="Enter credit amount" value="<?= htmlspecialchars($_POST['credited_amount'] ?? '') ?>" style="font-weight: 800; font-size: 16px; color: #d97706; border-color: #fde68a; padding-left: 28px;">
+                            <span style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); font-weight: 800; color: #2563eb; font-size: 16px;">₹</span>
+                            <input type="text" step="1" min="0" name="credited_amount" id="credited_amount" class="form-control" placeholder="Enter UPI / Online amount" value="<?= htmlspecialchars($_POST['credited_amount'] ?? '') ?>" style="font-weight: 800; font-size: 16px; color: #2563eb; border-color: #93c5fd; padding-left: 28px;">
                         </div>
                     </div>
                 </div>
 
-                <!-- Due Card -->
+                <!-- Credit / Due Card -->
                 <div class="payment-card" id="cardDue">
                     <div style="display: flex; align-items: center; justify-content: space-between;">
                         <label class="chk-label" for="enable_due" style="color: #991b1b; margin: 0;">
                             <input type="checkbox" name="enable_due" id="enable_due" class="chk-input" style="accent-color: #dc2626;" <?= isset($_POST['enable_due']) ? 'checked' : '' ?>>
-                            <span>⏳ Due / Pending Amount</span>
+                            <span>💳 Credit / Pending Due</span>
                         </label>
-                        <span id="badgeDueMode" style="font-size: 11px; font-weight: 800; color: #b91c1c; background: #fee2e2; padding: 2px 8px; border-radius: 6px; display: none;">UNPAID</span>
+                        <span id="badgeDueMode" style="font-size: 11px; font-weight: 800; color: #b91c1c; background: #fee2e2; padding: 2px 8px; border-radius: 6px; display: none;">CREDIT</span>
                     </div>
                     <div class="amount-input-box" id="boxDue">
-                        <label class="form-label" style="font-size: 12px; margin-top: 8px; color: #7f1d1d; font-weight: 700;">Due / Remaining Amount on this Bill (₹):</label>
+                        <label class="form-label" style="font-size: 12px; margin-top: 8px; color: #7f1d1d; font-weight: 700;">Credit / Pending Amount on this Bill (₹):</label>
                         <div style="display: flex; gap: 8px; align-items: center;">
                             <div style="position: relative; flex: 1;">
                                 <span style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); font-weight: 800; color: #dc2626; font-size: 16px;">₹</span>
                                 <input type="text" step="1" min="0" name="due_amount_input" id="due_amount_input" class="form-control" placeholder="0.00" value="<?= htmlspecialchars($_POST['due_amount_input'] ?? '') ?>" style="font-weight: 800; font-size: 16px; color: #dc2626; border-color: #fca5a5; padding-left: 28px;">
                             </div>
                             <button type="button" onclick="setDueFull()" style="background: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5; padding: 9px 12px; border-radius: 8px; font-size: 12px; font-weight: 800; cursor: pointer; white-space: nowrap;">
-                                Full Bill Due
+                                Full Credit
                             </button>
                             <button type="button" onclick="clearDue()" style="background: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; padding: 9px 10px; border-radius: 8px; font-size: 12px; font-weight: 700; cursor: pointer; white-space: nowrap;">
                                 Clear
                             </button>
                         </div>
                         <div id="dueHintText" style="font-size: 11px; color: #991b1b; font-weight: 600; margin-top: 5px;">
-                            Amount left unpaid on this delivery. Will be added to shop's pending balance.
+                            Amount left on credit / unpaid on this delivery. Recorded to shop credit ledger.
                         </div>
                     </div>
                 </div>
@@ -2591,7 +2597,7 @@ $grid_products = array_values($grid_products);
                         <span id="dispCash" style="color: #059669; font-weight: 700;">₹0.00</span>
                     </div>
                     <div class="calc-row" id="rowCreditBreakdown">
-                        <span style="color: #2563eb;">&minus; Online Payment (Current Bill):</span>
+                        <span style="color: #2563eb;">&minus; UPI / Online Payment (Current Bill):</span>
                         <span id="dispCredit" style="color: #2563eb; font-weight: 700;">₹0.00</span>
                     </div>
 
@@ -2601,7 +2607,7 @@ $grid_products = array_values($grid_products);
                         <span id="dispPriorDueCash" style="font-weight: 700;">₹0.00</span>
                     </div>
                     <div class="calc-row" id="rowPriorDueOnlineBreakdown" style="display: none; color: #1d4ed8;">
-                        <span style="font-weight: 600;">&minus; Online Payment (Earlier Due):</span>
+                        <span style="font-weight: 600;">&minus; UPI / Online (Earlier Due):</span>
                         <span id="dispPriorDueOnline" style="font-weight: 700;">₹0.00</span>
                     </div>
 
@@ -2612,13 +2618,13 @@ $grid_products = array_values($grid_products);
                             <span id="dispTotalCashCombined" style="font-size: 13px; font-weight: 800;">₹0.00</span>
                         </div>
                         <div id="rowTotalOnlineCombined" style="display: flex; justify-content: space-between; align-items: center; color: #1e40af; font-weight: 700; font-size: 12px;">
-                            <span>💳 Total Online to Collect:</span>
+                            <span>📱 Total UPI / Online to Collect:</span>
                             <span id="dispTotalOnlineCombined" style="font-size: 13px; font-weight: 800;">₹0.00</span>
                         </div>
                     </div>
 
                     <div class="calc-row due">
-                        <span>Current Bill Balance / Due:</span>
+                        <span>Current Bill Balance (On Credit):</span>
                         <span id="dispDue">₹0.00</span>
                     </div>
                     <div class="calc-row" id="rowRemainingPriorDue" style="display: none; color: #991b1b; font-size: 13px; font-weight: 700;">
@@ -2629,7 +2635,7 @@ $grid_products = array_values($grid_products);
 
                 <!-- Validation error feedback -->
                 <div id="liveValidationError" style="display: none; background: #fee2e2; border: 1px solid #fecaca; color: #b91c1c; padding: 12px; border-radius: 10px; margin-bottom: 14px; font-size: 13px; font-weight: 700;">
-                    Payment error: Cash + Credit cannot exceed Total Payable!
+                    Payment error: Cash + UPI cannot exceed Total Payable!
                 </div>
 
                 <!-- Submit Button -->
@@ -3087,18 +3093,19 @@ $grid_products = array_values($grid_products);
             const badgeCredit = document.getElementById('badgeCreditMode');
             if (badgeCredit) {
                 badgeCredit.style.display = (creditVal > 0) ? 'inline-block' : 'none';
+                badgeCredit.textContent = 'UPI';
             }
             const badgeDue = document.getElementById('badgeDueMode');
             if (badgeDue) {
                 badgeDue.style.display = (dueVal > 0) ? 'inline-block' : 'none';
-                badgeDue.textContent = (dueVal >= total && total > 0) ? 'FULL DUE' : ('DUE: ₹' + dueVal.toFixed(0));
+                badgeDue.textContent = (dueVal >= total && total > 0) ? 'FULL CREDIT' : ('CREDIT: ₹' + dueVal.toFixed(0));
             }
             const dueHint = document.getElementById('dueHintText');
             if (dueHint) {
                 if (dueVal > 0) {
-                    dueHint.textContent = `₹${dueVal.toFixed(2)} will remain as unpaid balance on this shop's account.`;
+                    dueHint.textContent = `₹${dueVal.toFixed(2)} will remain on credit / unpaid on this shop's account.`;
                 } else {
-                    dueHint.textContent = `Bill is fully settled (₹0.00 due).`;
+                    dueHint.textContent = `Bill is fully settled (₹0.00 on credit).`;
                 }
             }
 
@@ -3278,13 +3285,13 @@ $grid_products = array_values($grid_products);
 
             if (paidSum > total + 0.01 && !isDueOnly) {
                 liveError.style.display = 'block';
-                liveError.textContent = `Payment Error: Cash (₹${cashVal.toFixed(2)}) + Credit (₹${creditVal.toFixed(2)}) exceeds Total (₹${total.toFixed(2)})!`;
+                liveError.textContent = `Payment Error: Cash (₹${cashVal.toFixed(2)}) + UPI (₹${creditVal.toFixed(2)}) exceeds Total (₹${total.toFixed(2)})!`;
                 submitBtn.disabled = true;
                 submitBtn.style.opacity = '0.5';
                 submitBtn.style.cursor = 'not-allowed';
             } else if (enableDue.checked && dueVal > total + 0.01 && !isDueOnly) {
                 liveError.style.display = 'block';
-                liveError.textContent = `Due amount (₹${dueVal.toFixed(2)}) cannot exceed Net Total (₹${total.toFixed(2)})!`;
+                liveError.textContent = `Credit / Due amount (₹${dueVal.toFixed(2)}) cannot exceed Net Total (₹${total.toFixed(2)})!`;
                 submitBtn.disabled = true;
                 submitBtn.style.opacity = '0.5';
                 submitBtn.style.cursor = 'not-allowed';

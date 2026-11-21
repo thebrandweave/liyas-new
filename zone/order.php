@@ -914,8 +914,9 @@ $stepLevel = $statusSteps[$currentStatus] ?? 1;
                     </div>
                     <div style="font-size: 13px; color: var(--text-muted); margin-bottom: 16px;">
                         Delivered: <strong><?= (int)$order['delivered_quantity'] ?> cases</strong> &bull; 
-                        Cash: <strong><?= formatCurrency($order['receipt_cash']) ?></strong> &bull; 
-                        Due: <strong style="color: <?= ((float)$order['receipt_due'] > 0) ? '#dc2626' : '#059669' ?>;"><?= formatCurrency($order['receipt_due']) ?></strong>
+                        Cash: <strong style="color: #047857;"><?= formatCurrency($order['receipt_cash']) ?></strong> &bull; 
+                        UPI: <strong style="color: #2563eb;"><?= formatCurrency($order['receipt_credit']) ?></strong> &bull; 
+                        Credit: <strong style="color: <?= ((float)$order['receipt_due'] > 0) ? '#dc2626' : '#059669' ?>;"><?= formatCurrency($order['receipt_due']) ?></strong>
                     </div>
 
                     <div style="display: flex; gap: 10px; flex-direction:column;">
@@ -923,7 +924,7 @@ $stepLevel = $statusSteps[$currentStatus] ?? 1;
                             <i class='bx bx-printer' style="font-size: 20px;"></i> View &amp; Print Receipt
                         </a>
                         <?php if (!empty($waUrl)): 
-                            $billMsg = "Hello {$shopName}, here is your official Liyas Water Delivery Receipt for Bill #{$order['bill_number']}.\nTotal: " . formatCurrency($order['total_amount']) . "\nDelivered: {$order['delivered_quantity']} cases\nCash Received: " . formatCurrency($order['receipt_cash']) . "\nBalance Due: " . formatCurrency($order['receipt_due']) . "\nView digital bill: " . zone_url($zone_slug, 'receipt', ['id' => $order_id]);
+                            $billMsg = "Hello {$shopName}, here is your official Liyas Water Delivery Receipt for Bill #{$order['bill_number']}.\nTotal: " . formatCurrency($order['total_amount']) . "\nDelivered: {$order['delivered_quantity']} cases\nCash Received: " . formatCurrency($order['receipt_cash']) . "\nUPI / Online: " . formatCurrency($order['receipt_credit']) . "\nCredit / Balance Due: " . formatCurrency($order['receipt_due']) . "\nView digital bill: " . zone_url($zone_slug, 'receipt', ['id' => $order_id]);
                             $billWa = "https://wa.me/{$cleanPhone}?text=" . rawurlencode($billMsg);
                         ?>
                             <a href="<?= $billWa ?>" target="_blank" class="btn-action-large" style="background: #059669; color: #fff;">

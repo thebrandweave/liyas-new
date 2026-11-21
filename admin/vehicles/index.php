@@ -278,6 +278,7 @@ foreach ($vehicles as $v) {
 $fleetDeliveriesDone  = (int)($summary['fleet_deliveries_done'] ?? 0);
 $fleetLoadsDelivered  = (int)($summary['fleet_loads_delivered'] ?? 0);
 $fleetTotalCash       = (float)($summary['fleet_total_cash'] ?? 0.0);
+$fleetTotalUpi        = (float)($summary['fleet_total_upi'] ?? ($summary['fleet_total_credit'] ?? 0.0));
 $fleetTotalCredit     = (float)($summary['fleet_total_credit'] ?? 0.0);
 $fleetTotalDue        = (float)($summary['fleet_total_due'] ?? 0.0);
 $fleetDeliveredAmount = (float)($summary['fleet_delivered_amount'] ?? 0.0);
@@ -707,12 +708,12 @@ foreach ($fleetData['vehicles'] as $v) {
         .v-fin-cash .v-fin-lbl { color: #065f46; }
         .v-fin-cash .v-fin-val { color: #047857; }
 
-        .v-fin-credit {
-            background: #f5f3ff;
-            border: 1px solid #ddd6fe;
+        .v-fin-credit, .v-fin-upi {
+            background: #eff6ff;
+            border: 1px solid #bfdbfe;
         }
-        .v-fin-credit .v-fin-lbl { color: #5b21b6; }
-        .v-fin-credit .v-fin-val { color: #6d28d9; }
+        .v-fin-credit .v-fin-lbl, .v-fin-upi .v-fin-lbl { color: #1e40af; }
+        .v-fin-credit .v-fin-val, .v-fin-upi .v-fin-val { color: #2563eb; }
 
         .v-fin-due {
             background: #fef2f2;
@@ -1300,28 +1301,28 @@ foreach ($fleetData['vehicles'] as $v) {
                         </div>
                     </div>
 
-                    <!-- Total Credited Amount -->
-                    <div class="v-stat-card" style="border-color: #ddd6fe;">
+                    <!-- Total UPI / Online Amount -->
+                    <div class="v-stat-card" style="border-color: #bfdbfe;">
                         <div>
-                            <div class="v-stat-num" style="color: #6d28d9; font-size: 22px;">₹<?= number_format($fleetTotalCredit, 2) ?></div>
+                            <div class="v-stat-num" style="color: #2563eb; font-size: 22px;">₹<?= number_format($fleetTotalUpi, 2) ?></div>
                             <div class="v-stat-label">
-                                 Credited Amount
+                                 UPI / Online
                                 <?php if ($filterDate !== 'all'): ?>
-                                    <span style="display: block; font-size: 10px; color: #7c3aed; font-weight: 700;"><?= htmlspecialchars($currentDateLabel) ?></span>
+                                    <span style="display: block; font-size: 10px; color: #2563eb; font-weight: 700;"><?= htmlspecialchars($currentDateLabel) ?></span>
                                 <?php endif; ?>
                             </div>
                         </div>
-                        <div class="v-stat-icon-wrap v-icon-purple">
-                            <i class='bx bx-credit-card'></i>
+                        <div class="v-stat-icon-wrap" style="background: #eff6ff; color: #2563eb;">
+                            <i class='bx bx-mobile-alt'></i>
                         </div>
                     </div>
 
-                    <!-- Total Outstanding Due -->
+                    <!-- Total Credit / Pending Due -->
                     <div class="v-stat-card" style="border-color: #fecaca;">
                         <div>
                             <div class="v-stat-num" style="color: #b91c1c; font-size: 22px;">₹<?= number_format($fleetTotalDue, 2) ?></div>
                             <div class="v-stat-label">
-                                 Outstanding Due
+                                 Credit / Pending Due
                                 <?php if ($filterDate !== 'all'): ?>
                                     <span style="display: block; font-size: 10px; color: #dc2626; font-weight: 700;"><?= htmlspecialchars($currentDateLabel) ?></span>
                                 <?php endif; ?>
@@ -1469,9 +1470,9 @@ foreach ($fleetData['vehicles'] as $v) {
                                 <span class="v-chip-sep">&bull;</span>
                                 <span>Cash: <strong style="color: #047857;">₹<?= number_format($fleetTotalCash, 2) ?></strong></span>
                                 <span class="v-chip-sep">&bull;</span>
-                                <span>Credit: <strong style="color: #6d28d9;">₹<?= number_format($fleetTotalCredit, 2) ?></strong></span>
+                                <span>UPI: <strong style="color: #2563eb;">₹<?= number_format($fleetTotalUpi, 2) ?></strong></span>
                                 <span class="v-chip-sep">&bull;</span>
-                                <span>Due: <strong style="color: #b91c1c;">₹<?= number_format($fleetTotalDue, 2) ?></strong></span>
+                                <span>Credit: <strong style="color: #b91c1c;">₹<?= number_format($fleetTotalDue, 2) ?></strong></span>
                             </div>
                             <a href="<?= buildVehiclesUrl(['date' => 'all']) ?>" class="btn-clear-all" title="Reset date filter">
                                 <i class='bx bx-x-circle'></i> Clear Date Filter
@@ -1603,18 +1604,18 @@ if ($percent > 85) {
                                         </div>
                                     </div>
 
-                                    <!-- FINANCIAL BREAKDOWN ON CARD: Total Credited, Cash, Due -->
+                                    <!-- FINANCIAL BREAKDOWN ON CARD: Cash, UPI, Credit -->
                                     <div class="v-finance-box">
                                         <div class="v-finance-pill v-fin-cash" title="Cash Collected (<?= htmlspecialchars($currentDateLabel) ?>): ₹<?= number_format($vCash, 2) ?>">
                                             <div class="v-fin-lbl"><i class='bx bx-money'></i> Cash</div>
                                             <div class="v-fin-val">₹<?= number_format($vCash, 2) ?></div>
                                         </div>
-                                        <div class="v-finance-pill v-fin-credit" title="Total Credited (<?= htmlspecialchars($currentDateLabel) ?>): ₹<?= number_format($vCredit, 2) ?>">
-                                            <div class="v-fin-lbl"><i class='bx bx-credit-card'></i> Credited</div>
+                                        <div class="v-finance-pill v-fin-upi" title="UPI / Online Payments (<?= htmlspecialchars($currentDateLabel) ?>): ₹<?= number_format($vCredit, 2) ?>">
+                                            <div class="v-fin-lbl"><i class='bx bx-mobile-alt'></i> UPI</div>
                                             <div class="v-fin-val">₹<?= number_format($vCredit, 2) ?></div>
                                         </div>
-                                        <div class="v-finance-pill v-fin-due <?= $vDue > 0 ? 'has-due' : '' ?>" title="Outstanding Due (<?= htmlspecialchars($currentDateLabel) ?>): ₹<?= number_format($vDue, 2) ?>">
-                                            <div class="v-fin-lbl"><i class='bx bx-error-circle'></i> Due</div>
+                                        <div class="v-finance-pill v-fin-due <?= $vDue > 0 ? 'has-due' : '' ?>" title="Credit / Pending Due (<?= htmlspecialchars($currentDateLabel) ?>): ₹<?= number_format($vDue, 2) ?>">
+                                            <div class="v-fin-lbl"><i class='bx bx-error-circle'></i> Credit</div>
                                             <div class="v-fin-val">₹<?= number_format($vDue, 2) ?></div>
                                         </div>
                                     </div>
