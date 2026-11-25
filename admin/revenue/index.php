@@ -699,7 +699,7 @@ if (isset($_GET['export']) && in_array($_GET['export'], ['csv', 'excel'])) {
             echo '<td>' . $cust . '</td>';
             echo '<td>' . htmlspecialchars($prodDetails) . '</td>';
             echo '<td class="num">' . $qtyNum . '</td>';
-            echo '<td class="num" style="font-weight: 600;">' . htmlspecialchars($bottlePrice) . '</td>';
+            // echo '<td class="num" style="font-weight: 600;">' . htmlspecialchars($bottlePrice) . '</td>';
             echo '<td class="num">' . number_format($totAmt, 2) . '</td>';
             echo '<td class="num">' . number_format($cash, 2) . '</td>';
             echo '<td class="num">' . number_format($credit, 2) . '</td>';
