@@ -715,7 +715,7 @@ if (isset($_GET['export']) && in_array($_GET['export'], ['csv', 'excel'])) {
         echo '<tr style="background-color: #f1f5f9; font-weight: bold; border-top: 2px solid #64748b;">';
         echo '<td colspan="6" style="text-align: right; padding: 10px; font-weight: bold;">TOTAL (' . count($export_rows) . ' Orders):</td>';
         echo '<td class="num" style="font-weight: bold; color: #0f172a;">' . $sumCases . ' cs</td>';
-        echo '<td class="num" style="font-weight: bold; color: #64748b;">—</td>';
+        // echo '<td class="num" style="font-weight: bold; color: #64748b;">—</td>';
         echo '<td class="num" style="font-weight: bold;">' . number_format($sumTotalAmt, 2) . '</td>';
         echo '<td class="num" style="font-weight: bold; color: #047857;">' . number_format($sumCash, 2) . '</td>';
         echo '<td class="num" style="font-weight: bold; color: #6d28d9;">' . number_format($sumCredit, 2) . '</td>';
